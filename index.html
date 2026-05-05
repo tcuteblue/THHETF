@@ -1,1 +1,982 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ETF 存股管家</title>
+    
+    <meta name="theme-color" content="#1e3a8a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="ETF 存股管家">
+    <link rel="apple-touch-icon" href="./icon.png">
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22ETF%E5%AD%98%E8%82%A1%E7%AE%A1%E5%AE%B6%22%2C%22short_name%22%3A%22ETF%E7%AE%A1%E5%AE%B6%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23f8fafc%22%2C%22theme_color%22%3A%22%231e3a8a%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22.%2Ficon.png%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%2C%7B%22src%22%3A%22.%2Ficon.png%22%2C%22sizes%22%3A%22512x512%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 
+    <!-- Tailwind 設定 -->
+    <script>
+        window.tailwind = {
+            config: {
+                theme: { extend: { colors: { primary: '#1e3a8a', secondary: '#3b82f6', background: '#f1f5f9' } } }
+            }
+        };
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+
+    <style>
+        html { font-size: 16px; }
+        @media (min-width: 640px) { html { font-size: 18px; } }
+        body { -webkit-tap-highlight-color: transparent; }
+        input[type="text"], input[type="number"], input[type="date"], select { font-size: 1rem; }
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        [x-cloak] { display: none !important; }
+        .tab-btn.active { border-bottom: 2px solid #3b82f6; color: #1e3a8a; font-weight: bold; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        .indicator-card {
+            display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; color: #cbd5e1;
+            background-color: #1e293b; padding: 0.625rem 0.75rem; border-radius: 0.75rem;
+            border: 1px solid #334155; cursor: pointer; transition: all 0.2s;
+        }
+        .indicator-card:hover { background-color: #334155; }
+    </style>
+</head>
+<body class="bg-background text-slate-800 font-sans antialiased min-h-screen pb-20">
+
+    <div x-data="etfManagerApp()" x-init="initApp()" x-cloak class="max-w-5xl mx-auto px-4 sm:px-6 relative">
+        
+        <!-- 全域共用訊息彈窗 -->
+        <div x-show="showMsgBox" class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4" x-transition>
+            <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center border border-slate-200" @click.stop>
+                <div class="text-lg font-bold text-slate-800 mb-6 whitespace-pre-line" x-text="msgBoxText"></div>
+                <button @click="closeMsgBox()" class="w-full py-3 bg-primary text-white font-bold rounded-xl hover:bg-blue-800 transition">確定</button>
+            </div>
+        </div>
+
+        <!-- ==================== 第一層：大廳 (ETF 總覽列表) ==================== -->
+        <div x-show="currentView === 'home'" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 -translate-x-4" x-transition:enter-end="opacity-100 translate-x-0">
+            
+            <header class="pt-8 pb-6 mb-4 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
+                <div>
+                    <h1 class="text-3xl font-black text-primary tracking-tight">
+                        <i class="fa-solid fa-layer-group text-blue-500 mr-2"></i>ETF 存股管家
+                    </h1>
+                    <p class="text-slate-500 text-sm mt-1">混合式多檔資產管理系統</p>
+                </div>
+                <div class="bg-white px-4 py-2 rounded-xl shadow-sm border border-slate-200">
+                    <div class="text-xs text-slate-500 font-bold mb-1">總資產淨值 (估計)</div>
+                    <div class="text-2xl font-black text-slate-800" x-text="formatMoney(calculateTotalNetWorth()) + ' 元'"></div>
+                </div>
+            </header>
+
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-bold text-slate-700">我的追蹤標的</h2>
+                <button @click="showAddETFModal = true" class="text-sm bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg font-bold hover:bg-blue-200 transition shadow-sm border border-blue-200">
+                    <i class="fa-solid fa-plus mr-1"></i> 新增標的
+                </button>
+            </div>
+
+            <!-- ETF 卡片列表 -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <template x-for="etf in etfList" :key="etf.id">
+                    <div @click="enterETF(etf.id)" class="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md border border-slate-200 cursor-pointer transition transform hover:-translate-y-1 relative group">
+                        <!-- 刪除按鈕 (隱藏在右上角) -->
+                        <button @click.stop="confirmDeleteETF(etf.id, etf.name)" class="absolute top-3 right-3 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition p-2">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+
+                        <div class="flex justify-between items-start mb-3">
+                            <div>
+                                <h3 class="text-xl font-black text-slate-800" x-text="etf.name"></h3>
+                                <div class="text-sm text-slate-500 font-mono bg-slate-100 px-2 py-0.5 rounded inline-block mt-1" x-text="etf.id"></div>
+                            </div>
+                            <div class="text-right">
+                                <div class="text-sm text-slate-500 mb-0.5">即時市價</div>
+                                <div class="text-lg font-bold" :class="getRealTimeClass(etf.id)">
+                                    <span x-text="getRealTimePrice(etf.id)"></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                            <div class="flex justify-between items-center mb-1 text-sm">
+                                <span class="text-slate-600">目前庫存</span>
+                                <span class="font-bold text-slate-800"><span x-text="formatMoney(getInventory(etf.id).shares)"></span> 股</span>
+                            </div>
+                            <div class="flex justify-between items-center text-sm">
+                                <span class="text-slate-600">帳面市值</span>
+                                <span class="font-bold text-blue-600"><span x-text="formatMoney(getInventory(etf.id).shares * getRealTimePriceRaw(etf.id))"></span> 元</span>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+
+            <!-- 全系統備份區 (大廳下方) -->
+            <div class="mt-10 p-5 bg-purple-50 rounded-2xl border border-purple-100">
+                <h3 class="font-bold text-purple-800 mb-2 flex items-center"><i class="fa-solid fa-cloud text-purple-500 mr-2"></i>系統資料保險箱</h3>
+                <p class="text-xs text-purple-700 mb-4">所有 ETF 的設定與明細皆儲存於您的設備。建議定期匯出總備份檔。</p>
+                <div class="flex gap-3">
+                    <button @click="exportTotalBackup()" class="flex-1 bg-white border border-purple-300 text-purple-700 font-bold py-2 rounded-lg hover:bg-purple-100 transition text-sm shadow-sm">
+                        <i class="fa-solid fa-download mr-1"></i> 匯出總備份
+                    </button>
+                    <div class="flex-1 relative">
+                        <input type="file" accept=".json" id="importTotalBackup" class="hidden" @change="importTotalBackup($event)">
+                        <label for="importTotalBackup" class="block w-full text-center cursor-pointer bg-purple-600 text-white font-bold py-2 rounded-lg hover:bg-purple-700 transition text-sm shadow-sm">
+                            <i class="fa-solid fa-upload mr-1"></i> 還原備份
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- 新增 ETF 彈窗 -->
+        <div x-show="showAddETFModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4" x-transition x-cloak>
+            <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6" @click.stop>
+                <h3 class="text-lg font-bold text-slate-800 mb-4">新增追蹤標的</h3>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-600 mb-1">ETF 代號 (如: 00713)</label>
+                        <input type="text" x-model="newEtfId" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-600 mb-1">自訂名稱 (如: 元大高息低波)</label>
+                        <input type="text" x-model="newEtfName" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition">
+                    </div>
+                </div>
+                <div class="flex gap-3 mt-6">
+                    <button @click="showAddETFModal = false; newEtfId=''; newEtfName=''" class="flex-1 py-2 bg-slate-100 text-slate-600 font-bold rounded-lg hover:bg-slate-200 transition">取消</button>
+                    <button @click="addNewETF()" class="flex-1 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition">新增</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== 第二層：專屬管家 (單檔 ETF 內容) ==================== -->
+        <div x-show="currentView === 'detail'" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-x-4" x-transition:enter-end="opacity-100 translate-x-0" x-cloak>
+            
+            <header class="sticky top-0 z-40 bg-background/95 backdrop-blur-md pt-4 pb-2 mb-4 -mx-4 px-4 sm:-mx-6 sm:px-6 border-b border-slate-200 shadow-sm">
+                <button @click="backToHome()" class="text-slate-500 hover:text-blue-600 font-bold text-sm mb-3 flex items-center transition">
+                    <i class="fa-solid fa-chevron-left mr-1"></i> 返回總覽
+                </button>
+                
+                <div class="flex justify-between items-end mb-3">
+                    <div>
+                        <h1 class="text-2xl font-black text-slate-800 flex items-center gap-2">
+                            <span x-text="activeETF.name"></span>
+                            <span class="text-xs font-mono bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded tracking-tight" x-text="activeETF.id"></span>
+                        </h1>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-xs text-slate-500 flex items-center justify-end gap-1 mb-1">
+                            最新市價
+                            <button @click="refreshPrice()" class="p-1 rounded text-slate-400 hover:text-blue-600" title="更新股價">
+                                <i class="fa-solid fa-arrows-rotate" :class="{'animate-spin text-blue-500': isFetchingPrice}"></i>
+                            </button>
+                        </div>
+                        <div class="text-2xl font-black" :class="getPriceColorClass()">
+                            <span x-text="currentPrice > 0 ? Number(currentPrice).toFixed(2) : '---'"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 頁籤導覽 (與原本設計相同) -->
+                <div class="flex overflow-x-auto no-scrollbar whitespace-nowrap border-t border-slate-200 pt-1">
+                    <button @click="activeTab = 'dashboard'" class="tab-btn px-4 py-3 text-sm font-medium text-slate-500 hover:text-slate-800 transition" :class="{'active': activeTab === 'dashboard'}">
+                        <i class="fa-solid fa-chart-pie mr-2"></i>主控台
+                    </button>
+                    <button @click="activeTab = 'report'" class="tab-btn px-4 py-3 text-sm font-medium text-slate-500 hover:text-slate-800 transition" :class="{'active': activeTab === 'report'}">
+                        <i class="fa-solid fa-book-open mr-2"></i>深度報告
+                    </button>
+                    <button @click="activeTab = 'settings'" class="tab-btn px-4 py-3 text-sm font-medium text-slate-500 hover:text-slate-800 transition" :class="{'active': activeTab === 'settings'}">
+                        <i class="fa-solid fa-gear mr-2"></i>標的設定
+                    </button>
+                </div>
+            </header>
+
+            <!-- 【分頁一：主控台】 -->
+            <div x-show="activeTab === 'dashboard'" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-2" x-transition:enter-end="opacity-100 translate-y-0">
+                
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mb-4">
+                    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-center">
+                        <div class="text-xs sm:text-sm font-bold text-slate-500 mb-1">現有庫存 (股)</div>
+                        <div class="text-xl sm:text-2xl font-black text-slate-800" x-text="currentTotalShares > 0 ? formatMoney(currentTotalShares) : '0'"></div>
+                    </div>
+                    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-center">
+                        <div class="text-xs sm:text-sm font-bold text-slate-500 mb-1">平均成本 (元)</div>
+                        <div class="text-xl sm:text-2xl font-black text-slate-800" x-text="currentAvgCost > 0 ? currentAvgCost : '0.00'"></div>
+                    </div>
+                    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-center col-span-2 md:col-span-1">
+                        <div class="text-xs sm:text-sm font-bold text-slate-500 mb-1">持股總市值</div>
+                        <div class="text-xl sm:text-2xl font-black text-blue-700" x-text="marketValueNum > 0 ? formatMoney(marketValueNum) : '0'"></div>
+                    </div>
+                    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-center col-span-2 md:col-span-1 relative overflow-hidden">
+                        <!-- 針對高股息設計的背景裝飾 -->
+                        <div class="absolute -right-4 -bottom-4 text-5xl opacity-5 text-amber-500"><i class="fa-solid fa-coins"></i></div>
+                        
+                        <div class="flex justify-between items-end mb-2">
+                            <div class="text-xs sm:text-sm font-bold text-slate-500">累積總損益</div>
+                            <div class="text-xs font-bold" :class="roi >= 0 ? 'text-red-500' : 'text-green-500'" x-show="roi !== null" x-text="roi + '%'"></div>
+                        </div>
+                        <div class="text-xl sm:text-2xl font-black relative z-10" :class="profit >= 0 ? 'text-red-500' : 'text-green-500'">
+                            <span x-text="profit > 0 ? '+' + formatMoney(profit) : formatMoney(profit)"></span>
+                        </div>
+                        <div class="text-[10px] text-slate-400 mt-1 relative z-10">已領息: <span class="font-bold text-amber-600" x-text="formatMoney(totalDividend)"></span> 元</div>
+                    </div>
+                </div>
+
+                <button @click="toggleChart()" :disabled="!historicalDataLoaded" class="w-full mt-2 mb-6 py-3 bg-white border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-slate-50 transition shadow-sm flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                    <i class="fa-solid fa-chart-line text-blue-500"></i>
+                    <span x-show="!historicalDataLoaded">圖表資料載入中...</span>
+                    <span x-show="historicalDataLoaded" x-text="showChart ? `收合 ${activeETF.id} 長期技術圖` : `📊 展開 ${activeETF.id} 長期技術與均線圖`"></span>
+                </button>
+
+                <div x-show="showChart" class="bg-white p-2 sm:p-4 rounded-2xl border border-slate-200 shadow-sm mb-6 w-full" x-cloak>
+                    <div id="lwc-chart" style="width: 100%; min-height: 350px; display: block;" class="rounded-lg overflow-hidden border border-slate-100"></div>
+                </div>
+
+                <!-- 決策引擎 (共用核心) -->
+                <div class="bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl shadow-xl border border-slate-700 p-6 mb-6 text-white relative overflow-hidden">
+                    <div class="flex flex-col md:flex-row gap-6 items-center relative z-10">
+                        <div class="w-32 h-32 rounded-full border-4 flex items-center justify-center bg-slate-800 shadow-inner flex-shrink-0"
+                             :class="{'border-purple-500': currentScore >= 80, 'border-red-500': currentScore >= 60 && currentScore < 80, 'border-orange-500': currentScore >= 40 && currentScore < 60, 'border-yellow-500': currentScore >= 20 && currentScore < 40, 'border-emerald-500': currentScore < 20}">
+                            <div class="text-4xl font-black" x-text="currentScore"></div>
+                        </div>
+                        <div class="flex-1 w-full text-center md:text-left">
+                            <h2 class="text-lg font-bold mb-2 text-blue-300"><i class="fa-solid fa-robot mr-1"></i> 引擎綜合判定</h2>
+                            <div class="text-xl font-bold mb-2" :class="recommendation.color" x-text="recommendation.text"></div>
+                            <div class="text-sm text-slate-300">
+                                系統建議額外加碼：<span class="text-2xl font-black text-white ml-1" x-text="recommendation.amount > 0 ? formatMoney(recommendation.amount) + ' 元' : '0 元'"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 【分頁二：深度報告】 -->
+            <div x-show="activeTab === 'report'" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-2" x-transition:enter-end="opacity-100 translate-y-0" x-cloak>
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-6">
+                    <div class="bg-slate-50 border-b border-slate-200 p-5">
+                        <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                            <i class="fa-solid fa-book-open text-secondary"></i> <span x-text="`${activeETF.id} 專屬分析報告`"></span>
+                        </h2>
+                    </div>
+                    
+                    <div class="p-5 space-y-6 text-slate-700">
+                        <!-- K值與均線 (適用所有 ETF) -->
+                        <div class="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                            <h4 class="font-bold text-slate-800 mb-2"><i class="fa-solid fa-bolt text-yellow-500 mr-2"></i>短中線技術指標</h4>
+                            <ul class="space-y-3 text-sm">
+                                <li class="flex justify-between items-center bg-white p-3 rounded shadow-sm border border-slate-100">
+                                    <span>目前 K 值 (情緒指標)</span>
+                                    <strong :class="calc_k < 20 ? 'text-red-600' : 'text-slate-700'" x-text="calc_k.toFixed(2)"></strong>
+                                </li>
+                                <li class="flex justify-between items-center bg-white p-3 rounded shadow-sm border border-slate-100">
+                                    <span>年線 MA240 (長期均價)</span>
+                                    <strong :class="currentPrice < calc_ma240 ? 'text-green-600' : 'text-slate-700'" x-text="calc_ma240.toFixed(2)"></strong>
+                                </li>
+                                <li class="flex justify-between items-center bg-white p-3 rounded shadow-sm border border-slate-100">
+                                    <span>您的持有均價</span>
+                                    <strong :class="currentPrice < currentAvgCost ? 'text-teal-600' : 'text-slate-700'" x-text="currentAvgCost"></strong>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <!-- 市值型專屬指標 (預先寫死，等新增 0050/006208 才會觸發) -->
+                        <div x-show="['0050', '006208'].includes(activeETF.id)" class="bg-blue-50 p-4 rounded-xl border border-blue-100">
+                            <h4 class="font-bold text-blue-900 mb-2"><i class="fa-solid fa-chart-pie text-blue-500 mr-2"></i>市值型專屬觀察</h4>
+                            <p class="text-xs text-blue-800 mb-3">此類標的與台股大盤高度連動，首重「資本利得」與「長期複利」。</p>
+                            <ul class="space-y-3 text-sm">
+                                <li class="flex justify-between items-center bg-white p-3 rounded shadow-sm border border-blue-100">
+                                    <span>大盤關聯度 (Beta)</span>
+                                    <strong class="text-blue-700">約 1.0 (高度連動)</strong>
+                                </li>
+                                <li class="flex justify-between items-center bg-white p-3 rounded shadow-sm border border-blue-100">
+                                    <span>長線建倉策略</span>
+                                    <strong class="text-blue-700">大跌大買，定期定額</strong>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <!-- 高股息專屬指標 (預先寫死，等新增 00878/0056/00919/00713 才會觸發) -->
+                        <div x-show="['00878', '0056', '00919', '00713'].includes(activeETF.id)" class="bg-amber-50 p-4 rounded-xl border border-amber-100">
+                            <h4 class="font-bold text-amber-900 mb-2"><i class="fa-solid fa-sack-dollar text-amber-500 mr-2"></i>高股息專屬觀察</h4>
+                            <p class="text-xs text-amber-800 mb-3">此類標的著重「現金流」與「抗跌性」，觀察重點在於填息能力與殖利率。</p>
+                            <ul class="space-y-3 text-sm">
+                                <li class="flex justify-between items-center bg-white p-3 rounded shadow-sm border border-amber-100">
+                                    <span>平均殖利率估算</span>
+                                    <strong class="text-amber-700">約 5% ~ 8%</strong>
+                                </li>
+                                <li class="flex justify-between items-center bg-white p-3 rounded shadow-sm border border-amber-100">
+                                    <span>建倉與提領策略</span>
+                                    <strong class="text-amber-700">逢低買進拉高殖利率</strong>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <!-- 財務自由護欄 (共用引擎) -->
+                        <div class="bg-indigo-50 p-4 rounded-xl border border-indigo-100">
+                            <h4 class="font-bold text-indigo-900 mb-2"><i class="fa-solid fa-compass-drafting text-indigo-500 mr-2"></i>動態提領導航儀</h4>
+                            <p class="text-xs text-indigo-800 mb-3">高股息或市值型皆適用此護欄概念：以「總市值」為基礎，評估提領率是否安全。</p>
+                            
+                            <label class="block text-sm font-bold text-slate-700 mb-1">目標每月退休生活費：</label>
+                            <input type="number" step="1000" x-model.number="targetMonthlyExpense" @change="saveLocalETFData()" class="w-full px-3 py-2 border border-indigo-200 rounded-lg mb-4 text-indigo-700 font-bold bg-white focus:ring-2 focus:ring-indigo-500">
+                            
+                            <div class="bg-white p-3 rounded-lg border border-indigo-100 shadow-sm mb-3">
+                                <div class="flex justify-between text-sm mb-1">
+                                    <span class="text-slate-600">當前提領率：<strong x-text="marketValueNum > 0 ? (currentWithdrawalRate * 100).toFixed(2) + '%' : '0%'"></strong></span>
+                                    <span class="text-slate-600">FIRE 進度：<strong x-text="fireProgress + '%'"></strong></span>
+                                </div>
+                                <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                                    <div class="bg-indigo-500 h-2 rounded-full" :style="`width: ${fireProgress}%`"></div>
+                                </div>
+                            </div>
+                            
+                            <div class="p-3 rounded-lg border text-sm" :class="`${gkStatus.bg} ${gkStatus.border} ${gkStatus.color}`">
+                                <strong class="block mb-1" x-text="gkStatus.title"></strong>
+                                <span x-text="gkStatus.desc"></span>
+                                <div class="mt-2 text-lg font-black" x-text="`建議月提領: ${formatMoney(gkStatus.recommendedMonthly)} 元`"></div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+            <!-- 【分頁三：標的設定】 -->
+            <div x-show="activeTab === 'settings'" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-2" x-transition:enter-end="opacity-100 translate-y-0" x-cloak>
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 mb-6">
+                    
+                    <div class="bg-slate-50 p-4 rounded-xl border border-slate-100 mb-5">
+                        <h3 class="font-bold text-slate-700 text-sm mb-3"><i class="fa-solid fa-box-open mr-2 text-slate-500"></i>期初庫存設定</h3>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs text-slate-500 mb-1">期初股數</label>
+                                <input type="number" x-model.number="baseShares" @change="saveLocalETFData()" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-slate-500 mb-1">期初均價</label>
+                                <input type="number" step="0.01" x-model.number="baseAvgCost" @change="saveLocalETFData()" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded focus:ring-2 focus:ring-blue-500">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-50 p-4 rounded-xl border border-slate-100 mb-5">
+                        <h3 class="font-bold text-slate-700 text-sm mb-3"><i class="fa-solid fa-calendar-check mr-2 text-slate-500"></i>自動扣款計畫</h3>
+                        <div class="space-y-2 mb-3">
+                            <template x-for="plan in investmentPlans" :key="plan.id">
+                                <div class="flex items-center gap-2 bg-white p-2 rounded border border-slate-200">
+                                    <span class="text-xs text-slate-600">每月</span>
+                                    <input type="number" x-model.number="plan.day" @change="saveLocalETFData()" class="w-12 px-1 text-center text-sm border rounded">
+                                    <span class="text-xs text-slate-600">號，扣</span>
+                                    <input type="number" x-model.number="plan.amount" @change="saveLocalETFData()" class="w-20 px-1 text-right text-sm border rounded">
+                                    <span class="text-xs text-slate-600">元</span>
+                                    <button @click="removePlan(plan.id)" class="ml-auto text-red-400 hover:text-red-600"><i class="fa-solid fa-xmark"></i></button>
+                                </div>
+                            </template>
+                        </div>
+                        <button @click="addPlan()" class="text-xs text-blue-600 font-bold"><i class="fa-solid fa-plus mr-1"></i>新增扣款日</button>
+                    </div>
+
+                    <div class="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
+                        <h3 class="font-bold text-slate-700 text-sm mb-3"><i class="fa-solid fa-list-ul mr-2 text-blue-600"></i>交易明細 (精算與紀錄)</h3>
+                        
+                        <!-- 手動新增區 -->
+                        <div class="flex flex-wrap gap-2 mb-4 bg-white p-3 rounded border border-blue-200">
+                            <input type="date" x-model="manualDate" class="w-full sm:w-auto px-2 py-1 text-sm border rounded flex-1">
+                            <select x-model="manualAction" class="w-full sm:w-24 px-2 py-1 text-sm border rounded font-bold" :class="{'text-red-600': manualAction==='buy', 'text-amber-600': manualAction==='dividend'}">
+                                <option value="buy">買入</option>
+                                <option value="sell">賣出</option>
+                                <option value="dividend">配息</option>
+                                <option value="withdraw">提領</option>
+                            </select>
+                            <input type="number" x-model.number="manualShares" placeholder="股數" class="w-full sm:w-20 px-2 py-1 text-sm border rounded" x-show="manualAction !== 'dividend'">
+                            <input type="number" x-model.number="manualPrice" placeholder="單價/總金" class="w-full sm:w-24 px-2 py-1 text-sm border rounded">
+                            <button @click="executeManualAdd()" class="w-full sm:w-auto bg-blue-600 text-white text-sm font-bold px-4 py-1 rounded hover:bg-blue-700">加入</button>
+                        </div>
+
+                        <div class="max-h-[300px] overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                            <template x-for="txn in transactions" :key="txn.id">
+                                <div class="flex items-center gap-2 bg-white p-2 rounded border border-slate-200 text-sm">
+                                    <input type="date" x-model="txn.date" @change="saveLocalETFData()" class="w-28 border-none bg-transparent">
+                                    <span class="font-bold w-10 text-center" :class="{'text-red-600': txn.action==='buy', 'text-green-600': txn.action==='sell', 'text-amber-600': txn.action==='dividend'}" x-text="txn.action==='buy'?'買':(txn.action==='sell'?'賣':(txn.action==='dividend'?'息':'提'))"></span>
+                                    <div class="flex-1 text-right">
+                                        <span x-show="txn.action !== 'dividend'" x-text="txn.shares + '股'"></span>
+                                        <span class="text-slate-400 ml-1">NT$</span>
+                                        <strong x-text="txn.amount"></strong>
+                                    </div>
+                                    <button @click="removeTransaction(txn.id)" class="text-slate-300 hover:text-red-500 ml-2"><i class="fa-solid fa-trash-can"></i></button>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- 系統核心邏輯 -->
+    <script>
+        document.addEventListener('alpine:init', () => {
+            Alpine.data('etfManagerApp', () => ({
+                // 系統狀態
+                currentView: 'home', // 'home' | 'detail'
+                activeTab: 'dashboard',
+                showMsgBox: false,
+                msgBoxText: '',
+                showAddETFModal: false,
+                
+                // 暫存新增標的
+                newEtfId: '',
+                newEtfName: '',
+
+                // 核心資料結構 (Master Data)
+                appData: {
+                    etfs: [
+                        { id: '0050', name: '元大台灣50' }
+                    ],
+                    portfolios: {} // 以 etf.id 為 key，儲存各檔明細
+                },
+
+                // 當前操作的 ETF
+                activeETF: null,
+                
+                // --- 當前 ETF 專屬變數 (讀取進入 Detail 時綁定) ---
+                baseShares: 0,
+                baseAvgCost: 0,
+                transactions: [],
+                investmentPlans: [],
+                targetMonthlyExpense: 50000,
+                startDate: '',
+                
+                // 臨時輸入表單
+                manualDate: new Date().toISOString().split('T')[0],
+                manualAction: 'buy',
+                manualShares: null,
+                manualPrice: null,
+
+                // 實時數據與技術指標 (動態抓取)
+                realTimePrices: {}, // 首頁用的快取 { '0050': 150.5 }
+                currentPrice: 0,
+                prevClose: 0,
+                isFetchingPrice: false,
+                
+                historicalDataLoaded: false,
+                chartData: [],
+                ma240Data: [],
+                ma2400Data: [],
+                calc_ma240: 0,
+                calc_ma120: 0,
+                calc_k: 50,
+
+                showChart: false,
+                chartRendered: false,
+
+                // 備份狀態
+                isBackingUp: false,
+                lastBackupTime: null,
+
+                // ====== 初始化與資料庫操作 ======
+                initApp() {
+                    const saved = localStorage.getItem('ETF_Manager_Data_V2');
+                    if (saved) {
+                        try {
+                            this.appData = JSON.parse(saved);
+                        } catch (e) { console.error("資料解析失敗", e); }
+                    } else {
+                        // 嘗試繼承舊版 0050 資料
+                        const legacy = localStorage.getItem('THH0050_Data_V3');
+                        if (legacy) {
+                            try {
+                                const lData = JSON.parse(legacy);
+                                this.appData.portfolios['0050'] = {
+                                    baseShares: lData.baseShares || 0,
+                                    baseAvgCost: lData.baseAvgCost || 0,
+                                    transactions: lData.transactions || [],
+                                    investmentPlans: lData.investmentPlans || [],
+                                    targetMonthlyExpense: lData.targetMonthlyExpense || 50000
+                                };
+                            } catch (e) {}
+                        }
+                    }
+
+                    // 確保所有 ETF 都有初始化結構
+                    this.appData.etfs.forEach(e => {
+                        if (!this.appData.portfolios[e.id]) {
+                            this.appData.portfolios[e.id] = this.createEmptyPortfolio();
+                        }
+                    });
+                    
+                    this.saveMasterData();
+                    this.fetchAllRealTimePrices();
+                },
+
+                createEmptyPortfolio() {
+                    return {
+                        baseShares: 0, baseAvgCost: 0, transactions: [], 
+                        investmentPlans: [{ id: Date.now(), day: 15, amount: 5000 }],
+                        targetMonthlyExpense: 50000, startDate: new Date().toISOString().split('T')[0]
+                    };
+                },
+
+                saveMasterData() {
+                    localStorage.setItem('ETF_Manager_Data_V2', JSON.stringify(this.appData));
+                },
+
+                // ====== 第一層：大廳邏輯 ======
+                get etfList() {
+                    return this.appData.etfs;
+                },
+
+                async fetchAllRealTimePrices() {
+                    // 首頁背景抓取所有標的即時價格 (平行處理提升速度)
+                    const promises = this.appData.etfs.map(async (etf) => {
+                        const price = await this._fetchYahooPrice(etf.id);
+                        if (price) this.realTimePrices[etf.id] = price.current;
+                    });
+                    await Promise.all(promises);
+                },
+
+                getRealTimePriceRaw(id) {
+                    return this.realTimePrices[id] || 0;
+                },
+
+                getRealTimePrice(id) {
+                    return this.realTimePrices[id] ? Number(this.realTimePrices[id]).toFixed(2) : '---';
+                },
+
+                getRealTimeClass(id) {
+                    // 首頁簡單顯示藍色，點進去再做複雜漲跌判斷
+                    return 'text-blue-700';
+                },
+
+                getInventory(id) {
+                    const port = this.appData.portfolios[id];
+                    if (!port) return { shares: 0, totalCost: 0 };
+                    
+                    let sh = parseFloat(port.baseShares) || 0;
+                    let cost = parseFloat(port.baseAvgCost) || 0;
+                    let tot = sh * cost;
+
+                    (port.transactions || []).forEach(t => {
+                        const s = parseFloat(t.shares) || 0;
+                        const amt = parseFloat(t.amount) || 0;
+                        if (t.action === 'buy' || t.action === 'sync') {
+                            tot += amt; sh += s;
+                        } else if (t.action === 'sell' || t.action === 'withdraw') {
+                            sh = Math.max(0, sh - s);
+                        }
+                    });
+                    return { shares: sh, totalCost: tot };
+                },
+
+                calculateTotalNetWorth() {
+                    let sum = 0;
+                    this.appData.etfs.forEach(e => {
+                        const shares = this.getInventory(e.id).shares;
+                        const price = this.getRealTimePriceRaw(e.id);
+                        sum += (shares * price);
+                    });
+                    return sum.toFixed(0);
+                },
+
+                addNewETF() {
+                    if (!this.newEtfId || !this.newEtfName) {
+                        this.msgBoxText = '請輸入完整的代號與名稱！'; this.showMsgBox = true; return;
+                    }
+                    if (this.appData.etfs.find(e => e.id === this.newEtfId)) {
+                        this.msgBoxText = '此標的已存在！'; this.showMsgBox = true; return;
+                    }
+                    this.appData.etfs.push({ id: this.newEtfId, name: this.newEtfName });
+                    this.appData.portfolios[this.newEtfId] = this.createEmptyPortfolio();
+                    this.saveMasterData();
+                    this._fetchYahooPrice(this.newEtfId).then(p => { if(p) this.realTimePrices[this.newEtfId] = p.current; });
+                    this.showAddETFModal = false;
+                    this.newEtfId = ''; this.newEtfName = '';
+                },
+
+                confirmDeleteETF(id, name) {
+                    if (confirm(`確定要刪除 ${id} ${name} 嗎？所有相關明細將永久遺失！`)) {
+                        this.appData.etfs = this.appData.etfs.filter(e => e.id !== id);
+                        delete this.appData.portfolios[id];
+                        this.saveMasterData();
+                    }
+                },
+
+                // ====== 第二層：進入單檔 ETF 邏輯 ======
+                enterETF(id) {
+                    this.activeETF = this.appData.etfs.find(e => e.id === id);
+                    const p = this.appData.portfolios[id];
+                    
+                    // 將資料載入當前 working 變數
+                    this.baseShares = p.baseShares || 0;
+                    this.baseAvgCost = p.baseAvgCost || 0;
+                    this.transactions = p.transactions || [];
+                    this.investmentPlans = p.investmentPlans || [];
+                    this.targetMonthlyExpense = p.targetMonthlyExpense || 50000;
+                    this.startDate = p.startDate || '';
+
+                    // 初始清空舊圖表與價格
+                    this.currentPrice = this.realTimePrices[id] || 0;
+                    this.historicalDataLoaded = false;
+                    this.showChart = false;
+                    this.activeTab = 'dashboard';
+                    
+                    this.currentView = 'detail';
+                    window.scrollTo(0,0);
+
+                    // 抓取詳細資料
+                    this.fetchETFDetailData();
+                },
+
+                backToHome() {
+                    this.saveLocalETFData(); // 確保離開前儲存
+                    this.currentView = 'home';
+                    this.fetchAllRealTimePrices(); // 回首頁刷新所有價格
+                },
+
+                saveLocalETFData() {
+                    if (!this.activeETF) return;
+                    this.appData.portfolios[this.activeETF.id] = {
+                        baseShares: this.baseShares,
+                        baseAvgCost: this.baseAvgCost,
+                        transactions: this.transactions,
+                        investmentPlans: this.investmentPlans,
+                        targetMonthlyExpense: this.targetMonthlyExpense,
+                        startDate: this.startDate
+                    };
+                    this.saveMasterData();
+                },
+
+                // ====== 核心計算引擎 (適用所有 ETF) ======
+                get inventoryState() {
+                    let shares = parseFloat(this.baseShares) || 0;
+                    let avgCost = parseFloat(this.baseAvgCost) || 0;
+                    const sortedTxns = [...this.transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
+                    
+                    for (const t of sortedTxns) {
+                        const s = parseFloat(t.shares) || 0;
+                        const amt = parseFloat(t.amount) || 0;
+                        if (t.action === 'buy' || t.action === 'sync') { 
+                            const totalCost = shares * avgCost + amt;
+                            shares += s;
+                            avgCost = shares > 0 ? totalCost / shares : 0;
+                        } else if (t.action === 'sell' || t.action === 'withdraw') {
+                            shares = Math.max(0, shares - s);
+                        }
+                    }
+                    return { shares, avgCost, totalCost: shares * avgCost };
+                },
+
+                get currentTotalShares() { return this.inventoryState.shares; },
+                get currentAvgCost() { return this.currentTotalShares > 0 ? parseFloat(this.inventoryState.avgCost.toFixed(2)) : 0; },
+                get marketValueNum() { return this.currentPrice <= 0 ? 0 : (this.currentTotalShares * this.currentPrice); },
+
+                get totalCashOut() {
+                    return (parseFloat(this.baseShares) * parseFloat(this.baseAvgCost) || 0) + 
+                           this.transactions.filter(t => t.action === 'buy' || t.action === 'sync').reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
+                },
+                get totalCashIn() {
+                    return this.transactions.filter(t => t.action === 'sell' || t.action === 'dividend' || t.action === 'withdraw').reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
+                },
+                get totalDividend() {
+                    return this.transactions.filter(t => t.action === 'dividend').reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
+                },
+                get totalWithdrawn() {
+                    return this.transactions.filter(t => t.action === 'withdraw').reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
+                },
+                get profit() { return (this.marketValueNum + this.totalCashIn - this.totalCashOut).toFixed(0); },
+                get roi() { return this.totalCashOut <= 0 ? null : (((this.marketValueNum + this.totalCashIn - this.totalCashOut) / this.totalCashOut) * 100).toFixed(2); },
+
+                // 動態提領護欄邏輯
+                get targetFireFund() { return (parseFloat(this.targetMonthlyExpense) || 0) * 12 / 0.04; },
+                get fireProgress() { return this.targetFireFund <= 0 ? 0 : Math.min(100, (this.marketValueNum / this.targetFireFund) * 100).toFixed(1); },
+                get currentWithdrawalRate() { 
+                    if (this.marketValueNum <= 0) return 0;
+                    return ((parseFloat(this.targetMonthlyExpense) || 0) * 12) / this.marketValueNum;
+                },
+                get gkStatus() {
+                    let r = this.currentWithdrawalRate;
+                    let progress = parseFloat(this.fireProgress);
+                    
+                    if (progress < 80 || this.marketValueNum === 0) {
+                        return { title: '🌱 資產累積中', desc: '尚未達財務自由目標，不建議開始退休提領。請持續運用定期定額累積本金！', color: 'text-slate-600', bg: 'bg-slate-50', border: 'border-slate-200', recommendedMonthly: (this.marketValueNum * 0.04 / 12).toFixed(0) };
+                    }
+                    if (r > 0.048) {
+                        if (this.currentPrice < this.calc_ma240) {
+                            return { title: '🚨 熊市警報！終極保本', desc: '大盤落入長空且提領率飆破危險值！⚠️ 強烈建議今年「暫停股市提領」，改用現金存款生活！', color: 'text-red-700', bg: 'bg-red-100', border: 'border-red-400', recommendedMonthly: 0 };
+                        }
+                        return { title: '📉 觸發減薪護欄', desc: '提領率飆破 4.8% 危險上限！建議您今年共體時艱，將預算下調 10%。', color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-200', recommendedMonthly: (this.targetMonthlyExpense * 0.9).toFixed(0) };
+                    } else if (r < 0.032) {
+                        return { title: '🎉 觸發加薪護欄', desc: '市場大牛市，提領率極低！資產非常充裕，建議今年犒賞自己，預算上調 10%。', color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-200', recommendedMonthly: (this.targetMonthlyExpense * 1.1).toFixed(0) };
+                    }
+                    return { title: '✅ 護欄安全區間', desc: '提領率落在安全通道內。市場波動正常，請安心維持預算。', color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200', recommendedMonthly: this.targetMonthlyExpense.toFixed(0) };
+                },
+
+                // 綜合評分 (共用)
+                get currentScore() {
+                    let s = 0;
+                    if (this.calc_k > 0 && this.calc_k < 20) s += 20;
+                    if (this.calc_ma240 > 0 && this.currentPrice < this.calc_ma240) s += 30;
+                    if (this.calc_ma120 > 0 && this.currentPrice < this.calc_ma120) s += 30;
+                    if (this.currentAvgCost > 0 && this.currentPrice <= this.currentAvgCost * 0.9) s += 10;
+                    if (this.currentAvgCost > 0 && this.currentPrice <= this.currentAvgCost * 0.8) s += 10;
+                    return Math.min(s, 100); 
+                },
+                get recommendation() {
+                    const s = this.currentScore;
+                    let mult = 0; let text = "維持原定期定額"; let color = "text-emerald-400";
+                    if (s >= 80) { mult = 3.0; text = "重壓區！千載難逢，大舉加碼"; color="text-purple-400"; } 
+                    else if (s >= 60) { mult = 2.0; text = "恐慌超跌！動能指標觸發，買進"; color="text-red-400"; } 
+                    else if (s >= 40) { mult = 1.0; text = "價值浮現！中線趨勢轉弱，值得投入"; color="text-orange-400"; } 
+                    else if (s >= 20) { mult = 0.5; text = "逢低佈局！短線超跌，小額試水溫"; color="text-yellow-400"; }
+                    
+                    let avgAmt = 0;
+                    if (this.investmentPlans.length > 0) {
+                        avgAmt = Math.round(this.investmentPlans.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0) / this.investmentPlans.length);
+                    }
+                    return { text, color, amount: avgAmt * mult };
+                },
+
+                // ====== API 與資料抓取 ======
+                async _fetchYahooPrice(id) {
+                    const yfUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${id}.TW?region=TW&lang=zh-Hant-TW&range=1d&interval=1m&_r=${Math.random()}`;
+                    const proxies = [
+                        'https://api.allorigins.win/raw?url=' + encodeURIComponent(yfUrl),
+                        'https://corsproxy.io/?' + encodeURIComponent(yfUrl)
+                    ];
+                    for (let p of proxies) {
+                        try {
+                            const res = await fetch(p);
+                            if (res.ok) {
+                                const data = await res.json();
+                                if (data?.chart?.result?.[0]?.meta) {
+                                    return {
+                                        current: data.chart.result[0].meta.regularMarketPrice,
+                                        prev: data.chart.result[0].meta.chartPreviousClose || data.chart.result[0].meta.previousClose
+                                    };
+                                }
+                            }
+                        } catch(e) {}
+                    }
+                    return null;
+                },
+
+                async refreshPrice() {
+                    if (this.isFetchingPrice || !this.activeETF) return;
+                    this.isFetchingPrice = true;
+                    const p = await this._fetchYahooPrice(this.activeETF.id);
+                    if (p) {
+                        this.currentPrice = p.current;
+                        this.prevClose = p.prev;
+                        this.realTimePrices[this.activeETF.id] = p.current;
+                    }
+                    this.isFetchingPrice = false;
+                },
+
+                getPriceColorClass() {
+                    if (!this.prevClose || this.currentPrice === this.prevClose) return 'text-slate-800';
+                    return this.currentPrice > this.prevClose ? 'text-red-500' : 'text-green-500';
+                },
+
+                async fetchETFDetailData() {
+                    await this.refreshPrice();
+                    
+                    // 抓歷史資料 (Yahoo) - 簡單抓取過去2年供技術分析
+                    const yfUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${this.activeETF.id}.TW?range=2y&interval=1d`;
+                    const proxy = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(yfUrl);
+                    
+                    try {
+                        const res = await fetch(proxy);
+                        const data = await res.json();
+                        if (data?.chart?.result?.[0]) {
+                            const result = data.chart.result[0];
+                            const timestamps = result.timestamp;
+                            const quotes = result.indicators.quote[0];
+                            let rawData = [];
+                            
+                            for(let i = 0; i < timestamps.length; i++) {
+                                if (quotes.close[i]) {
+                                    rawData.push({
+                                        time: timestamps[i] * 1000,
+                                        open: quotes.open[i], high: quotes.high[i],
+                                        low: quotes.low[i], close: quotes.close[i], volume: quotes.volume[i]
+                                    });
+                                }
+                            }
+
+                            // 0050 特殊拆分處理 (如果您之前有硬編碼，保留)
+                            if (this.activeETF.id === '0050') {
+                                const splitTime = new Date('2025-06-18T00:00:00+08:00').getTime();
+                                rawData = rawData.map(item => {
+                                    if (item.time < splitTime) {
+                                        return { ...item, open: item.open/4, close: item.close/4, high: item.high/4, low: item.low/4 };
+                                    }
+                                    return item;
+                                });
+                            }
+
+                            this.processIndicators(rawData);
+                        }
+                    } catch(e) { console.log("歷史資料抓取失敗"); }
+                },
+
+                processIndicators(data) {
+                    const len = data.length;
+                    if (len === 0) return;
+
+                    let formatData = data.map(d => {
+                        let t = new Date(d.time);
+                        return {
+                            time: `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`,
+                            open: d.open, high: d.high, low: d.low, close: d.close, volume: d.volume
+                        };
+                    });
+                    this.chartData = formatData;
+
+                    // MA240 (大約一年)
+                    if (len >= 240) {
+                        let sum = 0;
+                        for(let i = len - 240; i < len; i++) sum += data[i].close;
+                        this.calc_ma240 = sum / 240;
+                    } else { this.calc_ma240 = 0; }
+
+                    // KDJ (短線)
+                    let k = 50, d = 50;
+                    for (let i = 8; i < len; i++) {
+                        let highest = -Infinity, lowest = Infinity;
+                        for (let j = Math.max(0, i - 8); j <= i; j++) {
+                            if (data[j].high > highest) highest = data[j].high;
+                            if (data[j].low < lowest) lowest = data[j].low;
+                        }
+                        let rsv = highest === lowest ? 50 : ((data[i].close - lowest) / (highest - lowest)) * 100;
+                        k = (2/3) * k + (1/3) * rsv;
+                    }
+                    this.calc_k = k;
+
+                    this.historicalDataLoaded = true;
+                    if (this.showChart && this.chartRendered) {
+                        this.renderChart();
+                    }
+                },
+
+                // ====== 圖表繪製 ======
+                toggleChart() {
+                    this.showChart = !this.showChart;
+                    if (this.showChart) {
+                        setTimeout(() => this.renderChart(), 100);
+                    }
+                },
+                renderChart() {
+                    const container = document.getElementById('lwc-chart');
+                    if (!container) return;
+                    container.innerHTML = '';
+                    
+                    const chart = LightweightCharts.createChart(container, {
+                        width: container.clientWidth, height: 350,
+                        layout: { background: { color: '#ffffff' }, textColor: '#475569' },
+                        grid: { vertLines: { color: '#f1f5f9' }, horzLines: { color: '#f1f5f9' } },
+                        crosshair: { mode: 0 } 
+                    });
+
+                    const candleSeries = chart.addCandlestickSeries({
+                        upColor: '#ef4444', downColor: '#22c55e', borderVisible: false,
+                        wickUpColor: '#ef4444', wickDownColor: '#22c55e'
+                    });
+                    
+                    if (this.chartData.length > 0) {
+                        candleSeries.setData(this.chartData);
+                        chart.timeScale().fitContent();
+                    }
+                    this.chartRendered = true;
+                },
+
+                // ====== 手動交易邏輯 ======
+                addPlan() {
+                    this.investmentPlans.push({ id: Date.now(), day: 15, amount: 5000 });
+                    this.saveLocalETFData();
+                },
+                removePlan(id) {
+                    this.investmentPlans = this.investmentPlans.filter(p => p.id !== id);
+                    this.saveLocalETFData();
+                },
+                executeManualAdd() {
+                    if (this.manualAction === 'dividend') {
+                        if (!this.manualPrice) return; // 這裡 manualPrice 當作總金額輸入
+                        this.transactions.push({
+                            id: Date.now(), date: this.manualDate, action: 'dividend',
+                            amount: this.manualPrice, shares: 0
+                        });
+                    } else if (this.manualAction === 'withdraw') {
+                        this.transactions.push({
+                            id: Date.now(), date: this.manualDate, action: 'withdraw',
+                            amount: this.manualPrice, shares: this.manualShares || 0
+                        });
+                    } else {
+                        if (!this.manualShares || !this.manualPrice) return;
+                        this.transactions.push({
+                            id: Date.now(), date: this.manualDate, action: this.manualAction,
+                            amount: this.manualShares * this.manualPrice, shares: this.manualShares
+                        });
+                    }
+                    this.saveLocalETFData();
+                    this.manualShares = null; this.manualPrice = null;
+                    this.msgBoxText = '交易已成功新增！'; this.showMsgBox = true;
+                },
+                removeTransaction(id) {
+                    this.transactions = this.transactions.filter(t => t.id !== id);
+                    this.saveLocalETFData();
+                },
+
+                // ====== 備份功能 ======
+                exportTotalBackup() {
+                    const dataStr = JSON.stringify(this.appData);
+                    const blob = new Blob([dataStr], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `ETF管家總備份_${new Date().toISOString().split('T')[0]}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    this.msgBoxText = '全系統備份已下載！\n妥善保存此檔案，未來只要上傳即可還原所有標的設定。'; 
+                    this.showMsgBox = true;
+                },
+                importTotalBackup(e) {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                        try {
+                            const data = JSON.parse(ev.target.result);
+                            if (data.etfs && data.portfolios) {
+                                localStorage.setItem('ETF_Manager_Data_V2', JSON.stringify(data));
+                                this.msgBoxText = '系統還原成功！將重新載入頁面。';
+                                this.showMsgBox = true;
+                                setTimeout(() => window.location.reload(), 1500);
+                            } else { throw new Error('Format Error'); }
+                        } catch (err) {
+                            this.msgBoxText = '檔案格式不符，還原失敗。'; this.showMsgBox = true;
+                        }
+                    };
+                    reader.readAsText(file);
+                },
+
+                // UI Utils
+                formatMoney(num) {
+                    if (isNaN(num) || num === null || num === undefined) return '0';
+                    return Number(num).toLocaleString('zh-TW', { maximumFractionDigits: 0 });
+                },
+                closeMsgBox() { this.showMsgBox = false; }
+            }));
+        });
+    </script>
+</body>
+</html>
