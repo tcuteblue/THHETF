@@ -374,14 +374,14 @@
 
                 get totalGlobalProfit() {
                     let total = 0;
-                    for (let code in this.etfs) { total += this.getHomeETFInfo(code).profit; }
+                    for (let code in this.etfs) { total += this.getHomeETFInfo(code).marketValue > 0 ? this.getHomeETFInfo(code).profit : 0; }
                     return total;
                 },
 
                 addNewETF() {
                     let code = this.newETFCode.trim();
                     if(!code) return this.showMsg("請輸入 ETF 代號");
-                    if(this.etfs[code]) return this.showMsg("此 ETF 已經在您的追蹤清單中！");
+                    if(this.etfs[code]) return this.showMsg("此標的已經在您的追蹤清單中！");
                     
                     this.etfs[code] = this.getDefaultETFState();
                     this.saveData();
@@ -937,6 +937,9 @@
             }));
         });
     </script>
+    
+    <!-- ✅ 修復：關鍵的 Alpine.js 核心套件載入代碼 -->
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 </head>
 <body class="bg-background text-slate-800 font-sans antialiased min-h-screen pb-20">
 
