@@ -159,6 +159,7 @@
                 isIOS: false,
                 isStandalone: false,
                 showIOSInstallDialog: false,
+                deferredPrompt: null, // 儲存 PWA 安裝提示
 
                 // 指標開關狀態
                 cond_k: false,        
@@ -208,6 +209,12 @@
                 init() {
                     this.isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
                     this.isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+
+                    // 攔截 PWA 的安裝提示，儲存起來稍後使用
+                    window.addEventListener('beforeinstallprompt', (e) => {
+                        e.preventDefault();
+                        this.deferredPrompt = e;
+                    });
 
                     this.loadData();
                     
@@ -974,8 +981,20 @@
                 formatMoney(num) { return isNaN(num) || num == null ? '0' : Number(num).toLocaleString('zh-TW', { maximumFractionDigits: 0 }); },
                 
                 async installApp() {
-                    if (this.isIOS && !this.isStandalone) { this.showIOSInstallDialog = true; return; }
-                    alert("您的瀏覽器暫不支援或已經安裝過此應用程式。");
+                    if (this.isIOS && !this.isStandalone) { 
+                        this.showIOSInstallDialog = true; 
+                        return; 
+                    }
+                    if (this.deferredPrompt) {
+                        this.deferredPrompt.prompt();
+                        const { outcome } = await this.deferredPrompt.userChoice;
+                        if (outcome === 'accepted') {
+                            this.deferredPrompt = null;
+                        }
+                    } else {
+                        // 若無觸發事件，可能是不支援或已安裝
+                        this.showMsg("目前無法觸發自動安裝 💡\n\n您可能已經安裝過此應用程式，或者請嘗試透過瀏覽器選單中的「加到主畫面」/「安裝應用程式」來手動安裝。");
+                    }
                 }
             }));
         });
@@ -1219,50 +1238,36 @@
                     </div>
                 </div>
 
-                <!-- 數據四大方塊 (恢復 2x2 正方圓角) -->
-                <div class="grid grid-cols-2 gap-4 md:gap-5 mb-6">
-                    
+                <!-- 經典數據四宮格 (還原 0050投資建議排版) -->
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                     <!-- 1. 現有庫存 -->
-                    <div class="bg-white p-5 rounded-3xl border border-slate-100 shadow-[0_8px_20px_rgb(0,0,0,0.03)] hover:shadow-[0_10px_25px_rgb(0,0,0,0.06)] hover:-translate-y-1 transition-all flex flex-col justify-between aspect-square md:aspect-auto">
-                        <div>
-                            <div class="w-8 h-8 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center mb-3 shadow-inner"><i class="fa-solid fa-cubes-stacked text-sm"></i></div>
-                            <div class="text-xs sm:text-sm font-bold text-slate-500 mb-1">現有庫存 (股) <span class="text-[9px] sm:text-[10px] bg-slate-100 px-1 py-0.5 rounded text-slate-400 font-normal">精算</span></div>
-                        </div>
-                        <div class="text-2xl lg:text-3xl font-black text-slate-800 tracking-tight" x-text="currentTotalShares > 0 ? formatMoney(currentTotalShares) : '-'"></div>
+                    <div class="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-center transition-all hover:shadow-md hover:-translate-y-0.5">
+                        <div class="text-xs font-bold text-slate-500 mb-1">現有庫存 (股)</div>
+                        <div class="text-2xl font-black text-slate-800 tracking-tight" x-text="currentTotalShares > 0 ? formatMoney(currentTotalShares) : '-'"></div>
                     </div>
                     
                     <!-- 2. 平均成本 -->
-                    <div class="bg-white p-5 rounded-3xl border border-slate-100 shadow-[0_8px_20px_rgb(0,0,0,0.03)] hover:shadow-[0_10px_25px_rgb(0,0,0,0.06)] hover:-translate-y-1 transition-all flex flex-col justify-between aspect-square md:aspect-auto">
-                        <div>
-                            <div class="w-8 h-8 rounded-full bg-indigo-50 text-indigo-500 flex items-center justify-center mb-3 shadow-inner"><i class="fa-solid fa-scale-balanced text-sm"></i></div>
-                            <div class="text-xs sm:text-sm font-bold text-slate-500 mb-1">平均成本 (元) <span class="text-[9px] sm:text-[10px] bg-slate-100 px-1 py-0.5 rounded text-slate-400 font-normal">精算</span></div>
-                        </div>
-                        <div class="text-2xl lg:text-3xl font-black text-slate-800 tracking-tight" x-text="currentAvgCost > 0 ? currentAvgCost : '-'"></div>
+                    <div class="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-center transition-all hover:shadow-md hover:-translate-y-0.5">
+                        <div class="text-xs font-bold text-slate-500 mb-1">平均成本 (元)</div>
+                        <div class="text-2xl font-black text-slate-800 tracking-tight" x-text="currentAvgCost > 0 ? currentAvgCost : '-'"></div>
                     </div>
                     
                     <!-- 3. 投入本金 & 市值 -->
-                    <div class="bg-white p-5 rounded-3xl border border-slate-100 shadow-[0_8px_20px_rgb(0,0,0,0.03)] hover:shadow-[0_10px_25px_rgb(0,0,0,0.06)] hover:-translate-y-1 transition-all flex flex-col justify-between relative overflow-hidden aspect-square md:aspect-auto">
-                        <div class="absolute right-0 top-0 w-24 h-24 bg-gradient-to-bl from-blue-50 to-transparent rounded-bl-full opacity-50"></div>
-                        <div class="relative z-10 mb-2">
-                            <div class="text-xs sm:text-sm font-bold text-slate-500 mb-1">總投入本金 <span class="text-[9px] sm:text-[10px] bg-slate-100 px-1 py-0.5 rounded text-slate-400 font-normal">精算</span></div>
-                            <div class="text-lg sm:text-xl font-bold text-slate-800 tracking-tight" x-text="currentTotalCost > 0 ? formatMoney(currentTotalCost) : '-'"></div>
+                    <div class="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-center transition-all hover:shadow-md hover:-translate-y-0.5">
+                        <div class="flex justify-between items-center mb-1">
+                            <div class="text-xs font-bold text-slate-500">總投入本金</div>
+                            <div class="text-[10px] font-bold bg-slate-50 text-slate-500 px-1.5 py-0.5 rounded shadow-inner">市值 <span class="text-blue-600 ml-0.5" x-text="marketValueNum > 0 ? formatMoney(marketValueNum) : '-'"></span></div>
                         </div>
-                        <div class="pt-3 border-t border-slate-100 relative z-10">
-                            <div class="text-xs sm:text-sm font-bold text-slate-500 mb-1">持股總市值 <span class="text-[9px] sm:text-[10px] bg-blue-50 text-blue-400 px-1 py-0.5 rounded font-normal">即時</span></div>
-                            <div class="text-2xl lg:text-3xl font-black text-blue-600 tracking-tight" x-text="marketValueNum > 0 ? formatMoney(marketValueNum) : '-'"></div>
-                        </div>
+                        <div class="text-2xl font-black text-slate-800 tracking-tight" x-text="currentTotalCost > 0 ? formatMoney(currentTotalCost) : '-'"></div>
                     </div>
 
                     <!-- 4. 累積損益 -->
-                    <div class="bg-white p-5 rounded-3xl border border-slate-100 shadow-[0_8px_20px_rgb(0,0,0,0.03)] hover:shadow-[0_10px_25px_rgb(0,0,0,0.06)] hover:-translate-y-1 transition-all flex flex-col justify-between aspect-square md:aspect-auto">
-                        <div>
-                            <div class="text-xs sm:text-sm font-bold text-slate-500 mb-1">累積總損益 <span class="text-[9px] sm:text-[10px] bg-slate-100 px-1 py-0.5 rounded text-slate-400 font-normal">含息</span></div>
-                            <div class="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tighter" :class="profit >= 0 ? 'text-red-500' : 'text-green-500'"><span x-text="profit > 0 ? '+' + formatMoney(profit) : formatMoney(profit)"></span></div>
+                    <div class="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-center transition-all hover:shadow-md hover:-translate-y-0.5">
+                        <div class="flex justify-between items-center mb-1">
+                            <div class="text-xs font-bold text-slate-500">累積總損益</div>
+                            <div x-show="roi !== null" class="text-[10px] font-bold px-1.5 py-0.5 rounded shadow-inner" :class="roi >= 0 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'" x-text="roi + '%'"></div>
                         </div>
-                        <div class="text-xs sm:text-sm font-bold flex flex-wrap gap-2 items-center justify-between mt-3 pt-3 border-t border-slate-100" x-show="roi !== null || annualizedROI !== null">
-                            <div x-show="roi !== null" class="bg-slate-50 px-2 py-1.5 rounded-lg shadow-inner"><span class="text-slate-400 font-medium text-[10px]">總報</span> <span :class="roi >= 0 ? 'text-red-500' : 'text-green-500'" x-text="roi + '%'"></span></div>
-                            <div x-show="annualizedROI !== null" class="bg-slate-50 px-2 py-1.5 rounded-lg shadow-inner"><span class="text-slate-400 font-medium text-[10px]">年化</span> <span :class="parseFloat(annualizedROI) >= 0 ? 'text-red-500' : 'text-green-500'" x-text="isNaN(annualizedROI) ? annualizedROI : annualizedROI + '%'"></span></div>
-                        </div>
+                        <div class="text-2xl font-black tracking-tight" :class="profit >= 0 ? 'text-red-500' : 'text-green-500'"><span x-text="profit > 0 ? '+' + formatMoney(profit) : formatMoney(profit)"></span></div>
                     </div>
                 </div>
 
