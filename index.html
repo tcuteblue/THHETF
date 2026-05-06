@@ -1044,8 +1044,8 @@
                     <p class="text-sm font-medium text-slate-500 mt-2">跨 ETF 總資產管理與策略評估</p>
                 </div>
                 <div class="flex gap-2">
-                    <button x-show="!isStandalone" @click="installApp()" class="w-12 h-12 bg-white border border-slate-200 rounded-full shadow-sm text-blue-500 hover:text-blue-700 hover:bg-blue-50 hover:shadow-md hover:-translate-y-1 active:translate-y-0 flex justify-center items-center transition-all" title="安裝 App">
-                        <i class="fa-solid fa-download text-lg"></i>
+                    <button x-show="!isStandalone" @click="installApp()" class="px-4 h-12 bg-white border border-slate-200 rounded-full shadow-sm text-blue-500 font-bold hover:text-blue-700 hover:bg-blue-50 hover:shadow-md hover:-translate-y-1 active:translate-y-0 flex justify-center items-center transition-all" title="安裝 App">
+                        <i class="fa-solid fa-download mr-2 text-lg"></i> 安裝 APP
                     </button>
                     <button @click="fetchHomePrices()" class="w-12 h-12 bg-white border border-slate-200 rounded-full shadow-sm text-slate-400 hover:text-blue-600 hover:shadow-md hover:-translate-y-1 active:translate-y-0 flex justify-center items-center transition-all" :class="{'animate-spin text-blue-500 shadow-inner': isFetchingHome}" title="重新整理報價">
                         <i class="fa-solid fa-rotate-right text-lg"></i>
@@ -1154,21 +1154,45 @@
                             <span x-text="activeETFName"></span>
                         </h1>
                     </div>
-                    <div class="text-left md:text-right bg-slate-50 md:bg-transparent p-3 md:p-0 rounded-xl border md:border-0 border-slate-200 shadow-inner md:shadow-none">
+                    
+                    <!-- 緊湊版價量狀態 header 區塊 -->
+                    <div class="text-left md:text-right bg-slate-50 md:bg-transparent p-3 md:p-0 rounded-xl border md:border-0 border-slate-200 shadow-inner md:shadow-none flex flex-col gap-2">
+                        <!-- 最新市價與更新時間 -->
                         <div class="text-sm text-slate-500 flex items-center md:justify-end gap-1.5 font-medium">
                             最新市價
                             <span x-show="priceUpdateTime" class="text-[11px] bg-white border border-slate-200 text-slate-600 px-2 py-0.5 rounded-md ml-1 font-mono tracking-tight shadow-sm" x-text="priceUpdateTime.includes('失敗') ? priceUpdateTime : '時間 ' + priceUpdateTime" :class="{'text-red-500 border-red-200': priceUpdateTime.includes('失敗')}"></span>
                             <button @click="refreshPrice()" class="p-1.5 bg-white border border-slate-200 rounded-md shadow-sm transition text-slate-500 hover:text-blue-600 hover:shadow"><i class="fa-solid fa-arrows-rotate" :class="{'animate-spin text-blue-500': isFetchingPrice}"></i></button>
                         </div>
-                        <div class="text-3xl font-black flex flex-wrap items-baseline md:justify-end gap-2 mt-1.5 drop-shadow-sm" :class="prevClose > 0 ? ((currentPrice - prevClose) > 0.001 ? 'text-red-500' : ((prevClose - currentPrice) > 0.001 ? 'text-green-500' : 'text-slate-800')) : 'text-slate-800'">
-                            <span x-show="isFetching || isFetchingPrice" class="text-sm text-slate-400"><i class="fa-solid fa-rotate-right animate-spin"></i> 抓取中...</span>
-                            <span x-show="!isFetching && !isFetchingPrice" x-text="currentPrice > 0 ? Number(currentPrice).toFixed(2) : '無法取得'"></span>
-                            <span x-show="!isFetching && !isFetchingPrice && currentPrice > 0" class="text-lg font-bold text-slate-600 ml-1">元</span>
-                            <span x-show="!isFetching && !isFetchingPrice && currentPrice > 0 && prevClose > 0" class="text-sm font-bold ml-2 bg-white/50 px-2 py-1 rounded-lg border flex items-center shadow-sm">
+                        
+                        <!-- 價格區塊 -->
+                        <div class="flex flex-wrap items-center md:justify-end gap-2">
+                            <div class="text-3xl font-black drop-shadow-sm" :class="prevClose > 0 ? ((currentPrice - prevClose) > 0.001 ? 'text-red-500' : ((prevClose - currentPrice) > 0.001 ? 'text-green-500' : 'text-slate-800')) : 'text-slate-800'">
+                                <span x-show="isFetching || isFetchingPrice" class="text-sm text-slate-400"><i class="fa-solid fa-rotate-right animate-spin"></i> 抓取中...</span>
+                                <span x-show="!isFetching && !isFetchingPrice" x-text="currentPrice > 0 ? Number(currentPrice).toFixed(2) : '無法取得'"></span>
+                                <span x-show="!isFetching && !isFetchingPrice && currentPrice > 0" class="text-lg font-bold text-slate-600 ml-0.5">元</span>
+                            </div>
+                            
+                            <div x-show="!isFetching && !isFetchingPrice && currentPrice > 0 && prevClose > 0" class="text-sm font-bold bg-white/50 px-2 py-1.5 rounded-lg border flex items-center shadow-sm" :class="prevClose > 0 ? ((currentPrice - prevClose) > 0.001 ? 'text-red-500' : ((prevClose - currentPrice) > 0.001 ? 'text-green-500' : 'text-slate-800')) : 'text-slate-800'">
                                 <i x-show="Math.abs(currentPrice - prevClose) > 0.001" class="fa-solid mr-1" :class="currentPrice > prevClose ? 'fa-caret-up' : 'fa-caret-down'"></i>
                                 <span x-text="Math.abs(currentPrice - prevClose).toFixed(2)"></span>
                                 <span class="text-xs ml-1 font-medium" x-text="'(' + (((currentPrice - prevClose) / prevClose) * 100).toFixed(2) + '%)'"></span>
-                            </span>
+                            </div>
+                            
+                            <!-- 價格狀態判斷 -->
+                            <div x-show="historicalDataLoaded && priceStatus" class="text-sm font-bold px-2 py-1 rounded-lg border shadow-sm flex items-center gap-1" :class="priceStatus === '🚀' ? 'bg-red-50 text-red-600 border-red-200' : (priceStatus === '📉' ? 'bg-green-50 text-green-600 border-green-200' : 'bg-slate-50 text-slate-600 border-slate-200')">
+                                <span x-text="priceStatus === '🚀' ? '🚀 強勢狂飆' : (priceStatus === '📉' ? '📉 疲軟弱勢' : '⚖️ 盤整和緩')"></span>
+                            </div>
+                        </div>
+
+                        <!-- 數量區塊 -->
+                        <div class="flex flex-wrap items-center md:justify-end gap-2 mt-0.5">
+                            <div class="text-sm font-bold text-slate-600 bg-white/50 px-2 py-1.5 rounded-lg border shadow-sm">
+                                單日成交：<span class="text-base font-black text-slate-800" x-text="currentVolume > 0 ? formatMoney(currentVolume / 1000) + ' 張' : '-'"></span>
+                            </div>
+                            <!-- 數量狀態判斷 -->
+                            <div x-show="historicalDataLoaded && volumeStatus" class="text-sm font-bold px-2 py-1 rounded-lg border shadow-sm flex items-center gap-1" :class="volumeStatus === '🔥' ? 'bg-red-50 text-red-600 border-red-200' : (volumeStatus === '🧊' ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-emerald-50 text-emerald-600 border-emerald-200')">
+                                <span x-text="volumeStatus === '🔥' ? '🔥 爆出大量' : (volumeStatus === '🧊' ? '🧊 呈現萎縮' : '✅ 動能正常')"></span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1192,24 +1216,6 @@
                             </p>
                         </div>
                         <button @click="dismissReminder()" class="text-yellow-400 hover:text-yellow-600 p-2"><i class="fa-solid fa-xmark text-lg"></i></button>
-                    </div>
-                </div>
-
-                <!-- 價量狀態 UI -->
-                <div class="flex flex-col sm:flex-row gap-4 mb-6" x-show="historicalDataLoaded && volumeStatus">
-                    <div class="flex-1 bg-white p-4 rounded-3xl border border-slate-100 shadow-[0_4px_15px_rgb(0,0,0,0.02)] flex items-center gap-4 transition-all">
-                        <div class="w-12 h-12 rounded-full flex items-center justify-center text-lg shadow-inner" :class="volumeStatus === '🔥' ? 'bg-red-50 text-red-500' : (volumeStatus === '🧊' ? 'bg-blue-50 text-blue-500' : 'bg-emerald-50 text-emerald-500')"><i class="fa-solid fa-fire-flame-curved"></i></div>
-                        <div>
-                            <div class="text-xs font-bold text-slate-400 mb-0.5">短線量能</div>
-                            <div class="text-lg font-black text-slate-700" x-text="volumeStatus === '🔥' ? '🔥 爆出大量' : (volumeStatus === '🧊' ? '🧊 呈現萎縮' : '✅ 動能正常')"></div>
-                        </div>
-                    </div>
-                    <div class="flex-1 bg-white p-4 rounded-3xl border border-slate-100 shadow-[0_4px_15px_rgb(0,0,0,0.02)] flex items-center gap-4 transition-all">
-                        <div class="w-12 h-12 rounded-full flex items-center justify-center text-lg shadow-inner" :class="priceStatus === '🚀' ? 'bg-red-50 text-red-500' : (priceStatus === '📉' ? 'bg-green-50 text-green-500' : 'bg-slate-50 text-slate-500')"><i class="fa-solid fa-arrow-trend-up"></i></div>
-                        <div>
-                            <div class="text-xs font-bold text-slate-400 mb-0.5">趨勢力道</div>
-                            <div class="text-lg font-black text-slate-700" x-text="priceStatus === '🚀' ? '🚀 強勢狂飆' : (priceStatus === '📉' ? '📉 疲軟弱勢' : '⚖️ 盤整和緩')"></div>
-                        </div>
                     </div>
                 </div>
 
