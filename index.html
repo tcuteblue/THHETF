@@ -324,18 +324,21 @@
                     try {
                         const data = await this._fetchWithProxy(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols}`);
                         if (data?.quoteResponse?.result) {
+                            let newPrices = { ...this.homePrices }; // Ensure new object reference for Alpine reactivity
                             data.quoteResponse.result.forEach(q => {
                                 let code = q.symbol.split('.')[0];
-                                this.homePrices[code] = q.regularMarketPrice;
+                                newPrices[code] = q.regularMarketPrice;
                             });
+                            this.homePrices = newPrices; 
                         }
                     } catch(e) { console.warn("首頁報價抓取失敗", e); }
                     this.isFetchingHome = false;
                 },
 
-                getHomeETFInfo(code) {
+                // 加入 price 參數確保 Alpine 響應式追蹤
+                getHomeETFInfo(code, currentPrice) {
                     let etf = this.etfs[code];
-                    let price = this.homePrices[code] || 0;
+                    let price = parseFloat(currentPrice) || 0;
                     
                     let shares = parseFloat(etf.baseShares) || 0;
                     let avgCost = parseFloat(etf.baseAvgCost) || 0;
@@ -368,13 +371,19 @@
 
                 get totalNetWorth() {
                     let total = 0;
-                    for (let code in this.etfs) { total += this.getHomeETFInfo(code).marketValue; }
+                    for (let code in this.etfs) { 
+                        let p = this.homePrices[code] || 0;
+                        total += this.getHomeETFInfo(code, p).marketValue; 
+                    }
                     return total;
                 },
 
                 get totalGlobalProfit() {
                     let total = 0;
-                    for (let code in this.etfs) { total += this.getHomeETFInfo(code).marketValue > 0 ? this.getHomeETFInfo(code).profit : 0; }
+                    for (let code in this.etfs) { 
+                        let p = this.homePrices[code] || 0;
+                        total += this.getHomeETFInfo(code, p).marketValue > 0 ? this.getHomeETFInfo(code, p).profit : 0; 
+                    }
                     return total;
                 },
 
@@ -1013,6 +1022,17 @@
                 </div>
             </div>
         </div>
+        
+        <!-- iOS 專屬安裝引導對話框 -->
+        <div x-show="showIOSInstallDialog" class="fixed inset-0 z-[80] flex items-end justify-center bg-slate-900/40 backdrop-blur-sm pb-10 px-4" x-transition x-cloak>
+            <div class="bg-white rounded-3xl w-full max-w-sm p-6 text-center shadow-2xl relative">
+                <button @click="showIOSInstallDialog = false" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark text-xl"></i></button>
+                <div class="w-16 h-16 mx-auto bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center text-3xl mb-4 shadow-inner"><i class="fa-brands fa-apple"></i></div>
+                <h3 class="text-xl font-black text-slate-800 mb-2">安裝至主畫面</h3>
+                <p class="text-sm text-slate-500 mb-6">輕點下方工具列的 <i class="fa-solid fa-arrow-up-from-bracket mx-1 text-blue-500"></i> 分享圖示，然後選擇 <strong>「加入主畫面」</strong>，即可全螢幕體驗！</p>
+                <button @click="showIOSInstallDialog = false" class="w-full py-3.5 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition-all active:translate-y-0">我了解了</button>
+            </div>
+        </div>
 
         <!-- ====================【首頁總覽視圖】==================== -->
         <div x-show="currentView === 'home'" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-2" x-transition:enter-end="opacity-100 translate-y-0">
@@ -1023,9 +1043,14 @@
                     </h1>
                     <p class="text-sm font-medium text-slate-500 mt-2">跨 ETF 總資產管理與策略評估</p>
                 </div>
-                <button @click="fetchHomePrices()" class="w-12 h-12 bg-white border border-slate-200 rounded-full shadow-sm text-slate-400 hover:text-blue-600 hover:shadow-md hover:-translate-y-1 active:translate-y-0 flex justify-center items-center transition-all" :class="{'animate-spin text-blue-500 shadow-inner': isFetchingHome}">
-                    <i class="fa-solid fa-rotate-right text-lg"></i>
-                </button>
+                <div class="flex gap-2">
+                    <button x-show="!isStandalone" @click="installApp()" class="w-12 h-12 bg-white border border-slate-200 rounded-full shadow-sm text-blue-500 hover:text-blue-700 hover:bg-blue-50 hover:shadow-md hover:-translate-y-1 active:translate-y-0 flex justify-center items-center transition-all" title="安裝 App">
+                        <i class="fa-solid fa-download text-lg"></i>
+                    </button>
+                    <button @click="fetchHomePrices()" class="w-12 h-12 bg-white border border-slate-200 rounded-full shadow-sm text-slate-400 hover:text-blue-600 hover:shadow-md hover:-translate-y-1 active:translate-y-0 flex justify-center items-center transition-all" :class="{'animate-spin text-blue-500 shadow-inner': isFetchingHome}" title="重新整理報價">
+                        <i class="fa-solid fa-rotate-right text-lg"></i>
+                    </button>
+                </div>
             </header>
 
             <!-- 總資產立體卡片 -->
@@ -1084,11 +1109,11 @@
                         <div class="grid grid-cols-2 gap-4 bg-slate-50 rounded-xl p-4 shadow-inner border border-slate-100/50">
                             <div>
                                 <div class="text-[11px] text-slate-400 font-bold mb-1">持股市值</div>
-                                <div class="font-black text-slate-700 text-lg tracking-tight" x-text="formatMoney(getHomeETFInfo(code).marketValue)"></div>
+                                <div class="font-black text-slate-700 text-lg tracking-tight" x-text="formatMoney(getHomeETFInfo(code, homePrices[code]).marketValue)"></div>
                             </div>
                             <div>
                                 <div class="text-[11px] text-slate-400 font-bold mb-1">累積損益</div>
-                                <div class="font-black text-lg tracking-tight" :class="getHomeETFInfo(code).profit >= 0 ? 'text-red-500' : 'text-green-500'" x-text="(getHomeETFInfo(code).profit > 0 ? '+' : '') + formatMoney(getHomeETFInfo(code).profit)"></div>
+                                <div class="font-black text-lg tracking-tight" :class="getHomeETFInfo(code, homePrices[code]).profit >= 0 ? 'text-red-500' : 'text-green-500'" x-text="(getHomeETFInfo(code, homePrices[code]).profit > 0 ? '+' : '') + formatMoney(getHomeETFInfo(code, homePrices[code]).profit)"></div>
                             </div>
                         </div>
                     </div>
@@ -1170,39 +1195,67 @@
                     </div>
                 </div>
 
-                <!-- 數據四大方塊 (立體明亮版) -->
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-5 mb-6">
-                    <div class="bg-white p-5 rounded-3xl border border-slate-100 shadow-[0_8px_20px_rgb(0,0,0,0.03)] hover:shadow-[0_10px_25px_rgb(0,0,0,0.06)] hover:-translate-y-1 transition-all">
-                        <div class="w-8 h-8 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center mb-3 shadow-inner"><i class="fa-solid fa-cubes-stacked text-sm"></i></div>
-                        <div class="text-sm font-bold text-slate-500 mb-1">現有庫存 (股) <span class="text-[10px] bg-slate-100 px-1 py-0.5 rounded text-slate-400 font-normal">精算</span></div>
+                <!-- 價量狀態 UI -->
+                <div class="flex flex-col sm:flex-row gap-4 mb-6" x-show="historicalDataLoaded && volumeStatus">
+                    <div class="flex-1 bg-white p-4 rounded-3xl border border-slate-100 shadow-[0_4px_15px_rgb(0,0,0,0.02)] flex items-center gap-4 transition-all">
+                        <div class="w-12 h-12 rounded-full flex items-center justify-center text-lg shadow-inner" :class="volumeStatus === '🔥' ? 'bg-red-50 text-red-500' : (volumeStatus === '🧊' ? 'bg-blue-50 text-blue-500' : 'bg-emerald-50 text-emerald-500')"><i class="fa-solid fa-fire-flame-curved"></i></div>
+                        <div>
+                            <div class="text-xs font-bold text-slate-400 mb-0.5">短線量能</div>
+                            <div class="text-lg font-black text-slate-700" x-text="volumeStatus === '🔥' ? '🔥 爆出大量' : (volumeStatus === '🧊' ? '🧊 呈現萎縮' : '✅ 動能正常')"></div>
+                        </div>
+                    </div>
+                    <div class="flex-1 bg-white p-4 rounded-3xl border border-slate-100 shadow-[0_4px_15px_rgb(0,0,0,0.02)] flex items-center gap-4 transition-all">
+                        <div class="w-12 h-12 rounded-full flex items-center justify-center text-lg shadow-inner" :class="priceStatus === '🚀' ? 'bg-red-50 text-red-500' : (priceStatus === '📉' ? 'bg-green-50 text-green-500' : 'bg-slate-50 text-slate-500')"><i class="fa-solid fa-arrow-trend-up"></i></div>
+                        <div>
+                            <div class="text-xs font-bold text-slate-400 mb-0.5">趨勢力道</div>
+                            <div class="text-lg font-black text-slate-700" x-text="priceStatus === '🚀' ? '🚀 強勢狂飆' : (priceStatus === '📉' ? '📉 疲軟弱勢' : '⚖️ 盤整和緩')"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 數據四大方塊 (恢復 2x2 正方圓角) -->
+                <div class="grid grid-cols-2 gap-4 md:gap-5 mb-6">
+                    
+                    <!-- 1. 現有庫存 -->
+                    <div class="bg-white p-5 rounded-3xl border border-slate-100 shadow-[0_8px_20px_rgb(0,0,0,0.03)] hover:shadow-[0_10px_25px_rgb(0,0,0,0.06)] hover:-translate-y-1 transition-all flex flex-col justify-between aspect-square md:aspect-auto">
+                        <div>
+                            <div class="w-8 h-8 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center mb-3 shadow-inner"><i class="fa-solid fa-cubes-stacked text-sm"></i></div>
+                            <div class="text-xs sm:text-sm font-bold text-slate-500 mb-1">現有庫存 (股) <span class="text-[9px] sm:text-[10px] bg-slate-100 px-1 py-0.5 rounded text-slate-400 font-normal">精算</span></div>
+                        </div>
                         <div class="text-2xl lg:text-3xl font-black text-slate-800 tracking-tight" x-text="currentTotalShares > 0 ? formatMoney(currentTotalShares) : '-'"></div>
                     </div>
-                    <div class="bg-white p-5 rounded-3xl border border-slate-100 shadow-[0_8px_20px_rgb(0,0,0,0.03)] hover:shadow-[0_10px_25px_rgb(0,0,0,0.06)] hover:-translate-y-1 transition-all">
-                        <div class="w-8 h-8 rounded-full bg-indigo-50 text-indigo-500 flex items-center justify-center mb-3 shadow-inner"><i class="fa-solid fa-scale-balanced text-sm"></i></div>
-                        <div class="text-sm font-bold text-slate-500 mb-1">平均成本 (元) <span class="text-[10px] bg-slate-100 px-1 py-0.5 rounded text-slate-400 font-normal">精算</span></div>
+                    
+                    <!-- 2. 平均成本 -->
+                    <div class="bg-white p-5 rounded-3xl border border-slate-100 shadow-[0_8px_20px_rgb(0,0,0,0.03)] hover:shadow-[0_10px_25px_rgb(0,0,0,0.06)] hover:-translate-y-1 transition-all flex flex-col justify-between aspect-square md:aspect-auto">
+                        <div>
+                            <div class="w-8 h-8 rounded-full bg-indigo-50 text-indigo-500 flex items-center justify-center mb-3 shadow-inner"><i class="fa-solid fa-scale-balanced text-sm"></i></div>
+                            <div class="text-xs sm:text-sm font-bold text-slate-500 mb-1">平均成本 (元) <span class="text-[9px] sm:text-[10px] bg-slate-100 px-1 py-0.5 rounded text-slate-400 font-normal">精算</span></div>
+                        </div>
                         <div class="text-2xl lg:text-3xl font-black text-slate-800 tracking-tight" x-text="currentAvgCost > 0 ? currentAvgCost : '-'"></div>
                     </div>
                     
-                    <div class="bg-white p-5 rounded-3xl border border-slate-100 shadow-[0_8px_20px_rgb(0,0,0,0.03)] hover:shadow-[0_10px_25px_rgb(0,0,0,0.06)] hover:-translate-y-1 transition-all col-span-2 md:col-span-1 flex flex-col justify-between relative overflow-hidden">
+                    <!-- 3. 投入本金 & 市值 -->
+                    <div class="bg-white p-5 rounded-3xl border border-slate-100 shadow-[0_8px_20px_rgb(0,0,0,0.03)] hover:shadow-[0_10px_25px_rgb(0,0,0,0.06)] hover:-translate-y-1 transition-all flex flex-col justify-between relative overflow-hidden aspect-square md:aspect-auto">
                         <div class="absolute right-0 top-0 w-24 h-24 bg-gradient-to-bl from-blue-50 to-transparent rounded-bl-full opacity-50"></div>
-                        <div class="relative z-10 mb-4">
-                            <div class="text-sm font-bold text-slate-500 mb-1">總投入本金 <span class="text-[10px] bg-slate-100 px-1 py-0.5 rounded text-slate-400 font-normal">精算</span></div>
-                            <div class="text-xl font-bold text-slate-800 tracking-tight" x-text="currentTotalCost > 0 ? formatMoney(currentTotalCost) : '-'"></div>
+                        <div class="relative z-10 mb-2">
+                            <div class="text-xs sm:text-sm font-bold text-slate-500 mb-1">總投入本金 <span class="text-[9px] sm:text-[10px] bg-slate-100 px-1 py-0.5 rounded text-slate-400 font-normal">精算</span></div>
+                            <div class="text-lg sm:text-xl font-bold text-slate-800 tracking-tight" x-text="currentTotalCost > 0 ? formatMoney(currentTotalCost) : '-'"></div>
                         </div>
                         <div class="pt-3 border-t border-slate-100 relative z-10">
-                            <div class="text-sm font-bold text-slate-500 mb-1">持股總市值 <span class="text-[10px] bg-blue-50 text-blue-400 px-1 py-0.5 rounded font-normal">即時</span></div>
+                            <div class="text-xs sm:text-sm font-bold text-slate-500 mb-1">持股總市值 <span class="text-[9px] sm:text-[10px] bg-blue-50 text-blue-400 px-1 py-0.5 rounded font-normal">即時</span></div>
                             <div class="text-2xl lg:text-3xl font-black text-blue-600 tracking-tight" x-text="marketValueNum > 0 ? formatMoney(marketValueNum) : '-'"></div>
                         </div>
                     </div>
 
-                    <div class="bg-white p-5 rounded-3xl border border-slate-100 shadow-[0_8px_20px_rgb(0,0,0,0.03)] hover:shadow-[0_10px_25px_rgb(0,0,0,0.06)] hover:-translate-y-1 transition-all col-span-2 md:col-span-1 flex flex-col justify-between">
+                    <!-- 4. 累積損益 -->
+                    <div class="bg-white p-5 rounded-3xl border border-slate-100 shadow-[0_8px_20px_rgb(0,0,0,0.03)] hover:shadow-[0_10px_25px_rgb(0,0,0,0.06)] hover:-translate-y-1 transition-all flex flex-col justify-between aspect-square md:aspect-auto">
                         <div>
-                            <div class="text-sm font-bold text-slate-500 mb-1">累積總損益 <span class="text-[10px] bg-slate-100 px-1 py-0.5 rounded text-slate-400 font-normal">含配息</span></div>
-                            <div class="text-3xl lg:text-4xl font-black tracking-tighter" :class="profit >= 0 ? 'text-red-500' : 'text-green-500'"><span x-text="profit > 0 ? '+' + formatMoney(profit) : formatMoney(profit)"></span></div>
+                            <div class="text-xs sm:text-sm font-bold text-slate-500 mb-1">累積總損益 <span class="text-[9px] sm:text-[10px] bg-slate-100 px-1 py-0.5 rounded text-slate-400 font-normal">含息</span></div>
+                            <div class="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tighter" :class="profit >= 0 ? 'text-red-500' : 'text-green-500'"><span x-text="profit > 0 ? '+' + formatMoney(profit) : formatMoney(profit)"></span></div>
                         </div>
-                        <div class="text-sm font-bold flex items-center justify-between mt-4 pt-3 border-t border-slate-100" x-show="roi !== null || annualizedROI !== null">
-                            <div x-show="roi !== null" class="bg-slate-50 px-2 py-1.5 rounded-lg shadow-inner"><span class="text-slate-400 font-medium text-xs">總報</span> <span :class="roi >= 0 ? 'text-red-500' : 'text-green-500'" x-text="roi + '%'"></span></div>
-                            <div x-show="annualizedROI !== null" class="bg-slate-50 px-2 py-1.5 rounded-lg shadow-inner"><span class="text-slate-400 font-medium text-xs">年化</span> <span :class="parseFloat(annualizedROI) >= 0 ? 'text-red-500' : 'text-green-500'" x-text="isNaN(annualizedROI) ? annualizedROI : annualizedROI + '%'"></span></div>
+                        <div class="text-xs sm:text-sm font-bold flex flex-wrap gap-2 items-center justify-between mt-3 pt-3 border-t border-slate-100" x-show="roi !== null || annualizedROI !== null">
+                            <div x-show="roi !== null" class="bg-slate-50 px-2 py-1.5 rounded-lg shadow-inner"><span class="text-slate-400 font-medium text-[10px]">總報</span> <span :class="roi >= 0 ? 'text-red-500' : 'text-green-500'" x-text="roi + '%'"></span></div>
+                            <div x-show="annualizedROI !== null" class="bg-slate-50 px-2 py-1.5 rounded-lg shadow-inner"><span class="text-slate-400 font-medium text-[10px]">年化</span> <span :class="parseFloat(annualizedROI) >= 0 ? 'text-red-500' : 'text-green-500'" x-text="isNaN(annualizedROI) ? annualizedROI : annualizedROI + '%'"></span></div>
                         </div>
                     </div>
                 </div>
@@ -1291,6 +1344,17 @@
                         <section>
                             <h3 class="text-lg font-black text-slate-800 mb-5 flex items-center gap-2"><span class="w-2 h-6 bg-blue-500 rounded-full inline-block"></span> 一、 技術面指標</h3>
                             <div class="space-y-5">
+                                <!-- 價量動能補充 -->
+                                <div class="bg-white p-5 rounded-2xl border border-slate-100 shadow-[0_4px_20px_rgb(0,0,0,0.02)]">
+                                    <h4 class="font-bold text-slate-800 mb-3 flex items-center gap-2 text-sm"><div class="w-8 h-8 rounded-full bg-rose-50 text-rose-500 flex items-center justify-center shadow-inner"><i class="fa-solid fa-fire"></i></div>近期價量動能</h4>
+                                    <div class="p-4 bg-slate-50 rounded-xl border border-slate-100 shadow-inner">
+                                        <div x-show="historicalDataLoaded">
+                                            <p class="text-sm font-medium text-slate-600 mb-2">量能狀態：<span class="font-black text-lg ml-1" x-text="volumeStatus === '🔥' ? '🔥 爆出大量' : (volumeStatus === '🧊' ? '🧊 呈現萎縮' : '✅ 動能正常')"></span></p>
+                                            <p class="text-sm font-medium text-slate-600">價格走勢：<span class="font-black text-lg ml-1" x-text="priceStatus === '🚀' ? '🚀 強勢狂飆' : (priceStatus === '📉' ? '📉 疲軟弱勢' : '⚖️ 盤整和緩')"></span></p>
+                                            <p class="text-xs text-slate-500 mt-3 pt-3 border-t border-slate-200">透過 20 日均量與均價比較，判斷近期是否有大戶推升或散戶拋售的異常波動。</p>
+                                        </div>
+                                    </div>
+                                </div>
                                 <div class="bg-white p-5 rounded-2xl border border-slate-100 shadow-[0_4px_20px_rgb(0,0,0,0.02)]" x-show="isIndicatorSupported('k')">
                                     <h4 class="font-bold text-slate-800 mb-3 flex items-center gap-2 text-sm"><div class="w-8 h-8 rounded-full bg-yellow-50 text-yellow-500 flex items-center justify-center shadow-inner"><i class="fa-solid fa-bolt"></i></div>短線狀態 (KDJ)</h4>
                                     <div class="p-4 bg-slate-50 rounded-xl border border-slate-100 shadow-inner">
