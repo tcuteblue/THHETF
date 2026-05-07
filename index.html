@@ -86,6 +86,10 @@
 
         document.addEventListener('alpine:init', () => {
             Alpine.data('investmentApp', () => ({
+                // 【核心修復點】將全域常數暴露給 Alpine，防止畫面渲染崩潰
+                ETF_CONFIG: ETF_CONFIG,
+                INDICATOR_RULES: INDICATOR_RULES,
+
                 currentView: 'home',
                 activeETF: null,
                 activeTab: 'dashboard', 
@@ -161,6 +165,11 @@
                     this.$watch('transactions', () => this.saveData(), { deep: true });
                     this.$watch('baseRetirementMV', () => this.saveData());
                     this.$watch('swrRate', () => this.saveData());
+                },
+
+                // 【修復】將帶有複雜引號的 HTML 獨立成為函數呼叫
+                showGuardrailsInfo() {
+                    this.showInfo('運作原理與護欄機制', `<p><strong class="text-indigo-600">⭐ 核心概念：護欄機制 (Guardrails)</strong><br>傳統 4% 固定提領在股災時會強迫你在低點賣出大量股票，容易引發危機。動態提領則是設定提領率的上下限（通常為基準的 ±20%，即 3.2% ~ 4.8%）。<br>當股市大漲時，給自己加薪 10%；當股市暴跌時，共體時艱減薪 10%。</p><p><strong class="text-indigo-600">防禦機制 (極度重要)：</strong><br>退休前務必準備 <strong>2~3 年生活費的現金緩衝墊</strong>。當遇到大股災，帳面重挫且提領率飆高時，絕對不要賣股票，改用這筆現金生活。</p>`);
                 },
 
                 scrollToTop() {
@@ -821,7 +830,6 @@
                     this.showMsg('✅ 備份檔已下載！\n建議存入雲端硬碟以利未來還原。');
                 },
                 
-                // 智慧相容舊版備份格式
                 importSystemBackup(event) {
                     const file = event.target.files[0];
                     if (!file) return;
@@ -830,7 +838,6 @@
                         try {
                             let data = JSON.parse(e.target.result);
                             
-                            // 判斷是否為舊版單檔 0050 格式 (根目錄直接包含 baseShares)
                             if (data.baseShares !== undefined || data.transactions !== undefined) {
                                 let upgradedData = {
                                     etfs: {
@@ -851,9 +858,7 @@
                                 };
                                 localStorage.setItem('THH_ETF_Data_V1', JSON.stringify(upgradedData));
                                 this.showMsg('✅ 偵測到舊版 0050 備份檔，已成功為您無縫升級並還原！\n按下確定後將重新載入。', true);
-                            } 
-                            // 判斷是否為新版多檔格式
-                            else if (data && data.etfs) {
+                            } else if (data && data.etfs) {
                                 localStorage.setItem('THH_ETF_Data_V1', JSON.stringify(data));
                                 this.showMsg('✅ 資料已成功還原！\n按下確定後將重新載入。', true);
                             } else {
@@ -1422,7 +1427,7 @@
                                     <h4 class="font-bold text-slate-800 mb-4 flex items-center gap-2 text-lg"><div class="w-10 h-10 rounded-full bg-red-50 text-red-500 flex items-center justify-center shadow-inner"><i class="fa-solid fa-chart-line"></i></div>市場恐慌度 (大盤融資餘額)</h4>
                                     <div class="p-5 bg-slate-50 rounded-xl border border-slate-100 shadow-inner">
                                         <p class="text-base text-slate-700 mb-2 font-medium leading-relaxed"><strong>技術原理：</strong> 觀察散戶的「融資餘額」變化。融資是借錢買股，當股市大跌面臨斷頭追繳時，會引發恐慌性多殺多。</p>
-                                        <p class="text-base text-slate-700 mb-5 font-medium leading-relaxed"><strong>觀察重點：</strong> 當單日融資大幅減少（俗稱散戶斷頭），通常意味著浮籌碼已清洗乾淨，市場恐慌達到極致，底部即將浮現。</p>
+                                        <p class="text-base text-slate-700 mb-5 font-medium leading-relaxed"><strong>觀察重點：</strong> 當單日融資大幅減少（俗稱散戶斷頭），通常意味著浮籌碼已清洗乾淨，市場恐慌達到極致，底部即浮現。</p>
                                         <div class="bg-white px-5 py-4 rounded-xl border border-slate-200 shadow-sm">
                                             <p class="text-base font-bold text-slate-800 mb-2">💡 目前市場狀態：</p>
                                             <p class="text-base font-bold text-slate-500" x-text="marginBalance"></p>
@@ -1458,8 +1463,8 @@
                             <div class="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center text-xl shadow-inner"><i class="fa-solid fa-compass"></i></div>
                             動態提領導航儀
                         </h2>
-                        <!-- 將運作原理按鈕獨立並重疊文字成正方形，避免斷行 -->
-                        <button @click="showInfo('運作原理與護欄機制', '<p><strong class=\'text-indigo-600\'>⭐ 核心概念：護欄機制 (Guardrails)</strong><br>傳統 4% 固定提領在股災時會強迫你在低點賣出大量股票，容易引發危機。動態提領則是設定提領率的上下限（通常為基準的 ±20%，即 3.2% ~ 4.8%）。<br>當股市大漲時，給自己加薪 10%；當股市暴跌時，共體時艱減薪 10%。</p><p><strong class=\'text-indigo-600\'>防禦機制 (極度重要)：</strong><br>退休前務必準備 <strong>2~3 年生活費的現金緩衝墊</strong>。當遇到大股災，帳面重挫且提領率飆高時，絕對不要賣股票，改用這筆現金生活。</p>')" class="w-20 h-16 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 font-bold rounded-xl border border-indigo-200 flex flex-col items-center justify-center text-sm shadow-sm transition-all hover:-translate-y-0.5 flex-shrink-0">
+                        <!-- 運作原理獨立為按鈕呼叫函數，避免引號衝突 -->
+                        <button @click="showGuardrailsInfo()" class="w-20 h-16 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 font-bold rounded-xl border border-indigo-200 flex flex-col items-center justify-center text-sm shadow-sm transition-all hover:-translate-y-0.5 flex-shrink-0">
                             <span>運作</span><span>原理</span>
                         </button>
                     </div>
