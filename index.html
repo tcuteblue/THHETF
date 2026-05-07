@@ -1224,27 +1224,79 @@
                         
                         <div class="p-5 md:p-6 space-y-8 text-slate-700 leading-snug">
                             
-                            <!-- 第一區塊：技術面 -->
+                            <!-- 第一區塊：總體經濟與情緒 -->
                             <section>
-                                <h3 class="text-base font-black text-slate-800 mb-4 flex items-center gap-2"><span class="w-1.5 h-4 bg-blue-500 rounded-full inline-block"></span>一、 技術面指標</h3>
+                                <h3 class="text-base font-black text-slate-800 mb-4 flex items-center gap-2"><span class="w-1.5 h-4 bg-purple-500 rounded-full inline-block"></span>一、 總經與市場情緒</h3>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div class="bg-white p-4 rounded-xl border border-slate-100 shadow-sm" x-show="isIndicatorSupported('blueLight')">
+                                        <h4 class="font-bold text-slate-800 mb-2 flex items-center gap-1.5 text-sm"><i class="fa-solid fa-traffic-light text-blue-500"></i>景氣對策燈號</h4>
+                                        <div class="p-3 bg-slate-50 rounded-lg border border-slate-100 text-sm h-full">
+                                            <p class="text-slate-600 mb-2">國發會景氣燈號若亮藍燈，通常為長線最佳買點 (可於主控台手動切換狀態)。</p>
+                                            <p>狀態：<span class="font-bold" :class="isBlueLight ? 'text-blue-600' : 'text-slate-500'" x-text="isBlueLight ? '🔵 已亮藍燈 (加分)' : '⚪ 非藍燈'"></span></p>
+                                        </div>
+                                    </div>
+                                    <div class="bg-white p-4 rounded-xl border border-slate-100 shadow-sm" x-show="isIndicatorSupported('panic')">
+                                        <h4 class="font-bold text-slate-800 mb-2 flex items-center gap-1.5 text-sm"><i class="fa-solid fa-face-dizzy text-red-500"></i>市場極度恐慌</h4>
+                                        <div class="p-3 bg-slate-50 rounded-lg border border-slate-100 text-sm h-full">
+                                            <p class="text-slate-600 mb-2">當市場出現恐慌拋售，往往是別人恐懼我貪婪的時刻 (可於主控台手動切換狀態)。</p>
+                                            <p>狀態：<span class="font-bold" :class="isPanic ? 'text-red-600' : 'text-slate-500'" x-text="isPanic ? '🔴 極度恐慌 (加分)' : '⚪ 情緒穩定'"></span></p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <!-- 第二區塊：價值面 -->
+                            <section x-show="isIndicatorSupported('pb') || isIndicatorSupported('discount')">
+                                <h3 class="text-base font-black text-slate-800 mb-4 flex items-center gap-2"><span class="w-1.5 h-4 bg-emerald-500 rounded-full inline-block"></span>二、 價值面解析</h3>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div class="bg-white p-4 rounded-xl border border-slate-100 shadow-sm" x-show="isIndicatorSupported('pb')">
+                                        <h4 class="font-bold text-slate-800 mb-2 flex items-center gap-1.5 text-sm"><i class="fa-solid fa-scale-balanced text-emerald-500"></i>大盤淨值比 (PB)</h4>
+                                        <div class="p-3 bg-slate-50 rounded-lg border border-slate-100 text-sm h-full">
+                                            <p class="text-slate-600 mb-2">大盤 PB < 1.6 倍通常被視為長線價值浮現區。</p>
+                                            <p class="mb-1">目前數值：<span class="font-black text-slate-800" x-text="pbRatio"></span></p>
+                                            <p>判定：<span class="font-bold" :class="cond_pb ? 'text-emerald-600' : 'text-slate-500'" x-text="cond_pb ? '🟢 低於 1.6 (加分)' : '⚪ 估值偏高或正常'"></span></p>
+                                        </div>
+                                    </div>
+                                    <div class="bg-white p-4 rounded-xl border border-slate-100 shadow-sm" x-show="isIndicatorSupported('discount')">
+                                        <h4 class="font-bold text-slate-800 mb-2 flex items-center gap-1.5 text-sm"><i class="fa-solid fa-tags text-emerald-600"></i>ETF 折溢價</h4>
+                                        <div class="p-3 bg-slate-50 rounded-lg border border-slate-100 text-sm h-full">
+                                            <p class="text-slate-600 mb-2">折價代表市價低於真實淨值，買入相對划算。</p>
+                                            <p class="mb-1">目前狀態：<span class="font-black text-slate-800" x-text="etfDiscount"></span> <span x-show="isEstimateDiscount" class="text-[10px] text-slate-400 ml-1">(估算值)</span></p>
+                                            <p>判定：<span class="font-bold" :class="cond_discount ? 'text-emerald-600' : 'text-slate-500'" x-text="cond_discount ? '🟢 處於折價 (加分)' : '⚪ 無明顯折價或為溢價'"></span></p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </section>
+                            
+                            <!-- 第三區塊：技術面 -->
+                            <section>
+                                <h3 class="text-base font-black text-slate-800 mb-4 flex items-center gap-2"><span class="w-1.5 h-4 bg-blue-500 rounded-full inline-block"></span>三、 技術面指標</h3>
                                 <div class="space-y-4">
                                     <div class="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
-                                        <h4 class="font-bold text-slate-800 mb-2 flex items-center gap-1.5 text-sm"><i class="fa-solid fa-fire text-rose-500"></i>短線月線乖離與量能</h4>
-                                        <div class="p-3 bg-slate-50 rounded-lg border border-slate-100 text-sm">
-                                            <div x-show="historicalDataLoaded" class="mb-2">
-                                                <p class="text-slate-600 mb-1">目前 20 日均價：<span class="font-black text-slate-800" x-text="calc_ma20.toFixed(2)"></span></p>
-                                                <p class="text-slate-600">系統判定：<span class="font-bold" :class="priceStatus === '🚀' ? 'text-red-600' : (priceStatus === '📉' ? 'text-green-600' : 'text-slate-800')" x-text="priceStatus === '🚀' ? '🚀 短線爆漲 (過熱易拉回)' : (priceStatus === '📉' ? '📉 短線超跌 (醞釀反彈)' : '⚖️ 貼近月線 (健康震盪)')"></span></p>
+                                        <h4 class="font-bold text-slate-800 mb-2 flex items-center gap-1.5 text-sm"><i class="fa-solid fa-fire text-rose-500"></i>短線指標 (K值與月線)</h4>
+                                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-50 rounded-lg border border-slate-100 text-sm">
+                                            <div x-show="historicalDataLoaded">
+                                                <p class="text-slate-600 mb-1">短線 K 值：<span class="font-black text-slate-800" x-text="calc_k.toFixed(2)"></span></p>
+                                                <p>狀態：<span class="font-bold" :class="cond_k ? 'text-blue-600' : 'text-slate-500'" x-text="cond_k ? '🔵 K值超賣 (<20)' : '⚪ 未達超賣區'"></span></p>
+                                            </div>
+                                            <div x-show="historicalDataLoaded">
+                                                <p class="text-slate-600 mb-1">月均線 (MA20)：<span class="font-black text-slate-800" x-text="calc_ma20.toFixed(2)"></span></p>
+                                                <p>位階：<span class="font-bold" :class="priceStatus === '🚀' ? 'text-red-600' : (priceStatus === '📉' ? 'text-green-600' : 'text-slate-800')" x-text="priceStatus === '🚀' ? '🚀 短線爆漲 (過熱易拉回)' : (priceStatus === '📉' ? '📉 短線超跌 (醞釀反彈)' : '⚖️ 貼近月線 (健康震盪)')"></span></p>
                                             </div>
                                         </div>
                                     </div>
                                     
                                     <div class="bg-white p-4 rounded-xl border border-slate-100 shadow-sm" x-show="isIndicatorSupported('ma240')">
-                                        <h4 class="font-bold text-slate-800 mb-2 flex items-center gap-1.5 text-sm"><i class="fa-solid fa-chart-line text-blue-500"></i>中線趨勢 (MA240 年線)</h4>
+                                        <h4 class="font-bold text-slate-800 mb-2 flex items-center gap-1.5 text-sm"><i class="fa-solid fa-chart-line text-blue-500"></i>中長線趨勢 (MA240 / MA2400)</h4>
                                         <div class="p-3 bg-slate-50 rounded-lg border border-slate-100 text-sm">
-                                            <p class="text-slate-600 mb-1">年線代表過去一年的平均成本，跌破通常意味著長線極佳佈局點。</p>
-                                            <div x-show="historicalDataLoaded && calc_ma240 > 0" class="mt-2 pt-2 border-t border-slate-200">
-                                                <p class="font-medium" :class="currentPrice < calc_ma240 ? 'text-green-600' : 'text-slate-600'">
-                                                    年線：<span class="font-black" x-text="calc_ma240.toFixed(2)"></span>。<span x-show="currentPrice < calc_ma240" class="font-bold ml-1">目前跌破年線，適合加碼。</span><span x-show="currentPrice >= calc_ma240" class="ml-1">趨勢健康，未跌破。</span>
+                                            <div x-show="historicalDataLoaded" class="space-y-2">
+                                                <p class="flex justify-between items-center border-b border-slate-200 pb-2">
+                                                    <span class="text-slate-600">年線 (MA240)：<span class="font-black text-slate-800 ml-1" x-text="calc_ma240.toFixed(2)"></span></span>
+                                                    <span class="font-bold" :class="cond_ma240 ? 'text-blue-600' : 'text-slate-500'" x-text="cond_ma240 ? '🔵 跌破年線' : '⚪ 站穩年線'"></span>
+                                                </p>
+                                                <p class="flex justify-between items-center pt-1" x-show="isIndicatorSupported('ma2400')">
+                                                    <span class="text-slate-600">十年線 (MA2400)：<span class="font-black text-slate-800 ml-1" x-text="calc_ma2400 !== null ? calc_ma2400.toFixed(2) : '資料不足'"></span></span>
+                                                    <span x-show="calc_ma2400 !== null" class="font-bold" :class="cond_ma2400 ? 'text-purple-600' : 'text-slate-500'" x-text="cond_ma2400 ? '🟣 跌破十年線 (罕見)' : '⚪ 未跌破'"></span>
                                                 </p>
                                             </div>
                                         </div>
@@ -1252,11 +1304,33 @@
                                 </div>
                             </section>
 
-                            <!-- 第二區塊：動態提領 (全新邏輯) -->
+                            <!-- 第四區塊：庫存面 -->
+                            <section x-show="isIndicatorSupported('cost90') || isIndicatorSupported('cost80')">
+                                <h3 class="text-base font-black text-slate-800 mb-4 flex items-center gap-2"><span class="w-1.5 h-4 bg-orange-500 rounded-full inline-block"></span>四、 個人庫存狀態</h3>
+                                <div class="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+                                    <h4 class="font-bold text-slate-800 mb-2 flex items-center gap-1.5 text-sm"><i class="fa-solid fa-box-open text-orange-500"></i>市價與個人均價乖離</h4>
+                                    <div class="p-3 bg-slate-50 rounded-lg border border-slate-100 text-sm">
+                                        <p class="text-slate-600 mb-2">當市價跌破您的個人持股均價達一定比例，是啟動金字塔加碼的好時機。</p>
+                                        <p class="mb-1">您的持股均價：<span class="font-black text-slate-800" x-text="currentAvgCost > 0 ? currentAvgCost : '無庫存資料'"></span></p>
+                                        <div class="mt-2 pt-2 border-t border-slate-200 flex flex-col gap-1" x-show="currentAvgCost > 0">
+                                            <p class="flex justify-between items-center" x-show="isIndicatorSupported('cost90')">
+                                                <span class="text-slate-600">低於均價 10% (<span x-text="(currentAvgCost * 0.9).toFixed(2)"></span>)</span>
+                                                <span class="font-bold" :class="cond_cost90 ? 'text-orange-600' : 'text-slate-400'" x-text="cond_cost90 ? '🟠 條件達成' : '⚪ 未達成'"></span>
+                                            </p>
+                                            <p class="flex justify-between items-center" x-show="isIndicatorSupported('cost80')">
+                                                <span class="text-slate-600">低於均價 20% (<span x-text="(currentAvgCost * 0.8).toFixed(2)"></span>)</span>
+                                                <span class="font-bold" :class="cond_cost80 ? 'text-orange-600' : 'text-slate-400'" x-text="cond_cost80 ? '🟠 條件達成' : '⚪ 未達成'"></span>
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <!-- 第五區塊：動態提領 (全新邏輯) -->
                             <section>
                                 <h3 class="text-base font-black text-slate-800 mb-4 flex items-center gap-2">
                                     <span class="w-1.5 h-4 bg-indigo-500 rounded-full inline-block"></span> 
-                                    二、 Guyton-Klinger 動態提領護欄
+                                    五、 Guyton-Klinger 動態提領護欄
                                 </h3>
                                 <div class="bg-gradient-to-br from-indigo-50 to-white p-5 rounded-2xl border border-indigo-100 shadow-sm">
                                     <div class="flex justify-between items-center mb-3">
