@@ -1611,25 +1611,26 @@
                                     <span x-show="!isFullscreenHistory" class="w-6 h-6 rounded bg-slate-200 text-slate-600 flex items-center justify-center text-sm">4</span> 
                                     歷史明細編輯器
                                 </span>
-                                <div class="flex items-center gap-2 sm:gap-3">
-                                    <span class="text-sm font-bold text-slate-400 bg-white px-3 py-1.5 rounded shadow-sm border" x-text="'共 ' + transactions.length + ' 筆'"></span>
-                                    <!-- 全螢幕按鈕 -->
-                                    <button @click="isFullscreenHistory = !isFullscreenHistory; $nextTick(() => { const list = document.getElementById('txnList'); if(list) list.scrollTop = list.scrollHeight; }); if(!isFullscreenHistory) { window.scrollTo({top:0, behavior: 'smooth'}); }" class="px-3 py-1.5 bg-slate-800 text-white text-sm font-bold rounded-lg shadow-sm hover:bg-slate-700 transition flex items-center gap-1.5">
-                                        <i class="fa-solid" :class="isFullscreenHistory ? 'fa-compress' : 'fa-expand'"></i> 
-                                        <span x-text="isFullscreenHistory ? '結束全螢幕' : '全螢幕顯示'"></span>
-                                    </button>
-                                </div>
+                                <span class="text-sm font-bold text-slate-400 bg-white px-3 py-1.5 rounded shadow-sm border" x-text="'共 ' + transactions.length + ' 筆'"></span>
                             </h3>
 
                             <p x-show="!isFullscreenHistory" class="text-sm font-bold text-blue-600 mb-4 bg-blue-50 p-3 rounded-xl border border-blue-100"><i class="fa-solid fa-circle-info mr-1"></i>💡 為什麼需要這麼麻煩地填入交易明細？這是為了精確計算您的「年化報酬率」，將每次投入的時間價值考慮進去，獲得最真實的投資成效評估。</p>
 
-                            <div class="flex flex-col sm:flex-row gap-3 mb-5 shrink-0">
+                            <div class="flex flex-col sm:flex-row gap-3 mb-4 shrink-0">
                                 <button @click="downloadCSVTemplate()" class="flex-1 py-3 text-sm font-bold text-blue-600 hover:bg-blue-50 bg-white border border-blue-200 rounded-xl shadow-sm transition"><i class="fa-solid fa-download mr-1"></i> 下載 CSV 範例檔</button>
                                 <button @click="exportTransactionsToCSV()" class="flex-1 py-3 text-sm font-bold text-purple-600 hover:bg-purple-50 bg-white border border-purple-200 rounded-xl shadow-sm transition"><i class="fa-solid fa-file-export mr-1"></i> 匯出明細</button>
                                 <div class="flex-1 relative">
                                     <input type="file" accept=".csv" id="csvUpload" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" @change="handleCSVUpload($event)">
                                     <label for="csvUpload" class="flex items-center justify-center w-full h-full py-3 text-sm font-bold text-emerald-600 hover:bg-emerald-50 bg-white border border-emerald-200 rounded-xl shadow-sm transition cursor-pointer"><i class="fa-solid fa-upload mr-1"></i> 智慧匯入 CSV</label>
                                 </div>
+                            </div>
+                            
+                            <div class="flex justify-end mb-2 shrink-0">
+                                <!-- 全螢幕按鈕移至交易明細清單的右上角 -->
+                                <button @click="isFullscreenHistory = !isFullscreenHistory; $nextTick(() => { const list = document.getElementById('txnList'); if(list) list.scrollTop = list.scrollHeight; }); if(!isFullscreenHistory) { window.scrollTo({top:0, behavior: 'smooth'}); }" class="px-3 py-1.5 bg-slate-800 text-white text-sm font-bold rounded-lg shadow-sm hover:bg-slate-700 transition flex items-center gap-1.5">
+                                    <i class="fa-solid" :class="isFullscreenHistory ? 'fa-compress' : 'fa-expand'"></i> 
+                                    <span x-text="isFullscreenHistory ? '結束全螢幕' : '全螢幕顯示'"></span>
+                                </button>
                             </div>
                             
                             <!-- 明細列表 -->
