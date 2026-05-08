@@ -971,10 +971,10 @@
                     </div>
                     
                     <div class="w-full lg:w-auto flex flex-col gap-3">
-                        <div class="text-sm sm:text-base text-slate-600 flex items-center lg:justify-end gap-1.5 sm:gap-3 font-bold whitespace-nowrap overflow-x-auto no-scrollbar pr-2 shrink-0">
+                        <div class="text-base sm:text-lg text-slate-600 flex items-center lg:justify-end gap-2 sm:gap-3 font-bold whitespace-nowrap overflow-x-auto no-scrollbar pr-2 shrink-0">
                             <span>最新市價</span>
-                            <span x-show="priceUpdateTime" class="text-[11px] sm:text-sm bg-white border border-slate-200 text-slate-600 px-2 py-1 rounded-md font-mono tracking-tighter sm:tracking-tight shadow-sm shrink-0" x-text="priceUpdateTime.includes('失敗') ? priceUpdateTime : '取得時間 ' + priceUpdateTime" :class="{'text-red-500 border-red-200': priceUpdateTime.includes('失敗')}"></span>
-                            <button @click="refreshPrice()" class="px-2 sm:px-3 py-1 sm:py-1.5 bg-white border border-slate-200 rounded-md shadow-sm transition text-blue-600 font-bold text-xs sm:text-sm hover:text-blue-700 hover:bg-blue-50 flex items-center gap-1 shrink-0"><i class="fa-solid fa-arrows-rotate" :class="{'animate-spin': isFetchingPrice}"></i>重新取得</button>
+                            <span x-show="priceUpdateTime" class="text-sm sm:text-base bg-white border border-slate-200 text-slate-600 px-2.5 py-1 rounded-md font-mono tracking-tight shadow-sm shrink-0" x-text="priceUpdateTime.includes('失敗') ? priceUpdateTime : '取得時間 ' + priceUpdateTime" :class="{'text-red-500 border-red-200': priceUpdateTime.includes('失敗')}"></span>
+                            <button @click="refreshPrice()" class="px-3 py-1.5 bg-white border border-slate-200 rounded-md shadow-sm transition text-blue-600 font-bold text-sm sm:text-base hover:text-blue-700 hover:bg-blue-50 flex items-center gap-1.5 shrink-0"><i class="fa-solid fa-arrows-rotate" :class="{'animate-spin': isFetchingPrice}"></i>重新取得</button>
                         </div>
                         
                         <div class="flex items-center lg:justify-end gap-3 w-full">
