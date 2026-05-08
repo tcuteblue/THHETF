@@ -11,14 +11,13 @@
     <meta name="apple-mobile-web-app-title" content="ETF 存股管家">
     <link rel="apple-touch-icon" href="./icon.png">
     
-    <!-- PWA Manifest -->
-    <link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22ETF%E5%AD%98%E8%82%A1%E7%AE%A1%E5%AE%B6%22%2C%22short_name%22%3A%22ETF%E5%AD%98%E8%82%A1%E7%AE%A1%E5%AE%B6%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23f8fafc%22%2C%22theme_color%22%3A%22%231e3a8a%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22.%2Ficon.png%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%2C%7B%22src%22%3A%22.%2Ficon.png%22%2C%22sizes%22%3A%22512x512%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
+    <!-- PWA Manifest (已更新短名與全名，加入空格) -->
+    <link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22ETF%20%E5%AD%98%E8%82%A1%E7%AE%A1%E5%AE%B6%22%2C%22short_name%22%3A%22ETF%20%E5%AD%98%E8%82%A1%E7%AE%A1%E5%AE%B6%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23f8fafc%22%2C%22theme_color%22%3A%22%231e3a8a%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22.%2Ficon.png%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%2C%7B%22src%22%3A%22.%2Ficon.png%22%2C%22sizes%22%3A%22512x512%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 
     <!-- Tailwind -->
     <script>
-        window.tailwind = {
-            config: { theme: { extend: { colors: { primary: '#1e3a8a', secondary: '#3b82f6', background: '#f0f5fa' } } } }
-        };
+        window.tailwind = window.tailwind || {};
+        window.tailwind.config = { theme: { extend: { colors: { primary: '#1e3a8a', secondary: '#3b82f6', background: '#f0f5fa' } } } };
     </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -117,6 +116,7 @@
                     
                     window.addEventListener('scroll', () => { this.isScrolled = window.scrollY > 80; });
 
+                    // History API 攔截返回鍵
                     window.addEventListener('popstate', (e) => {
                         if (this.currentView === 'detail') {
                             this.saveData(false);
@@ -128,19 +128,6 @@
 
                     this.loadData();
                     this.checkGlobalReminders();
-
-                    this.$watch('baseShares', () => this.saveData(false));
-                    this.$watch('baseAvgCost', () => {
-                        this.saveData(false);
-                        if (this.currentAvgCost > 0 && this.currentPrice > 0) { this.cond_cost90 = this.currentPrice <= this.currentAvgCost * 0.9; this.cond_cost80 = this.currentPrice <= this.currentAvgCost * 0.8; }
-                    });
-                    this.$watch('startDate', () => this.saveData(false));
-                    this.$watch('isBlueLight', () => this.saveData(false));
-                    this.$watch('isPanic', () => this.saveData(false));
-                    this.$watch('investmentPlans', () => this.saveData(false), { deep: true });
-                    this.$watch('transactions', () => this.saveData(false), { deep: true });
-                    this.$watch('baseRetirementMV', () => this.saveData(false));
-                    this.$watch('swrRate', () => this.saveData(false));
                 },
 
                 showGuardrailsInfo() {
@@ -255,7 +242,7 @@
                     if(!code) return this.showMsg("請輸入 ETF 代號");
                     if(this.etfs[code]) return this.showMsg("此標的已經在您的追蹤清單中！");
                     this.etfs[code] = this.getDefaultETFState();
-                    this.saveData(false); this.newETFCode = ''; this.showAddETFModal = false; this.fetchHomePrices();
+                    this.saveData(true); this.newETFCode = ''; this.showAddETFModal = false; this.fetchHomePrices();
                     this.showMsg(`已成功新增 ${code} 至存股清單！`);
                 },
 
@@ -505,7 +492,7 @@
                         currDate.setDate(currDate.getDate() + 1);
                     }
                     if (logs.length > 0) { this.newLogs = logs; this.showLogs = true; }
-                    this.lastCheckDate = new Date().getTime(); this.saveData(false);
+                    this.lastCheckDate = new Date().getTime(); this.saveData(false); // Do not trigger download for auto-deducts to prevent silent popups
                 },
 
                 toggleChart() {
@@ -559,6 +546,20 @@
                     document.body.appendChild(link); link.click(); document.body.removeChild(link);
                 },
 
+                exportTransactionsToCSV() {
+                    if (!this.transactions || this.transactions.length === 0) return this.showMsg("目前沒有歷史明細可供匯出！");
+                    let csvContent = "\ufeff日期,類型(填:買入/賣出/提領/配息/調額),單價,股數,總金額\n";
+                    let typeMap = { 'buy': '買入', 'sell': '賣出', 'withdraw': '提領', 'dividend': '配息', 'sync': '調額' };
+                    let sortedTxns = [...this.transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
+                    sortedTxns.forEach(t => {
+                        let typeStr = typeMap[t.action] || t.action;
+                        csvContent += `${t.date},${typeStr},${t.price||0},${t.shares||0},${t.amount||0}\n`;
+                    });
+                    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                    const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `ETF存股管家_${this.activeETF}_歷史明細.csv`;
+                    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+                },
+
                 handleCSVUpload(event) {
                     const file = event.target.files[0];
                     if (!file) return;
@@ -595,7 +596,7 @@
                 },
 
                 addPlan() { this.investmentPlans.push({ id: Date.now(), day: 15, amount: 10000 }); },
-                removePlan(id) { this.investmentPlans = this.investmentPlans.filter(p => p.id !== id); this.saveData(false); },
+                removePlan(id) { this.investmentPlans = this.investmentPlans.filter(p => p.id !== id); this.saveData(true); },
                 
                 executeManualAdd() {
                     if (this.manualAction === 'dividend') {
@@ -697,6 +698,7 @@
 
     <div x-data="investmentApp" x-cloak class="max-w-4xl mx-auto px-4 sm:px-6 pt-6 relative">
         
+        <!-- Messages & Modals -->
         <div x-show="showMsgBox" class="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" x-transition x-cloak>
             <div class="glass-card rounded-3xl w-full max-w-sm p-6 text-center shadow-2xl transform transition-all scale-100">
                 <div class="text-lg font-bold text-slate-800 mb-6 whitespace-pre-line" x-text="msgBoxText"></div>
@@ -778,13 +780,8 @@
             </div>
         </div>
 
-        <!-- ====================【首頁總覽視圖】==================== -->
         <div x-show="currentView === 'home'" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-2" x-transition:enter-end="opacity-100 translate-y-0">
             
-            <div x-show="globalSettings.lastBackupTime" class="w-full mb-4 text-base sm:text-lg font-bold text-slate-500 bg-white px-4 py-3 rounded-xl border border-slate-200 shadow-sm flex items-center gap-2">
-                <i class="fa-solid fa-cloud-check text-emerald-500"></i>最後備份：<span x-text="globalSettings.lastBackupTime"></span>
-            </div>
-
             <header class="mb-8 relative flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                     <h1 class="text-3xl sm:text-4xl font-black text-blue-900 flex items-center gap-2 tracking-tight">
@@ -792,13 +789,18 @@
                     </h1>
                     <p class="text-base font-medium text-slate-500 mt-2">跨 ETF 總資產管理與策略評估</p>
                 </div>
-                <div x-show="!isStandalone && !globalSettings.hideInstallBtn" class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto items-end sm:items-center">
-                    <button @click="installApp()" class="w-full sm:w-auto px-4 py-2 h-10 bg-white border border-slate-200 rounded-xl shadow-sm text-blue-500 font-bold text-base hover:text-blue-700 hover:bg-blue-50 hover:-translate-y-1 transition-all flex justify-center items-center">
-                        <i class="fa-solid fa-download mr-2"></i> 安裝 APP
-                    </button>
-                    <button @click="globalSettings.hideInstallBtn = true; saveData(false);" class="w-10 h-10 bg-slate-100 text-slate-400 hover:bg-slate-200 hover:text-slate-600 rounded-xl flex items-center justify-center transition-all shadow-sm shrink-0">
-                        <i class="fa-solid fa-xmark"></i>
-                    </button>
+                <div class="flex flex-col gap-2 w-full sm:w-auto items-end">
+                    <div x-show="!isStandalone && !globalSettings.hideInstallBtn" class="flex flex-row gap-2 w-full sm:w-auto items-center">
+                        <button @click="installApp()" class="w-full sm:w-auto px-4 py-2 h-10 bg-white border border-slate-200 rounded-xl shadow-sm text-blue-500 font-bold text-base hover:text-blue-700 hover:bg-blue-50 hover:-translate-y-1 transition-all flex justify-center items-center">
+                            <i class="fa-solid fa-download mr-2"></i> 安裝 APP
+                        </button>
+                        <button @click="globalSettings.hideInstallBtn = true; saveData(false);" class="w-10 h-10 bg-slate-100 text-slate-400 hover:bg-slate-200 hover:text-slate-600 rounded-xl flex items-center justify-center transition-all shadow-sm shrink-0">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                    <div x-show="globalSettings.lastBackupTime" class="w-full text-base sm:text-lg font-bold text-slate-500 bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm flex items-center gap-2">
+                        <i class="fa-solid fa-cloud-check text-emerald-500"></i>最後備份：<span x-text="globalSettings.lastBackupTime"></span>
+                    </div>
                 </div>
             </header>
 
@@ -816,7 +818,7 @@
                     <div class="flex flex-wrap items-center gap-8 bg-white/10 backdrop-blur-md p-4 rounded-2xl border border-white/10 inline-flex">
                         <div>
                             <div class="text-sm text-blue-100 mb-1 font-medium">累積總損益 (元)</div>
-                            <div class="text-3xl font-bold tracking-tight drop-shadow-sm" :class="totalGlobalProfit >= 0 ? 'text-red-300' : 'text-green-300'" x-text="(totalGlobalProfit > 0 ? '+' : '') + formatMoney(totalGlobalProfit)"></div>
+                            <div class="text-3xl font-bold tracking-tight drop-shadow-sm" :class="totalGlobalProfit >= 0 ? 'text-red-300' : 'text-green-300'" x-text="(totalGlobalProfit > 0 ? '+ ' : (totalGlobalProfit < 0 ? '- ' : '')) + formatMoney(Math.abs(totalGlobalProfit))"></div>
                         </div>
                         <div class="w-px h-12 bg-white/20"></div>
                         <div>
@@ -865,7 +867,7 @@
                             </div>
                             <div>
                                 <div class="text-sm text-slate-500 font-bold mb-1">累積損益 (元)</div>
-                                <div class="font-black text-2xl tracking-tight" :class="getHomeETFInfo(code, homePrices[code]).profit >= 0 ? 'text-red-500' : 'text-green-500'" x-text="(getHomeETFInfo(code, homePrices[code]).profit > 0 ? '+' : '') + formatMoney(getHomeETFInfo(code, homePrices[code]).profit)"></div>
+                                <div class="font-black text-2xl tracking-tight" :class="getHomeETFInfo(code, homePrices[code]).profit >= 0 ? 'text-red-500' : 'text-green-500'" x-text="(getHomeETFInfo(code, homePrices[code]).profit > 0 ? '+ ' : (getHomeETFInfo(code, homePrices[code]).profit < 0 ? '- ' : '')) + formatMoney(Math.abs(getHomeETFInfo(code, homePrices[code]).profit))"></div>
                             </div>
                         </div>
                     </div>
@@ -888,7 +890,6 @@
             </div>
         </div>
 
-        <!-- ====================【詳細視圖 (Detail View)】==================== -->
         <div x-show="currentView === 'detail'" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-2" x-transition:enter-end="opacity-100 translate-y-0" x-cloak>
             
             <div class="fixed top-0 left-0 right-0 z-[100] bg-white/95 backdrop-blur-xl border-b border-slate-200 shadow-sm transform transition-transform duration-300 ease-in-out" 
@@ -913,14 +914,14 @@
             </div>
 
             <header class="mb-6 pt-2">
+                <div x-show="globalSettings.lastBackupTime" class="w-full mb-6 text-base sm:text-lg font-bold text-slate-500 bg-white px-4 py-3 rounded-xl border border-slate-200 shadow-sm flex items-center justify-start gap-2">
+                    <i class="fa-solid fa-cloud-check text-emerald-500"></i>最後備份：<span x-text="globalSettings.lastBackupTime"></span>
+                </div>
+
                 <div class="flex justify-between items-center mb-4">
                     <button @click="goHome()" class="text-slate-500 hover:text-blue-600 font-bold text-sm inline-flex items-center gap-1.5 transition bg-slate-50 hover:bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm hover:shadow hover:-translate-y-0.5">
                         <i class="fa-solid fa-arrow-left"></i> 返回總覽
                     </button>
-                </div>
-                
-                <div x-show="globalSettings.lastBackupTime" class="w-full mb-6 text-base sm:text-lg font-bold text-slate-500 bg-white px-4 py-3 rounded-xl border border-slate-200 shadow-sm flex items-center gap-2">
-                    <i class="fa-solid fa-cloud-check text-emerald-500"></i>最後備份：<span x-text="globalSettings.lastBackupTime"></span>
                 </div>
 
                 <div class="flex flex-col lg:flex-row lg:justify-between lg:items-end gap-4 mb-6">
@@ -932,7 +933,7 @@
                     </div>
                     
                     <div class="w-full lg:w-auto flex flex-col gap-3">
-                        <div class="text-sm sm:text-base text-slate-600 flex items-center lg:justify-end gap-1.5 sm:gap-3 font-bold whitespace-nowrap overflow-x-auto no-scrollbar">
+                        <div class="text-sm sm:text-base text-slate-600 flex items-center lg:justify-end gap-1.5 sm:gap-3 font-bold whitespace-nowrap overflow-x-auto no-scrollbar pr-2 shrink-0">
                             <span>最新市價</span>
                             <span x-show="priceUpdateTime" class="text-[11px] sm:text-sm bg-white border border-slate-200 text-slate-600 px-2 py-1 rounded-md font-mono tracking-tighter sm:tracking-tight shadow-sm shrink-0" x-text="priceUpdateTime.includes('失敗') ? priceUpdateTime : '取得時間 ' + priceUpdateTime" :class="{'text-red-500 border-red-200': priceUpdateTime.includes('失敗')}"></span>
                             <button @click="refreshPrice()" class="px-2 sm:px-3 py-1 sm:py-1.5 bg-white border border-slate-200 rounded-md shadow-sm transition text-blue-600 font-bold text-xs sm:text-sm hover:text-blue-700 hover:bg-blue-50 flex items-center gap-1 shrink-0"><i class="fa-solid fa-arrows-rotate" :class="{'animate-spin': isFetchingPrice}"></i>重新取得</button>
@@ -1005,16 +1006,16 @@
                     <div class="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col hover:-translate-y-0.5 transition-all">
                         <div class="p-3 sm:p-4 flex-1 flex flex-col justify-center border-b border-slate-100">
                             <div class="text-base sm:text-lg font-bold text-slate-500 mb-1">累積總損益 (元)</div>
-                            <div class="text-3xl sm:text-4xl font-black tracking-tight" :class="profit >= 0 ? 'text-red-500' : 'text-green-500'" x-text="profit > 0 ? '+' + formatMoney(profit) : formatMoney(profit)"></div>
+                            <div class="text-3xl sm:text-4xl font-black tracking-tight" :class="profit >= 0 ? 'text-red-500' : 'text-green-500'" x-text="profit > 0 ? '+ ' + formatMoney(profit) : (profit < 0 ? '- ' + formatMoney(Math.abs(profit)) : '0')"></div>
                         </div>
                         <div class="p-3 sm:p-4 flex-1 grid grid-cols-2 bg-slate-50/50 rounded-b-2xl items-center justify-center divide-x divide-slate-200">
                             <div class="flex flex-col items-center justify-center text-center px-1">
-                                <span class="font-bold text-slate-500 text-[11px] sm:text-sm mb-0.5 whitespace-nowrap">總報酬率</span>
-                                <span class="text-lg sm:text-2xl font-black tracking-tighter" :class="roi >= 0 ? 'text-red-600' : 'text-green-600'" x-text="roi !== null ? (roi > 0 ? '+' : '') + roi + '%' : '-'"></span>
+                                <span class="font-bold text-slate-500 text-sm mb-0.5 whitespace-nowrap">總報酬率</span>
+                                <span class="text-lg sm:text-2xl font-black tracking-tighter" :class="roi >= 0 ? 'text-red-600' : 'text-green-600'" x-text="roi !== null ? (roi > 0 ? '+ ' + Math.abs(roi).toFixed(2) + '%' : (roi < 0 ? '- ' + Math.abs(roi).toFixed(2) + '%' : '0%')) : '-'"></span>
                             </div>
                             <div class="flex flex-col items-center justify-center text-center px-1">
-                                <span class="font-bold text-slate-500 text-[11px] sm:text-sm mb-0.5 whitespace-nowrap">年化報酬率</span>
-                                <span class="text-lg sm:text-2xl font-black text-blue-600 tracking-tighter" x-text="annualizedROI !== null ? (isNaN(annualizedROI) ? annualizedROI : (annualizedROI > 0 ? '+' : '') + annualizedROI + '%') : '-'"></span>
+                                <span class="font-bold text-slate-500 text-sm mb-0.5 whitespace-nowrap">年化報酬率</span>
+                                <span class="text-lg sm:text-2xl font-black text-blue-600 tracking-tighter" x-text="annualizedROI !== null ? (isNaN(annualizedROI) ? annualizedROI : (annualizedROI > 0 ? '+ ' + Math.abs(annualizedROI).toFixed(2) + '%' : (annualizedROI < 0 ? '- ' + Math.abs(annualizedROI).toFixed(2) + '%' : '0%'))) : '-'"></span>
                             </div>
                         </div>
                     </div>
@@ -1341,7 +1342,7 @@
                             <template x-if="baseRetirementMV > 0">
                                 <div class="w-full flex flex-col items-center gap-4">
                                     <div class="w-full text-center bg-emerald-50 border border-emerald-200 py-4 px-6 rounded-2xl shadow-inner flex flex-col items-center gap-1">
-                                        <div class="text-lg font-bold text-emerald-700">目前鎖定基準</div>
+                                        <div class="text-sm font-bold text-emerald-700">目前鎖定基準</div>
                                         <div class="text-4xl sm:text-5xl font-black text-emerald-800 tracking-tight my-2" x-text="formatMoney(baseRetirementMV) + ' 元'"></div>
                                         <div class="text-sm font-bold text-emerald-600/80" x-text="'(鎖定日：' + baseRetirementDate + ')'"></div>
                                     </div>
@@ -1491,6 +1492,7 @@
 
                             <div class="flex flex-col sm:flex-row gap-3 mb-5">
                                 <button @click="downloadCSVTemplate()" class="flex-1 py-3 text-sm font-bold text-blue-600 hover:bg-blue-50 bg-white border border-blue-200 rounded-xl shadow-sm transition"><i class="fa-solid fa-download mr-1"></i> 下載 CSV 範例檔</button>
+                                <button @click="exportTransactionsToCSV()" class="flex-1 py-3 text-sm font-bold text-purple-600 hover:bg-purple-50 bg-white border border-purple-200 rounded-xl shadow-sm transition"><i class="fa-solid fa-file-export mr-1"></i> 匯出明細</button>
                                 <div class="flex-1 relative">
                                     <input type="file" accept=".csv" id="csvUpload" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" @change="handleCSVUpload($event)">
                                     <label for="csvUpload" class="flex items-center justify-center w-full h-full py-3 text-sm font-bold text-emerald-600 hover:bg-emerald-50 bg-white border border-emerald-200 rounded-xl shadow-sm transition cursor-pointer"><i class="fa-solid fa-upload mr-1"></i> 智慧匯入 CSV</label>
@@ -1556,7 +1558,7 @@
                 </div>
             </div>
 
-        </div> <!-- End of Detail View -->
+        </div>
 
     </div>
 
