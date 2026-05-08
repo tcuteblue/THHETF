@@ -1011,11 +1011,11 @@
                         <div class="p-3 sm:p-4 flex-1 grid grid-cols-2 bg-slate-50/50 rounded-b-2xl items-center justify-center divide-x divide-slate-200">
                             <div class="flex flex-col items-center justify-center text-center px-1">
                                 <span class="font-bold text-slate-500 text-sm mb-0.5 whitespace-nowrap">總報酬率</span>
-                                <span class="text-lg sm:text-2xl font-black tracking-tighter" :class="roi >= 0 ? 'text-red-600' : 'text-green-600'" x-text="roi !== null ? (roi > 0 ? '+ ' + Math.abs(roi).toFixed(2) + '%' : (roi < 0 ? '- ' + Math.abs(roi).toFixed(2) + '%' : '0%')) : '-'"></span>
+                                <span class="text-lg sm:text-2xl font-black tracking-tighter" :class="roi >= 0 ? 'text-red-600' : 'text-green-600'" x-text="roi !== null ? (roi > 0 ? '+' + Math.abs(roi).toFixed(2) + '%' : (roi < 0 ? '-' + Math.abs(roi).toFixed(2) + '%' : '0%')) : '-'"></span>
                             </div>
                             <div class="flex flex-col items-center justify-center text-center px-1">
                                 <span class="font-bold text-slate-500 text-sm mb-0.5 whitespace-nowrap">年化報酬率</span>
-                                <span class="text-lg sm:text-2xl font-black text-blue-600 tracking-tighter" x-text="annualizedROI !== null ? (isNaN(annualizedROI) ? annualizedROI : (annualizedROI > 0 ? '+ ' + Math.abs(annualizedROI).toFixed(2) + '%' : (annualizedROI < 0 ? '- ' + Math.abs(annualizedROI).toFixed(2) + '%' : '0%'))) : '-'"></span>
+                                <span class="text-lg sm:text-2xl font-black text-blue-600 tracking-tighter" x-text="annualizedROI !== null ? (isNaN(annualizedROI) ? annualizedROI : (annualizedROI > 0 ? '+' + Math.abs(annualizedROI).toFixed(2) + '%' : (annualizedROI < 0 ? '-' + Math.abs(annualizedROI).toFixed(2) + '%' : '0%'))) : '-'"></span>
                             </div>
                         </div>
                     </div>
