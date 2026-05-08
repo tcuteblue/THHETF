@@ -235,6 +235,9 @@
 
                 get totalNetWorth() { let total = 0; for (let code in this.etfs) total += this.getHomeETFInfo(code, this.homePrices[code]).marketValue; return total; },
                 get totalGlobalProfit() { let total = 0; for (let code in this.etfs) total += this.getHomeETFInfo(code, this.homePrices[code]).marketValue > 0 ? this.getHomeETFInfo(code, this.homePrices[code]).profit : 0; return total; },
+                get totalGlobalCost() { let total = 0; for (let code in this.etfs) total += (parseFloat(this.etfs[code].baseShares) * parseFloat(this.etfs[code].baseAvgCost) || 0) + (this.etfs[code].transactions||[]).filter(t => t.action === 'buy' || t.action === 'sync').reduce((s, t) => s + (parseFloat(t.amount) || 0), 0); return total; },
+                get totalGlobalCashIn() { let total = 0; for (let code in this.etfs) total += (this.etfs[code].transactions||[]).filter(t => t.action === 'sell' || t.action === 'dividend' || t.action === 'withdraw').reduce((s, t) => s + (parseFloat(t.amount) || 0), 0); return total; },
+                get globalROI() { if (this.totalGlobalCost <= 0) return null; return (((this.totalNetWorth + this.totalGlobalCashIn - this.totalGlobalCost) / this.totalGlobalCost) * 100).toFixed(2); },
                 get globalPassiveIncome() { return Math.round((this.totalNetWorth * 0.04) / 12); },
 
                 addNewETF() {
@@ -815,15 +818,20 @@
                 <div class="relative z-10 pt-2">
                     <div class="text-base text-blue-100 font-bold mb-1 tracking-wider drop-shadow-sm">所有 ETF 總市值 (元)</div>
                     <div class="text-5xl md:text-6xl font-black tracking-tight mb-8 drop-shadow-md" x-text="formatMoney(totalNetWorth)"></div>
-                    <div class="flex flex-wrap items-center gap-8 bg-white/10 backdrop-blur-md p-4 rounded-2xl border border-white/10 inline-flex">
+                    <div class="flex flex-wrap items-center gap-x-6 gap-y-4 bg-white/10 backdrop-blur-md p-4 sm:p-5 rounded-2xl border border-white/10 inline-flex">
                         <div>
-                            <div class="text-sm text-blue-100 mb-1 font-medium">累積總損益 (元)</div>
-                            <div class="text-3xl font-bold tracking-tight drop-shadow-sm" :class="totalGlobalProfit >= 0 ? 'text-red-300' : 'text-green-300'" x-text="(totalGlobalProfit > 0 ? '+ ' : (totalGlobalProfit < 0 ? '- ' : '')) + formatMoney(Math.abs(totalGlobalProfit))"></div>
+                            <div class="text-sm text-blue-100 mb-1 font-medium">總投入本金</div>
+                            <div class="text-2xl sm:text-3xl font-bold tracking-tight drop-shadow-sm text-white" x-text="formatMoney(totalGlobalCost)"></div>
                         </div>
-                        <div class="w-px h-12 bg-white/20"></div>
+                        <div class="w-px h-10 bg-white/20 hidden sm:block"></div>
                         <div>
-                            <div class="text-sm text-blue-100 mb-1 font-medium">全域預估月領 (元/月)</div>
-                            <div class="text-3xl font-bold text-emerald-300 tracking-tight drop-shadow-sm" x-text="formatMoney(globalPassiveIncome)"></div>
+                            <div class="text-sm text-blue-100 mb-1 font-medium">累積總損益</div>
+                            <div class="text-2xl sm:text-3xl font-bold tracking-tight drop-shadow-sm" :class="totalGlobalProfit >= 0 ? 'text-red-300' : 'text-green-300'" x-text="(totalGlobalProfit > 0 ? '+ ' : (totalGlobalProfit < 0 ? '- ' : '')) + formatMoney(Math.abs(totalGlobalProfit))"></div>
+                        </div>
+                        <div class="w-px h-10 bg-white/20 hidden sm:block"></div>
+                        <div>
+                            <div class="text-sm text-blue-100 mb-1 font-medium">總報酬率</div>
+                            <div class="text-2xl sm:text-3xl font-bold tracking-tight drop-shadow-sm" :class="globalROI >= 0 ? 'text-red-300' : 'text-green-300'" x-text="globalROI !== null ? (globalROI > 0 ? '+' + globalROI + '%' : (globalROI < 0 ? '-' + Math.abs(globalROI).toFixed(2) + '%' : '0%')) : '-'"></div>
                         </div>
                     </div>
                 </div>
