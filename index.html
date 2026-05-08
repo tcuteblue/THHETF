@@ -1617,14 +1617,11 @@
                                 </div>
                             </div>
                             
-                            <!-- 列表與專屬全螢幕容器 (Bottom Sheet 底部彈出風格) -->
-                            <div :class="isFullscreenHistory ? 'fixed inset-0 z-[90] bg-slate-900/60 backdrop-blur-sm flex flex-col justify-end pb-0' : 'relative mt-2'">
-                                <!-- 點擊暗色遮罩可直接關閉全螢幕 -->
-                                <div x-show="isFullscreenHistory" @click="isFullscreenHistory = false" class="absolute inset-0 z-[-1]"></div>
-                                
-                                <div :class="isFullscreenHistory ? 'bg-white h-[82vh] max-h-[calc(100vh-130px)] rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.15)] flex flex-col p-4 sm:p-6 w-full max-w-4xl mx-auto overflow-hidden' : 'flex flex-col'">
+                            <!-- 列表與專屬全螢幕容器 (真全螢幕風格) -->
+                            <div :class="isFullscreenHistory ? 'fixed inset-0 z-[110] bg-slate-50 flex flex-col pb-0' : 'relative mt-2'">
+                                <div :class="isFullscreenHistory ? 'bg-slate-50 h-[100dvh] w-full max-w-4xl mx-auto flex flex-col p-4 sm:p-6 overflow-hidden shadow-2xl' : 'flex flex-col'">
                                     
-                                    <div class="flex justify-between items-center mb-3 shrink-0">
+                                    <div class="flex justify-between items-center mb-3 shrink-0" :class="isFullscreenHistory ? 'pt-[env(safe-area-inset-top,0.5rem)]' : ''">
                                         <h3 x-show="isFullscreenHistory" class="font-black text-slate-800 text-lg flex items-center gap-2" x-cloak>
                                             <i class="fa-solid fa-list-check text-blue-500"></i> 交易明細清單
                                         </h3>
@@ -1633,7 +1630,7 @@
                                         <!-- 全螢幕切換按鈕 -->
                                         <button @click="isFullscreenHistory = !isFullscreenHistory; $nextTick(() => { const list = document.getElementById('txnList'); if(list) list.scrollTop = list.scrollHeight; });" class="px-3 py-1.5 bg-slate-800 text-white text-sm font-bold rounded-lg shadow-sm hover:bg-slate-700 transition flex items-center gap-1.5">
                                             <i class="fa-solid" :class="isFullscreenHistory ? 'fa-compress' : 'fa-expand'"></i> 
-                                            <span x-text="isFullscreenHistory ? '收合列表' : '展開全版列表'"></span>
+                                            <span x-text="isFullscreenHistory ? '收合列表' : '展開列表'"></span>
                                         </button>
                                     </div>
                                     
