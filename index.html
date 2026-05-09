@@ -659,9 +659,22 @@
                                     amount = Math.round(price * shares);
                                 }
 
+                                // 智慧校正日期格式 (支援斜線轉橫線、自動補零，以及民國年轉西元年)
+                                let rawDate = cols[0] ? cols[0].replace(/["']/g, '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim() : '';
+                                rawDate = rawDate.replace(/\//g, '-');
+                                let dateParts = rawDate.split('-');
+                                if (dateParts.length === 3) {
+                                    let y = dateParts[0];
+                                    let m = dateParts[1].padStart(2, '0');
+                                    let d = dateParts[2].padStart(2, '0');
+                                    // 判斷是否為民國年 (小於等於3位數)，若是則加上 1911
+                                    if (y.length <= 3 && parseInt(y) > 0) y = (parseInt(y) + 1911).toString();
+                                    rawDate = `${y}-${m}-${d}`;
+                                }
+
                                 parsed.push({
                                     id: Date.now() + i, 
-                                    date: cols[0] ? cols[0].replace(/["']/g, '').trim() : '', 
+                                    date: rawDate, 
                                     action: action,
                                     price: price, 
                                     shares: shares, 
@@ -1678,25 +1691,25 @@
                                                                 </select>
                                                                 
                                                                 <div class="flex flex-1 gap-2 w-full" x-show="txn.action !== 'dividend' && txn.action !== 'sync'">
-                                                                    <div class="flex-1 flex items-center bg-slate-50 border border-slate-200 rounded-lg px-2">
+                                                                    <div class="flex-[3] flex items-center bg-slate-50 border border-slate-200 rounded-lg px-2">
                                                                         <span class="text-sm font-bold text-slate-500 mr-2 whitespace-nowrap">單價</span>
-                                                                        <input type="number" step="0.01" x-model.number="txn.price" @input="txn.amount=Math.round((txn.price||0)*(txn.shares||0)); saveData(true)" class="w-full py-1.5 text-base font-bold bg-transparent text-right outline-none">
+                                                                        <input type="number" step="0.01" x-model.number="txn.price" @input="txn.amount=Math.round((txn.price||0)*(txn.shares||0)); saveData(true)" class="w-full py-1.5 text-base font-bold bg-transparent text-right outline-none min-w-[80px]">
                                                                     </div>
-                                                                    <div class="flex-1 flex items-center bg-slate-50 border border-slate-200 rounded-lg px-2">
+                                                                    <div class="flex-[2] flex items-center bg-slate-50 border border-slate-200 rounded-lg px-2">
                                                                         <span class="text-sm font-bold text-slate-500 mr-2 whitespace-nowrap" x-text="txn.action === 'sync' ? '總股數' : '股數'"></span>
-                                                                        <input type="number" step="1" x-model.number="txn.shares" @input="if(txn.action!=='dividend'&&txn.action!=='sync') txn.amount=Math.round((txn.price||0)*(txn.shares||0)); saveData(true)" class="w-full py-1.5 text-base font-bold bg-transparent text-right outline-none">
+                                                                        <input type="number" step="1" x-model.number="txn.shares" @input="if(txn.action!=='dividend'&&txn.action!=='sync') txn.amount=Math.round((txn.price||0)*(txn.shares||0)); saveData(true)" class="w-full py-1.5 text-base font-bold bg-transparent text-right outline-none min-w-[48px]">
                                                                     </div>
                                                                 </div>
 
-                                                                <div class="flex w-full gap-2 items-center">
+                                                                <div class="flex w-full gap-2 items-center mt-2 sm:mt-0">
                                                                     <div class="flex-1 flex items-center bg-slate-50 border border-slate-200 rounded-lg px-2" x-show="txn.action !== 'sync'">
                                                                         <span class="text-sm font-bold text-slate-500 mr-2 whitespace-nowrap" x-text="txn.action === 'dividend' ? '總額' : '總額'"></span>
-                                                                        <input type="number" step="1" x-model.number="txn.amount" @change="saveData(true)" class="w-full py-1.5 text-base font-black text-slate-800 bg-transparent text-right outline-none">
+                                                                        <input type="number" step="1" x-model.number="txn.amount" @change="saveData(true)" class="w-full py-1.5 text-base font-black text-slate-800 bg-transparent text-right outline-none min-w-[96px]">
                                                                     </div>
                                                                     
                                                                     <div class="flex-1 flex items-center bg-slate-50 border border-slate-200 rounded-lg px-2 opacity-50" x-show="txn.action === 'sync'">
                                                                         <span class="text-sm font-bold text-slate-500 mr-2 whitespace-nowrap">差額</span>
-                                                                        <input type="number" disabled :value="txn.amount" class="w-full py-1.5 text-base font-black text-slate-800 bg-transparent text-right outline-none cursor-not-allowed">
+                                                                        <input type="number" disabled :value="txn.amount" class="w-full py-1.5 text-base font-black text-slate-800 bg-transparent text-right outline-none cursor-not-allowed min-w-[96px]">
                                                                     </div>
 
                                                                     <button @click="confirmRemoveTransaction(txn.id)" class="w-10 h-10 shrink-0 rounded-lg bg-slate-100 hover:bg-red-50 text-slate-400 hover:text-red-500 border border-slate-200 hover:border-red-200 flex items-center justify-center transition-all"><i class="fa-solid fa-trash"></i></button>
