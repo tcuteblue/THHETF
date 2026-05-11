@@ -285,6 +285,30 @@
                 get totalGlobalCashIn() { let total = 0; for (let code in this.etfs) total += (this.etfs[code].transactions||[]).filter(t => t.action === 'sell' || t.action === 'dividend' || t.action === 'withdraw').reduce((s, t) => s + (parseFloat(t.amount) || 0), 0); return total; },
                 get globalROI() { if (this.totalGlobalCost <= 0) return null; return (((this.totalNetWorth + this.totalGlobalCashIn - this.totalGlobalCost) / this.totalGlobalCost) * 100).toFixed(2); },
 
+                get totalDailyProfit() {
+                    let total = 0;
+                    for (let code in this.etfs) {
+                        let p = this.homePrices[code];
+                        if (p && p.prev && p.price) {
+                            let info = this.getHomeETFInfo(code, p);
+                            total += info.shares * (p.price - p.prev);
+                        }
+                    }
+                    return Math.round(total);
+                },
+                get totalDailyProfitRate() {
+                    let totalPrevMarketValue = 0;
+                    for (let code in this.etfs) {
+                        let p = this.homePrices[code];
+                        if (p && p.prev) {
+                            let info = this.getHomeETFInfo(code, p);
+                            totalPrevMarketValue += info.shares * p.prev;
+                        }
+                    }
+                    if (totalPrevMarketValue <= 0) return 0;
+                    return ((this.totalDailyProfit / totalPrevMarketValue) * 100).toFixed(2);
+                },
+
                 addNewETF() {
                     let code = this.newETFCode.trim();
                     if(!code) return this.showMsg("請輸入 ETF 代號");
@@ -471,6 +495,15 @@
                 get marketValueNum() { return this.currentPrice <= 0 ? 0 : Math.round(this.currentTotalShares * this.currentPrice); },
                 get profit() { return Math.round(this.marketValueNum + this.totalCashIn - this.totalCashOut); },
                 get roi() { return this.totalCashOut <= 0 ? null : (((this.marketValueNum + this.totalCashIn - this.totalCashOut) / this.totalCashOut) * 100).toFixed(2); },
+
+                get dailyProfit() {
+                    if (!this.prevClose || this.currentPrice <= 0) return 0;
+                    return Math.round(this.currentTotalShares * (this.currentPrice - this.prevClose));
+                },
+                get dailyProfitRate() {
+                    if (!this.prevClose || this.currentPrice <= 0 || this.prevClose <= 0) return 0;
+                    return (((this.currentPrice - this.prevClose) / this.prevClose) * 100).toFixed(2);
+                },
 
                 get recommendation() {
                     let s = this.currentScore, plans = this.investmentPlans || [], base = plans.reduce((sum, p) => sum + (parseFloat(p.amount)||0), 0) / (plans.length||1);
@@ -940,7 +973,13 @@
                 
                 <div class="relative z-10 pt-2">
                     <div class="text-base text-blue-100 font-bold mb-1 tracking-wider drop-shadow-sm">所有 ETF 總市值 (元)</div>
-                    <div class="text-5xl md:text-6xl font-black tracking-tight mb-8 drop-shadow-md" x-text="formatMoney(totalNetWorth)"></div>
+                    <div class="text-5xl md:text-6xl font-black tracking-tight mb-3 drop-shadow-md" x-text="formatMoney(totalNetWorth)"></div>
+                    
+                    <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/10 border border-white/20 backdrop-blur-sm mb-6 shadow-sm">
+                        <span class="text-sm md:text-base font-bold text-white/90">今日變動</span>
+                        <span class="text-base md:text-lg font-black" :class="totalDailyProfit >= 0 ? 'text-red-300' : 'text-green-300'" x-text="totalDailyProfit > 0 ? '▲ ' + formatMoney(totalDailyProfit) : (totalDailyProfit < 0 ? '▼ ' + formatMoney(Math.abs(totalDailyProfit)) : '0')"></span>
+                        <span class="text-sm md:text-base font-bold" :class="totalDailyProfit >= 0 ? 'text-red-300' : 'text-green-300'" x-text="totalDailyProfitRate > 0 ? '(+' + totalDailyProfitRate + '%)' : '(' + totalDailyProfitRate + '%)'"></span>
+                    </div>
                     
                     <div class="bg-white/10 backdrop-blur-md p-6 rounded-2xl border border-white/10 w-full sm:max-w-lg shadow-[inset_0_2px_10px_rgba(255,255,255,0.05)]">
                         <div class="text-center mb-6">
@@ -1135,6 +1174,9 @@
                         <div class="p-3 sm:p-4 flex-1 flex flex-col justify-center border-b border-slate-100">
                             <div class="text-base sm:text-lg font-bold text-slate-500 mb-1">總投入本金 (元)</div>
                             <div class="text-3xl sm:text-4xl font-black text-slate-800 tracking-tight" x-text="currentTotalCost > 0 ? formatMoney(currentTotalCost) : '0'"></div>
+                            <div class="mt-1.5 flex items-center gap-1.5 text-sm sm:text-base font-bold invisible select-none">
+                                <span>對齊</span><span>▲ 0</span><span>(0%)</span>
+                            </div>
                         </div>
                         <div class="p-3 sm:p-4 flex-1 flex flex-col justify-center bg-slate-50/50 rounded-b-2xl">
                             <div class="text-base sm:text-lg font-bold text-slate-500 mb-1">即時市值 (元)</div>
@@ -1146,6 +1188,14 @@
                         <div class="p-3 sm:p-4 flex-1 flex flex-col justify-center border-b border-slate-100">
                             <div class="text-base sm:text-lg font-bold text-slate-500 mb-1">累積總損益 (元)</div>
                             <div class="text-3xl sm:text-4xl font-black tracking-tight" :class="profit >= 0 ? 'text-red-500' : 'text-green-500'" x-text="profit > 0 ? '+ ' + formatMoney(profit) : (profit < 0 ? '- ' + formatMoney(Math.abs(profit)) : '0')"></div>
+                            <div class="mt-1.5 flex items-center gap-1 text-sm sm:text-base font-bold" x-show="prevClose > 0">
+                                <span class="text-slate-500 mr-0.5">今日</span>
+                                <span :class="dailyProfit >= 0 ? 'text-red-500' : 'text-green-500'" x-text="dailyProfit > 0 ? '▲ ' + formatMoney(dailyProfit) : (dailyProfit < 0 ? '▼ ' + formatMoney(Math.abs(dailyProfit)) : '0')"></span>
+                                <span :class="dailyProfitRate >= 0 ? 'text-red-500' : 'text-green-500'" x-text="dailyProfitRate > 0 ? '(+' + dailyProfitRate + '%)' : (dailyProfitRate < 0 ? '(' + dailyProfitRate + '%)' : '(0%)')"></span>
+                            </div>
+                            <div class="mt-1.5 flex items-center gap-1 text-sm sm:text-base font-bold invisible select-none" x-show="!prevClose || prevClose <= 0">
+                                <span>今日</span><span>▲ 0</span><span>(0%)</span>
+                            </div>
                         </div>
                         <div class="p-3 sm:p-4 flex-1 grid grid-cols-2 bg-slate-50/50 rounded-b-2xl items-center justify-center divide-x divide-slate-200">
                             <div class="flex flex-col items-center justify-center text-center px-1 min-w-0">
@@ -1750,5 +1800,3 @@
 
 </body>
 </html>
-
-
