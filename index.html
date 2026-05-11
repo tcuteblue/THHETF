@@ -973,13 +973,7 @@
                 
                 <div class="relative z-10 pt-2">
                     <div class="text-base text-blue-100 font-bold mb-1 tracking-wider drop-shadow-sm">所有 ETF 總市值 (元)</div>
-                    <div class="text-5xl md:text-6xl font-black tracking-tight mb-3 drop-shadow-md" x-text="formatMoney(totalNetWorth)"></div>
-                    
-                    <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/10 border border-white/20 backdrop-blur-sm mb-6 shadow-sm">
-                        <span class="text-sm md:text-base font-bold text-white/90">今日變動</span>
-                        <span class="text-base md:text-lg font-black" :class="totalDailyProfit >= 0 ? 'text-red-300' : 'text-green-300'" x-text="totalDailyProfit > 0 ? '▲ ' + formatMoney(totalDailyProfit) : (totalDailyProfit < 0 ? '▼ ' + formatMoney(Math.abs(totalDailyProfit)) : '0')"></span>
-                        <span class="text-sm md:text-base font-bold" :class="totalDailyProfit >= 0 ? 'text-red-300' : 'text-green-300'" x-text="totalDailyProfitRate > 0 ? '(+' + totalDailyProfitRate + '%)' : '(' + totalDailyProfitRate + '%)'"></span>
-                    </div>
+                    <div class="text-5xl md:text-6xl font-black tracking-tight mb-6 drop-shadow-md" x-text="formatMoney(totalNetWorth)"></div>
                     
                     <div class="bg-white/10 backdrop-blur-md p-6 rounded-2xl border border-white/10 w-full sm:max-w-lg shadow-[inset_0_2px_10px_rgba(255,255,255,0.05)]">
                         <div class="text-center mb-6">
@@ -987,13 +981,21 @@
                             <div class="text-4xl sm:text-5xl font-black tracking-tight drop-shadow-md text-white" x-text="formatMoney(totalGlobalCost)"></div>
                         </div>
                         <div class="grid grid-cols-2 border-t border-white/20 pt-6 divide-x divide-white/20">
-                            <div class="text-center flex flex-col items-center px-2">
+                            <div class="text-center flex flex-col items-center px-1 min-w-0">
                                 <div class="text-base sm:text-lg text-blue-100 mb-1 font-bold tracking-wide">累積總損益 (元)</div>
-                                <div class="text-2xl sm:text-3xl font-bold tracking-tight drop-shadow-sm" :class="totalGlobalProfit >= 0 ? 'text-red-300' : 'text-green-300'" x-text="(totalGlobalProfit > 0 ? '+ ' : (totalGlobalProfit < 0 ? '- ' : '')) + formatMoney(Math.abs(totalGlobalProfit))"></div>
+                                <div class="text-2xl sm:text-3xl font-bold tracking-tight drop-shadow-sm whitespace-nowrap" :class="totalGlobalProfit >= 0 ? 'text-red-300' : 'text-green-300'" x-text="(totalGlobalProfit > 0 ? '+ ' : (totalGlobalProfit < 0 ? '- ' : '')) + formatMoney(Math.abs(totalGlobalProfit))"></div>
+                                <div class="mt-1.5 flex flex-wrap justify-center items-center gap-1 text-xs sm:text-sm font-bold" :class="totalDailyProfit >= 0 ? 'text-red-300' : 'text-green-300'">
+                                    <span class="text-blue-200">今日</span>
+                                    <span x-text="totalDailyProfit > 0 ? '▲ ' + formatMoney(totalDailyProfit) : (totalDailyProfit < 0 ? '▼ ' + formatMoney(Math.abs(totalDailyProfit)) : '0')"></span>
+                                    <span class="opacity-90" x-text="totalDailyProfitRate > 0 ? '(+' + totalDailyProfitRate + '%)' : '(' + totalDailyProfitRate + '%)'"></span>
+                                </div>
                             </div>
-                            <div class="text-center flex flex-col items-center px-2">
+                            <div class="text-center flex flex-col items-center px-1 min-w-0">
                                 <div class="text-base sm:text-lg text-blue-100 mb-1 font-bold tracking-wide">累積報酬率</div>
-                                <div class="text-2xl sm:text-3xl font-bold tracking-tight drop-shadow-sm" :class="globalROI >= 0 ? 'text-red-300' : 'text-green-300'" x-text="globalROI !== null ? (globalROI > 0 ? '+ ' + globalROI + '%' : (globalROI < 0 ? '- ' + Math.abs(globalROI).toFixed(2) + '%' : '0%')) : '-'"></div>
+                                <div class="text-2xl sm:text-3xl font-bold tracking-tight drop-shadow-sm whitespace-nowrap" :class="globalROI >= 0 ? 'text-red-300' : 'text-green-300'" x-text="globalROI !== null ? (globalROI > 0 ? '+ ' + globalROI + '%' : (globalROI < 0 ? '- ' + Math.abs(globalROI).toFixed(2) + '%' : '0%')) : '-'"></div>
+                                <div class="mt-1.5 flex flex-wrap justify-center items-center gap-1 text-xs sm:text-sm font-bold invisible select-none">
+                                    <span>今日</span><span>▲ 0</span><span>(0%)</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1172,15 +1174,19 @@
                     
                     <div class="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col hover:-translate-y-0.5 transition-all">
                         <div class="p-3 sm:p-4 flex-1 flex flex-col justify-center border-b border-slate-100">
-                            <div class="text-base sm:text-lg font-bold text-slate-500 mb-1">總投入本金 (元)</div>
-                            <div class="text-3xl sm:text-4xl font-black text-slate-800 tracking-tight" x-text="currentTotalCost > 0 ? formatMoney(currentTotalCost) : '0'"></div>
-                            <div class="mt-1.5 flex items-center gap-1.5 text-sm sm:text-base font-bold invisible select-none">
-                                <span>對齊</span><span>▲ 0</span><span>(0%)</span>
+                            <div class="text-base sm:text-lg font-bold text-slate-500 mb-1">即時市值 (元)</div>
+                            <div class="text-3xl sm:text-4xl font-black text-blue-600 tracking-tight" x-text="marketValueNum > 0 ? formatMoney(marketValueNum) : '0'"></div>
+                            <div class="mt-1.5 flex items-center gap-1 text-sm sm:text-base font-bold text-slate-400" x-show="prevClose > 0">
+                                <span class="mr-0.5">昨日市值</span>
+                                <span x-text="formatMoney(Math.round(currentTotalShares * prevClose))"></span>
+                            </div>
+                            <div class="mt-1.5 flex items-center gap-1 text-sm sm:text-base font-bold invisible select-none" x-show="!prevClose || prevClose <= 0">
+                                <span>昨日市值</span><span>0</span>
                             </div>
                         </div>
                         <div class="p-3 sm:p-4 flex-1 flex flex-col justify-center bg-slate-50/50 rounded-b-2xl">
-                            <div class="text-base sm:text-lg font-bold text-slate-500 mb-1">即時市值 (元)</div>
-                            <div class="text-3xl sm:text-4xl font-black text-blue-600 tracking-tight" x-text="marketValueNum > 0 ? formatMoney(marketValueNum) : '0'"></div>
+                            <div class="text-base sm:text-lg font-bold text-slate-500 mb-1">總投入本金 (元)</div>
+                            <div class="text-3xl sm:text-4xl font-black text-slate-800 tracking-tight" x-text="currentTotalCost > 0 ? formatMoney(currentTotalCost) : '0'"></div>
                         </div>
                     </div>
 
@@ -1189,12 +1195,12 @@
                             <div class="text-base sm:text-lg font-bold text-slate-500 mb-1">累積總損益 (元)</div>
                             <div class="text-3xl sm:text-4xl font-black tracking-tight" :class="profit >= 0 ? 'text-red-500' : 'text-green-500'" x-text="profit > 0 ? '+ ' + formatMoney(profit) : (profit < 0 ? '- ' + formatMoney(Math.abs(profit)) : '0')"></div>
                             <div class="mt-1.5 flex items-center gap-1 text-sm sm:text-base font-bold" x-show="prevClose > 0">
-                                <span class="text-slate-500 mr-0.5">今日</span>
+                                <span class="text-slate-500 mr-0.5">今日變動</span>
                                 <span :class="dailyProfit >= 0 ? 'text-red-500' : 'text-green-500'" x-text="dailyProfit > 0 ? '▲ ' + formatMoney(dailyProfit) : (dailyProfit < 0 ? '▼ ' + formatMoney(Math.abs(dailyProfit)) : '0')"></span>
                                 <span :class="dailyProfitRate >= 0 ? 'text-red-500' : 'text-green-500'" x-text="dailyProfitRate > 0 ? '(+' + dailyProfitRate + '%)' : (dailyProfitRate < 0 ? '(' + dailyProfitRate + '%)' : '(0%)')"></span>
                             </div>
                             <div class="mt-1.5 flex items-center gap-1 text-sm sm:text-base font-bold invisible select-none" x-show="!prevClose || prevClose <= 0">
-                                <span>今日</span><span>▲ 0</span><span>(0%)</span>
+                                <span>今日變動</span><span>▲ 0</span><span>(0%)</span>
                             </div>
                         </div>
                         <div class="p-3 sm:p-4 flex-1 grid grid-cols-2 bg-slate-50/50 rounded-b-2xl items-center justify-center divide-x divide-slate-200">
@@ -1800,3 +1806,4 @@
 
 </body>
 </html>
+
