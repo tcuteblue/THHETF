@@ -174,7 +174,6 @@ this.showInfo('運作原理與護欄機制', `<p><strong class="text-indigo-600 
 },
 
 getLocalYMD(d = new Date()) {
-// 利用時差平移，確保 toISOString 產生的字串符合「本地時間」的日期
 return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split('T')[0];
 },
 
@@ -194,7 +193,7 @@ try {
 let parsed = JSON.parse(newData); 
 this.etfs = parsed.etfs || {}; 
 if(parsed.global) this.globalSettings = { ...this.globalSettings, ...parsed.global };
-if(parsed.homePrices) this.homePrices = parsed.homePrices; // 載入緩存價格
+if(parsed.homePrices) this.homePrices = parsed.homePrices;
 } catch(e) {}
 } else if (oldData) {
 try {
@@ -259,7 +258,7 @@ if (price) newPrices[code] = { price: price, prev: prev };
 } catch(e) {}
 }));
 this.homePrices = newPrices; 
-this.saveData(false); // 更新緩存
+this.saveData(false);
 this.isFetchingHome = false;
 },
 
@@ -285,29 +284,29 @@ get totalGlobalCost() { let total = 0; for (let code in this.etfs) total += (par
 get totalGlobalCashIn() { let total = 0; for (let code in this.etfs) total += (this.etfs[code].transactions||[]).filter(t => t.action === 'sell' || t.action === 'dividend' || t.action === 'withdraw').reduce((s, t) => s + (parseFloat(t.amount) || 0), 0); return total; },
 get globalROI() { if (this.totalGlobalCost <= 0) return null; return (((this.totalNetWorth + this.totalGlobalCashIn - this.totalGlobalCost) / this.totalGlobalCost) * 100).toFixed(2); },
 
-                get totalDailyProfit() {
-                    let total = 0;
-                    for (let code in this.etfs) {
-                        let p = this.homePrices[code];
-                        if (p && p.prev && p.price) {
-                            let info = this.getHomeETFInfo(code, p);
-                            total += info.shares * (p.price - p.prev);
-                        }
-                    }
-                    return Math.round(total);
-                },
-                get totalDailyProfitRate() {
-                    let totalPrevMarketValue = 0;
-                    for (let code in this.etfs) {
-                        let p = this.homePrices[code];
-                        if (p && p.prev) {
-                            let info = this.getHomeETFInfo(code, p);
-                            totalPrevMarketValue += info.shares * p.prev;
-                        }
-                    }
-                    if (totalPrevMarketValue <= 0) return 0;
-                    return ((this.totalDailyProfit / totalPrevMarketValue) * 100).toFixed(2);
-                },
+get totalDailyProfit() {
+    let total = 0;
+    for (let code in this.etfs) {
+        let p = this.homePrices[code];
+        if (p && p.prev && p.price) {
+            let info = this.getHomeETFInfo(code, p);
+            total += info.shares * (p.price - p.prev);
+        }
+    }
+    return Math.round(total);
+},
+get totalDailyProfitRate() {
+    let totalPrevMarketValue = 0;
+    for (let code in this.etfs) {
+        let p = this.homePrices[code];
+        if (p && p.prev) {
+            let info = this.getHomeETFInfo(code, p);
+            totalPrevMarketValue += info.shares * p.prev;
+        }
+    }
+    if (totalPrevMarketValue <= 0) return 0;
+    return ((this.totalDailyProfit / totalPrevMarketValue) * 100).toFixed(2);
+},
 
 addNewETF() {
 let code = this.newETFCode.trim();
@@ -359,7 +358,6 @@ for (let proxy of ['https://api.allorigins.win/raw?url=' + encodeURIComponent(ur
 try { const res = await fetch(proxy); if (res.ok) return await res.json(); } catch (e) {}
 } return null;
 },
-async _fetchSimpleText(url) { try { const res = await fetch(url); if (res.ok) return await res.text(); } catch (e) {} return null; },
 async _fetchSimpleJson(url) { try { const res = await fetch(url); if (res.ok) return await res.json(); } catch (e) {} return null; },
 
 loadHistoricalCache() {
@@ -496,14 +494,14 @@ get marketValueNum() { return this.currentPrice <= 0 ? 0 : Math.round(this.curre
 get profit() { return Math.round(this.marketValueNum + this.totalCashIn - this.totalCashOut); },
 get roi() { return this.totalCashOut <= 0 ? null : (((this.marketValueNum + this.totalCashIn - this.totalCashOut) / this.totalCashOut) * 100).toFixed(2); },
 
-                get dailyProfit() {
-                    if (!this.prevClose || this.currentPrice <= 0) return 0;
-                    return Math.round(this.currentTotalShares * (this.currentPrice - this.prevClose));
-                },
-                get dailyProfitRate() {
-                    if (!this.prevClose || this.currentPrice <= 0 || this.prevClose <= 0) return 0;
-                    return (((this.currentPrice - this.prevClose) / this.prevClose) * 100).toFixed(2);
-                },
+get dailyProfit() {
+    if (!this.prevClose || this.currentPrice <= 0) return 0;
+    return Math.round(this.currentTotalShares * (this.currentPrice - this.prevClose));
+},
+get dailyProfitRate() {
+    if (!this.prevClose || this.currentPrice <= 0 || this.prevClose <= 0) return 0;
+    return (((this.currentPrice - this.prevClose) / this.prevClose) * 100).toFixed(2);
+},
 
 get recommendation() {
 let s = this.currentScore, plans = this.investmentPlans || [], base = plans.reduce((sum, p) => sum + (parseFloat(p.amount)||0), 0) / (plans.length||1);
@@ -700,7 +698,6 @@ if (dateParts.length === 3) {
 let y = dateParts[0];
 let m = dateParts[1].padStart(2, '0');
 let d = dateParts[2].padStart(2, '0');
-// 判斷是否為民國年 (小於等於3位數)，若是則加上 1911
 if (y.length <= 3 && parseInt(y) > 0) y = (parseInt(y) + 1911).toString();
 rawDate = `${y}-${m}-${d}`;
 }
@@ -973,14 +970,14 @@ this.showMsg("目前無法觸發自動安裝 💡\n\n您可能已經安裝過此
 
 <div class="relative z-10 pt-2">
 <div class="text-base text-blue-100 font-bold mb-1 tracking-wider drop-shadow-sm">所有 ETF 總市值 (元)</div>
-                    <div class="text-5xl md:text-6xl font-black tracking-tight mb-8 drop-shadow-md" x-text="formatMoney(totalNetWorth)"></div>
-                    <div class="text-5xl md:text-6xl font-black tracking-tight mb-3 drop-shadow-md" x-text="formatMoney(totalNetWorth)"></div>
-                    
-                    <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/10 border border-white/20 backdrop-blur-sm mb-6 shadow-sm">
-                        <span class="text-sm md:text-base font-bold text-white/90">今日變動</span>
-                        <span class="text-base md:text-lg font-black" :class="totalDailyProfit >= 0 ? 'text-red-300' : 'text-green-300'" x-text="totalDailyProfit > 0 ? '▲ ' + formatMoney(totalDailyProfit) : (totalDailyProfit < 0 ? '▼ ' + formatMoney(Math.abs(totalDailyProfit)) : '0')"></span>
-                        <span class="text-sm md:text-base font-bold" :class="totalDailyProfit >= 0 ? 'text-red-300' : 'text-green-300'" x-text="totalDailyProfitRate > 0 ? '(+' + totalDailyProfitRate + '%)' : '(' + totalDailyProfitRate + '%)'"></span>
-                    </div>
+<!-- ✅ 修正：移除重複的 totalNetWorth 顯示 div，僅保留此行 -->
+<div class="text-5xl md:text-6xl font-black tracking-tight mb-3 drop-shadow-md" x-text="formatMoney(totalNetWorth)"></div>
+
+<div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/10 border border-white/20 backdrop-blur-sm mb-6 shadow-sm">
+    <span class="text-sm md:text-base font-bold text-white/90">今日變動</span>
+    <span class="text-base md:text-lg font-black" :class="totalDailyProfit >= 0 ? 'text-red-300' : 'text-green-300'" x-text="totalDailyProfit > 0 ? '▲ ' + formatMoney(totalDailyProfit) : (totalDailyProfit < 0 ? '▼ ' + formatMoney(Math.abs(totalDailyProfit)) : '0')"></span>
+    <span class="text-sm md:text-base font-bold" :class="totalDailyProfit >= 0 ? 'text-red-300' : 'text-green-300'" x-text="totalDailyProfitRate > 0 ? '(+' + totalDailyProfitRate + '%)' : '(' + totalDailyProfitRate + '%)'"></span>
+</div>
 
 <div class="bg-white/10 backdrop-blur-md p-6 rounded-2xl border border-white/10 w-full sm:max-w-lg shadow-[inset_0_2px_10px_rgba(255,255,255,0.05)]">
 <div class="text-center mb-6">
@@ -1175,9 +1172,9 @@ this.showMsg("目前無法觸發自動安裝 💡\n\n您可能已經安裝過此
 <div class="p-3 sm:p-4 flex-1 flex flex-col justify-center border-b border-slate-100">
 <div class="text-base sm:text-lg font-bold text-slate-500 mb-1">總投入本金 (元)</div>
 <div class="text-3xl sm:text-4xl font-black text-slate-800 tracking-tight" x-text="currentTotalCost > 0 ? formatMoney(currentTotalCost) : '0'"></div>
-                            <div class="mt-1.5 flex items-center gap-1.5 text-sm sm:text-base font-bold invisible select-none">
-                                <span>對齊</span><span>▲ 0</span><span>(0%)</span>
-                            </div>
+<div class="mt-1.5 flex items-center gap-1.5 text-sm sm:text-base font-bold invisible select-none">
+    <span>對齊</span><span>▲ 0</span><span>(0%)</span>
+</div>
 </div>
 <div class="p-3 sm:p-4 flex-1 flex flex-col justify-center bg-slate-50/50 rounded-b-2xl">
 <div class="text-base sm:text-lg font-bold text-slate-500 mb-1">即時市值 (元)</div>
@@ -1189,14 +1186,14 @@ this.showMsg("目前無法觸發自動安裝 💡\n\n您可能已經安裝過此
 <div class="p-3 sm:p-4 flex-1 flex flex-col justify-center border-b border-slate-100">
 <div class="text-base sm:text-lg font-bold text-slate-500 mb-1">累積總損益 (元)</div>
 <div class="text-3xl sm:text-4xl font-black tracking-tight" :class="profit >= 0 ? 'text-red-500' : 'text-green-500'" x-text="profit > 0 ? '+ ' + formatMoney(profit) : (profit < 0 ? '- ' + formatMoney(Math.abs(profit)) : '0')"></div>
-                            <div class="mt-1.5 flex items-center gap-1 text-sm sm:text-base font-bold" x-show="prevClose > 0">
-                                <span class="text-slate-500 mr-0.5">今日</span>
-                                <span :class="dailyProfit >= 0 ? 'text-red-500' : 'text-green-500'" x-text="dailyProfit > 0 ? '▲ ' + formatMoney(dailyProfit) : (dailyProfit < 0 ? '▼ ' + formatMoney(Math.abs(dailyProfit)) : '0')"></span>
-                                <span :class="dailyProfitRate >= 0 ? 'text-red-500' : 'text-green-500'" x-text="dailyProfitRate > 0 ? '(+' + dailyProfitRate + '%)' : (dailyProfitRate < 0 ? '(' + dailyProfitRate + '%)' : '(0%)')"></span>
-                            </div>
-                            <div class="mt-1.5 flex items-center gap-1 text-sm sm:text-base font-bold invisible select-none" x-show="!prevClose || prevClose <= 0">
-                                <span>今日</span><span>▲ 0</span><span>(0%)</span>
-                            </div>
+<div class="mt-1.5 flex items-center gap-1 text-sm sm:text-base font-bold" x-show="prevClose > 0">
+    <span class="text-slate-500 mr-0.5">今日</span>
+    <span :class="dailyProfit >= 0 ? 'text-red-500' : 'text-green-500'" x-text="dailyProfit > 0 ? '▲ ' + formatMoney(dailyProfit) : (dailyProfit < 0 ? '▼ ' + formatMoney(Math.abs(dailyProfit)) : '0')"></span>
+    <span :class="dailyProfitRate >= 0 ? 'text-red-500' : 'text-green-500'" x-text="dailyProfitRate > 0 ? '(+' + dailyProfitRate + '%)' : (dailyProfitRate < 0 ? '(' + dailyProfitRate + '%)' : '(0%)')"></span>
+</div>
+<div class="mt-1.5 flex items-center gap-1 text-sm sm:text-base font-bold invisible select-none" x-show="!prevClose || prevClose <= 0">
+    <span>今日</span><span>▲ 0</span><span>(0%)</span>
+</div>
 </div>
 <div class="p-3 sm:p-4 flex-1 grid grid-cols-2 bg-slate-50/50 rounded-b-2xl items-center justify-center divide-x divide-slate-200">
 <div class="flex flex-col items-center justify-center text-center px-1 min-w-0">
@@ -1672,7 +1669,7 @@ this.showMsg("目前無法觸發自動安裝 💡\n\n您可能已經安裝過此
 </div>
 </div>
 
-<!-- 歷史明細編輯器 (保留全螢幕展開前的外框) -->
+<!-- 歷史明細編輯器 -->
 <div class="bg-gradient-to-b from-slate-50 to-white p-6 rounded-2xl border border-slate-200 shadow-[0_4px_15px_rgb(0,0,0,0.02)]">
 <h3 class="font-black text-slate-800 mb-5 text-lg flex items-center justify-between border-b border-slate-200 pb-3">
 <span class="flex items-center gap-2">
@@ -1693,7 +1690,7 @@ this.showMsg("目前無法觸發自動安裝 💡\n\n您可能已經安裝過此
 </div>
 </div>
 
-<!-- 列表與專屬全螢幕容器 (真全螢幕風格) -->
+<!-- 列表與專屬全螢幕容器 -->
 <div :class="isFullscreenHistory ? 'fixed inset-0 z-[110] bg-slate-50 flex flex-col pb-0' : 'relative mt-2'">
 <div :class="isFullscreenHistory ? 'bg-slate-50 h-[100dvh] w-full max-w-4xl mx-auto flex flex-col p-4 sm:p-6 overflow-hidden shadow-2xl' : 'flex flex-col'">
 
@@ -1754,7 +1751,7 @@ this.showMsg("目前無法觸發自動安裝 💡\n\n您可能已經安裝過此
 
 <div class="flex w-full md:w-auto gap-2 items-center mt-0">
 <div class="flex-1 md:w-[140px] flex items-center bg-slate-50 border border-slate-200 rounded-lg px-2 overflow-hidden" x-show="txn.action !== 'sync'">
-<span class="text-sm font-bold text-slate-500 mr-2 whitespace-nowrap shrink-0" x-text="txn.action === 'dividend' ? '總額' : '總額'"></span>
+<span class="text-sm font-bold text-slate-500 mr-2 whitespace-nowrap shrink-0">總額</span>
 <input type="number" step="1" x-model.number="txn.amount" @change="saveData(true)" class="w-full py-1.5 text-base font-black text-slate-800 bg-transparent text-right outline-none min-w-0">
 </div>
 
@@ -1776,15 +1773,12 @@ this.showMsg("目前無法觸發自動安裝 💡\n\n您可能已經安裝過此
 </div>
 </div>
 
-<div class="flex gap-3 mt-4 pt-4 border-t border-slate-200 shrink-0 pb-[env(safe-area-inset-bottom,1rem)]" x-show="isFullscreenHistory">
+<!-- ✅ 修正：合併兩組重複的新增/清空按鈕，以 :class 動態套用 iOS 安全區域 padding -->
+<div class="flex gap-3 mt-4 pt-4 border-t border-slate-200 shrink-0" :class="isFullscreenHistory ? 'pb-[env(safe-area-inset-bottom,1rem)]' : ''">
 <button @click="addTransaction()" class="flex-1 py-3.5 bg-blue-600 text-white font-bold rounded-xl shadow-md hover:bg-blue-700 hover:shadow-lg transition-all hover:-translate-y-0.5"><i class="fa-solid fa-plus mr-1"></i> 新增一筆</button>
 <button @click="confirmClearTransactions()" x-show="transactions.length > 0" class="flex-1 py-3.5 bg-white text-red-500 font-bold border border-red-200 rounded-xl hover:bg-red-50 shadow-sm transition-all hover:-translate-y-0.5"><i class="fa-solid fa-trash-can mr-1"></i> 全部清空</button>
 </div>
 
-<div class="flex gap-3 mt-4 pt-4 border-t border-slate-200 shrink-0" x-show="!isFullscreenHistory">
-<button @click="addTransaction()" class="flex-1 py-3.5 bg-blue-600 text-white font-bold rounded-xl shadow-md hover:bg-blue-700 hover:shadow-lg transition-all hover:-translate-y-0.5"><i class="fa-solid fa-plus mr-1"></i> 新增一筆</button>
-<button @click="confirmClearTransactions()" x-show="transactions.length > 0" class="flex-1 py-3.5 bg-white text-red-500 font-bold border border-red-200 rounded-xl hover:bg-red-50 shadow-sm transition-all hover:-translate-y-0.5"><i class="fa-solid fa-trash-can mr-1"></i> 全部清空</button>
-</div>
 </div>
 </div>
 </div>
@@ -1801,4 +1795,3 @@ this.showMsg("目前無法觸發自動安裝 💡\n\n您可能已經安裝過此
 
 </body>
 </html>
-
