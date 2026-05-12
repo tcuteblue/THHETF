@@ -1,3 +1,794 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ETF 存股管家</title>
+
+<meta name="theme-color" content="#ffffff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ETF 存股管家">
+<link rel="apple-touch-icon" href="./icon.png">
+
+<link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22ETF%20%E5%AD%98%E8%82%A1%E7%AE%A1%E5%AE%B6%22%2C%22short_name%22%3A%22ETF%20%E5%AD%98%E8%82%A1%E7%AE%A1%E5%AE%B6%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23f8fafc%22%2C%22theme_color%22%3A%22%231e3a8a%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22.%2Ficon.png%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%2C%7B%22src%22%3A%22.%2Ficon.png%22%2C%22sizes%22%3A%22512x512%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
+
+<script>
+window.tailwind = window.tailwind || {};
+window.tailwind.config = { 
+    theme: { 
+        extend: { 
+            colors: { primary: '#1e3a8a', secondary: '#3b82f6', background: '#f0f5fa' },
+            screens: { 'xs': '375px' }
+        } 
+    } 
+};
+</script>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+<style>
+html { 
+    font-size: clamp(15px, 2vw + 8px, 20px); 
+    background-color: #f0f5fa; 
+    scroll-behavior: smooth; 
+    font-family: system-ui, -apple-system, sans-serif;
+}
+input[type="text"], input[type="number"], input[type="date"], select { 
+    font-size: 1rem; 
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
+    transition: all 0.3s ease;
+}
+input:focus, select:focus {
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.02), 0 0 0 3px rgba(59, 130, 246, 0.3);
+    outline: none;
+    border-color: #3b82f6;
+}
+input[type=number]::-webkit-inner-spin-button, 
+input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+[x-cloak] { display: none !important; }
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.05); }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; border: 2px solid #f1f5f9; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+.glass-card { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 1); box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08); }
+
+.indicator-card { display: flex; align-items: center; gap: 0.75rem; background: linear-gradient(145deg, #ffffff, #f8fafc); padding: 0.75rem 1rem; border-radius: 1rem; border: 1px solid #e2e8f0; box-shadow: 2px 2px 8px rgba(0,0,0,0.03); cursor: pointer; transition: all 0.2s; }
+.indicator-card:hover { transform: translateY(-1px); border-color: #cbd5e1; }
+.indicator-card input[type="checkbox"] { accent-color: #3b82f6; width: 1.5rem; height: 1.5rem; cursor: pointer; }
+</style>
+
+<script>
+const ETF_CONFIG = {
+    '0050': { name: '元大台灣50', issuer: 'yuanta', indicators: ['k', 'ma240', 'ma2400', 'pb', 'blueLight', 'panic', 'cost90', 'cost80', 'discount'] },
+    '006208': { name: '富邦台50', issuer: 'fubon', indicators: ['k', 'ma240', 'ma2400', 'pb', 'blueLight', 'panic', 'cost90', 'cost80', 'discount'] },
+    '00878': { name: '國泰永續高股息', issuer: 'cathay', indicators: ['k', 'ma240', 'ma2400', 'pb', 'blueLight', 'panic', 'cost90', 'cost80', 'discount'] },
+    'DEFAULT': { name: '自訂ETF', issuer: 'unknown', indicators: ['k', 'ma240', 'ma2400', 'panic', 'cost90', 'cost80'] }
+};
+
+const INDICATOR_RULES = {
+    'k': { weight: 10, label: '短線 K值 < 20', color: 'text-blue-600' },
+    'ma240': { weight: 15, label: '跌破年線', color: 'text-blue-600' },
+    'ma2400': { weight: 20, label: '跌破十年線', color: 'text-purple-600' },
+    'pb': { weight: 15, label: '淨值比 < 1.6', color: 'text-emerald-600' },
+    'blueLight': { weight: 20, label: '景氣藍燈', color: 'text-blue-600' },
+    'panic': { weight: 10, label: '市場極度恐慌', color: 'text-red-600' },
+    'cost90': { weight: 5, label: '市價低於均價 10%', color: 'text-orange-600' },
+    'cost80': { weight: 5, label: '市價低於均價 20%', color: 'text-orange-600' },
+    'discount': { weight: 5, label: 'ETF 折價', color: 'text-emerald-600' }
+};
+
+document.addEventListener('alpine:init', () => {
+    Alpine.data('investmentApp', () => ({
+        ETF_CONFIG: ETF_CONFIG, INDICATOR_RULES: INDICATOR_RULES,
+        currentView: 'home', activeETF: null, activeTab: 'dashboard', isScrolled: false,
+        globalSettings: { lastRemindedMonth: null, lastBackupTime: '', hideInstallBtn: false }, etfs: {}, homePrices: {}, isFetchingHome: false,
+
+        // Detail View State
+        baseShares: 0, baseAvgCost: 0, startDate: '', lastCheckDate: null, investmentPlans: [], transactions: [], 
+        baseRetirementMV: 0, baseRetirementDate: '', swrRate: 4.0,
+
+        // History Editor State
+        isFullscreenHistory: false, expandedYears: [new Date().getFullYear().toString()],
+
+        // Manual Input
+        manualDate: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0], manualAction: 'buy', manualShares: null, manualPrice: null, manualAmount: null,      
+
+        // Modals & UI
+        showMsgBox: false, msgBoxText: '', reloadOnClose: false,
+        showConfirmBox: false, confirmBoxText: '', pendingDeleteId: null, pendingDeleteType: '',
+        showAddETFModal: false, newETFCode: '',
+        showInfoBox: false, infoBoxTitle: '', infoBoxContent: '', showSWRBox: false,
+        isIOS: false, isStandalone: false, showIOSInstallDialog: false, deferredPrompt: null,
+
+        // CSV Import
+        showCSVModal: false, csvPreviewData: [],
+
+        // Indicators
+        cond_k: false, cond_ma240: false, cond_ma2400: false, cond_pb: false, isBlueLight: false, isPanic: false, cond_cost90: false, cond_cost80: false, cond_discount: false,
+        currentPrice: 0, prevClose: 0, currentVolume: 0, volumeStatus: '', priceStatus: '',
+        isFetching: false, isFetchingPrice: false, realTimeFetched: false, priceUpdateTime: '',   
+        historicalDataLoaded: false, calc_k: 0, calc_ma20: 0, calc_ma2400: null, calc_ma240: 0,
+        pbRatio: null, marginBalance: '自動抓取失敗', etfDiscount: null, isEstimateDiscount: false,
+        showLogs: false, newLogs: [], showUpdateReminder: false, showChart: false, chartRendered: false, chartData: [], ma240Data: [], ma2400Data: [],
+
+        cachedHistoricalData: null, downloadDebounceTimer: null,
+
+        init() {
+            this.isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+            this.isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+
+            window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); this.deferredPrompt = e; });
+            window.addEventListener('scroll', () => { this.isScrolled = window.scrollY > 80; });
+
+            window.addEventListener('popstate', (e) => {
+                if (this.currentView === 'detail') {
+                    this.saveData(false);
+                    this.currentView = 'home';
+                    this.activeETF = null;
+                    this.fetchHomePrices();
+                }
+            });
+
+            this.$watch('isFullscreenHistory', (val) => {
+                if(val) this.$nextTick(() => { const list = document.getElementById('txnList'); if(list) list.scrollTop = list.scrollHeight; });
+            });
+
+            this.$watch('activeTab', (val) => {
+                if(val === 'settings') this.$nextTick(() => { const list = document.getElementById('txnList'); if(list) list.scrollTop = list.scrollHeight; });
+            });
+
+            this.loadData();
+            this.checkGlobalReminders();
+        },
+
+        showGuardrailsInfo() {
+            let minRate = (this.swrRate * 0.8).toFixed(1);
+            let maxRate = (this.swrRate * 1.2).toFixed(1);
+            this.showInfo('運作原理與護欄機制', `<p><strong class="text-indigo-600 text-lg">⭐ 核心概念：護欄機制 (Guardrails)</strong><br>傳統 4% 固定提領在股災時會強迫你在低點賣出大量股票，容易引發危機。動態提領則是設定提領率的上下限。</p>
+                               <p class="mt-2 text-slate-700">系統會將您的「基準預算」除以「每天最新的總市值」，算出實質提領率 <strong>(${minRate}% ~ ${maxRate}%)</strong>。</p>
+                               <ul class="list-disc pl-5 mt-2 space-y-1 text-slate-600">
+                                   <li>若逢大牛市，實質提領率跌破下限 <strong>(${minRate}%)</strong>，建議您加薪享受生活。</li>
+                                   <li>若逢大熊市，實質提領率飆破上限 <strong>(${maxRate}%)</strong>，建議您減薪共體時艱。</li>
+                               </ul>
+                               <p><strong class="text-indigo-600 text-lg mt-4 block">🛡️ 防禦機制 (極度重要)：</strong><br>退休前務必準備 <strong>2~3 年生活費的現金緩衝墊</strong>。當遇到大股災，絕對不要賣股票，改用這筆現金生活。</p>`);
+        },
+
+        getLocalYMD(d = new Date()) {
+            return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+        },
+
+        scrollToTop() { window.scrollTo({ top: 0, behavior: 'smooth' }); },
+
+        getDefaultETFState() { return { baseShares: 0, baseAvgCost: 0, startDate: '', lastCheckDate: new Date().getTime(), investmentPlans: [], transactions: [], isBlueLight: false, isPanic: false, baseRetirementMV: 0, baseRetirementDate: '', swrRate: 4.0 }; },
+
+        loadData() {
+            let newData = null, oldData = null;
+            try { newData = localStorage.getItem('THH_ETF_Data_V1'); oldData = localStorage.getItem('THH0050_Data_V3'); } catch (e) {}
+
+            if (newData) {
+                try { 
+                    let parsed = JSON.parse(newData); 
+                    this.etfs = parsed.etfs || {}; 
+                    if(parsed.global) this.globalSettings = { ...this.globalSettings, ...parsed.global };
+                    if(parsed.homePrices) this.homePrices = parsed.homePrices;
+                } catch(e) {}
+            } else if (oldData) {
+                try {
+                    let p = JSON.parse(oldData);
+                    this.etfs = { '0050': { baseShares: p.baseShares || 0, baseAvgCost: p.baseAvgCost || 0, transactions: (p.transactions || []).map(t => ({ ...t, action: t.action || 'buy' })), startDate: p.startDate || '', lastCheckDate: p.lastCheckDate || new Date().getTime(), investmentPlans: p.investmentPlans || [], isBlueLight: p.isBlueLight || false, isPanic: p.isPanic || false, baseRetirementMV: 0, baseRetirementDate: '', swrRate: 4.0 } };
+                    this.globalSettings.lastRemindedMonth = p.lastRemindedMonth || null;
+                    this.showMsg("🎉 偵測到您的舊版資料，已成功為您升級！"); this.saveData(false);
+                } catch(e) {}
+            }
+            if(this.currentView === 'home' && Object.keys(this.etfs).length > 0) this.fetchHomePrices();
+        },
+
+        saveData(triggerDownload = false) {
+            if (this.currentView === 'detail' && this.activeETF) {
+                this.etfs[this.activeETF] = { baseShares: this.baseShares, baseAvgCost: this.baseAvgCost, startDate: this.startDate, lastCheckDate: this.lastCheckDate, investmentPlans: this.investmentPlans, transactions: this.transactions, isBlueLight: this.isBlueLight, isPanic: this.isPanic, baseRetirementMV: this.baseRetirementMV, baseRetirementDate: this.baseRetirementDate, swrRate: this.swrRate };
+            }
+            try { localStorage.setItem('THH_ETF_Data_V1', JSON.stringify({ etfs: this.etfs, global: this.globalSettings, homePrices: this.homePrices })); } catch (e) {}
+
+            if (triggerDownload) {
+                if(this.downloadDebounceTimer) clearTimeout(this.downloadDebounceTimer);
+                this.downloadDebounceTimer = setTimeout(() => { this.triggerAutoDownloadBackup(); }, 1500);
+            }
+        },
+
+        triggerAutoDownloadBackup() {
+            let saved = null;
+            try { saved = localStorage.getItem('THH_ETF_Data_V1'); } catch(e) {}
+            if (!saved) return;
+            const now = new Date(); const pad = n => String(n).padStart(2, '0');
+            let displayTime = `${now.getFullYear()}/${pad(now.getMonth() + 1)}/${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+            let fileTimestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+
+            const blob = new Blob([saved], { type: 'application/json' });
+            const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `ETF自動備份_${fileTimestamp}.json`;
+            document.body.appendChild(link); link.click(); document.body.removeChild(link);
+
+            this.globalSettings.lastBackupTime = displayTime;
+            try { localStorage.setItem('THH_ETF_Data_V1', JSON.stringify({ etfs: this.etfs, global: this.globalSettings, homePrices: this.homePrices })); } catch(e) {}
+        },
+
+        async fetchHomePrices() {
+            if (this.isFetchingHome) return;
+            this.isFetchingHome = true;
+            let codes = Object.keys(this.etfs);
+            if (codes.length === 0) { this.isFetchingHome = false; return; }
+            let newPrices = { ...this.homePrices };
+            await Promise.all(codes.map(async (code) => {
+                try {
+                    const data = await this._fetchWithProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${code}.TW?range=1d&interval=1m&_t=${Date.now()}`);
+                    if (data?.chart?.result?.[0]) {
+                        const res = data.chart.result[0];
+                        let price = res.meta?.regularMarketPrice;
+                        let prev = res.meta?.chartPreviousClose || price;
+                        if (res.indicators?.quote?.[0]?.close) {
+                            const closes = res.indicators.quote[0].close;
+                            for (let i = closes.length - 1; i >= 0; i--) { if (closes[i] != null) { price = closes[i]; break; } }
+                        }
+                        if (price) newPrices[code] = { price: price, prev: prev };
+                    }
+                } catch(e) {}
+            }));
+            this.homePrices = newPrices; 
+            this.saveData(false);
+            this.isFetchingHome = false;
+        },
+
+        getHomeETFInfo(code, priceObj) {
+            let etf = this.etfs[code];
+            let price = parseFloat(priceObj?.price) || 0;
+            let shares = parseFloat(etf.baseShares) || 0, avgCost = parseFloat(etf.baseAvgCost) || 0, cashIn = 0;
+            [...(etf.transactions||[])].sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(t => {
+                let s = parseFloat(t.shares) || 0, amt = parseFloat(t.amount) || 0;
+                if (t.action === 'buy' || t.action === 'sync') { let total = shares * avgCost + amt; shares += s; avgCost = shares > 0 ? total / shares : 0;
+                } else if (t.action === 'sell' || t.action === 'withdraw') { shares = Math.max(0, shares - s); cashIn += amt;
+                } else if (t.action === 'dividend') { cashIn += amt; }
+            });
+            let marketValue = Math.round(shares * price);
+            let cashOut = (parseFloat(etf.baseShares) * parseFloat(etf.baseAvgCost) || 0) + (etf.transactions||[]).filter(t => t.action === 'buy' || t.action === 'sync').reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+            let profit = marketValue > 0 ? Math.round(marketValue + cashIn - cashOut) : 0;
+            return { shares, marketValue, profit, price };
+        },
+
+        get totalNetWorth() { let total = 0; for (let code in this.etfs) total += this.getHomeETFInfo(code, this.homePrices[code]).marketValue; return total; },
+        get totalGlobalProfit() { let total = 0; for (let code in this.etfs) total += this.getHomeETFInfo(code, this.homePrices[code]).marketValue > 0 ? this.getHomeETFInfo(code, this.homePrices[code]).profit : 0; return total; },
+        get totalGlobalCost() { let total = 0; for (let code in this.etfs) total += (parseFloat(this.etfs[code].baseShares) * parseFloat(this.etfs[code].baseAvgCost) || 0) + (this.etfs[code].transactions||[]).filter(t => t.action === 'buy' || t.action === 'sync').reduce((s, t) => s + (parseFloat(t.amount) || 0), 0); return total; },
+        get totalGlobalCashIn() { let total = 0; for (let code in this.etfs) total += (this.etfs[code].transactions||[]).filter(t => t.action === 'sell' || t.action === 'dividend' || t.action === 'withdraw').reduce((s, t) => s + (parseFloat(t.amount) || 0), 0); return total; },
+        get globalROI() { if (this.totalGlobalCost <= 0) return null; return (((this.totalNetWorth + this.totalGlobalCashIn - this.totalGlobalCost) / this.totalGlobalCost) * 100).toFixed(2); },
+
+        get totalDailyProfit() {
+            let total = 0;
+            for (let code in this.etfs) {
+                let p = this.homePrices[code];
+                if (p && p.prev && p.price) {
+                    let info = this.getHomeETFInfo(code, p);
+                    total += info.shares * (p.price - p.prev);
+                }
+            }
+            return Math.round(total);
+        },
+        get totalDailyProfitRate() {
+            let totalPrevMarketValue = 0;
+            for (let code in this.etfs) {
+                let p = this.homePrices[code];
+                if (p && p.prev) {
+                    let info = this.getHomeETFInfo(code, p);
+                    totalPrevMarketValue += info.shares * p.prev;
+                }
+            }
+            if (totalPrevMarketValue <= 0) return "0.00";
+            return ((this.totalDailyProfit / totalPrevMarketValue) * 100).toFixed(2);
+        },
+
+        addNewETF() {
+            let code = this.newETFCode.trim();
+            if(!code) return this.showMsg("請輸入 ETF 代號");
+            if(this.etfs[code]) return this.showMsg("此標的已經在您的追蹤清單中！");
+            this.etfs[code] = this.getDefaultETFState();
+            this.saveData(true); this.newETFCode = ''; this.showAddETFModal = false; this.fetchHomePrices();
+            this.showMsg(`已成功新增 ${code} 至存股清單！`);
+        },
+
+        confirmDeleteETF(code) {
+            this.pendingDeleteId = code; this.pendingDeleteType = 'etf';
+            this.confirmBoxText = `⚠️ 警告：確定要永久刪除標的「${code}」嗎？\n此操作將清空該標的的所有庫存與歷史紀錄，且無法復原！`;
+            this.showConfirmBox = true;
+        },
+
+        goToDetail(code) {
+            try { history.pushState({ view: 'detail', code: code }, '', ''); } catch (e) {}
+            this.activeETF = code; let data = this.etfs[code];
+            this.baseShares = data.baseShares || 0; this.baseAvgCost = data.baseAvgCost || 0; this.startDate = data.startDate || '';
+            this.lastCheckDate = data.lastCheckDate || new Date().getTime(); this.investmentPlans = data.investmentPlans || [];
+            this.transactions = data.transactions || []; this.isBlueLight = data.isBlueLight || false; this.isPanic = data.isPanic || false;
+            this.baseRetirementMV = data.baseRetirementMV || 0; this.baseRetirementDate = data.baseRetirementDate || ''; this.swrRate = data.swrRate || 4.0;
+
+            if (this.homePrices[code]) {
+                this.currentPrice = this.homePrices[code].price || 0;
+                this.prevClose = this.homePrices[code].prev || 0;
+            } else { this.currentPrice = 0; this.prevClose = 0; }
+
+            this.realTimeFetched = false; this.historicalDataLoaded = false; this.showChart = false;
+            if(window.lwcChartInstance) { window.lwcChartInstance.remove(); window.lwcChartInstance = null; this.chartRendered = false; }
+            this.currentView = 'detail'; this.activeTab = 'dashboard'; window.scrollTo({ top: 0, behavior: 'smooth' });
+            this.loadHistoricalCache(); this.fetchDataAndProcess().then(() => this.processAutoDeduct());
+        },
+
+        goHome() {
+            this.saveData(false); this.currentView = 'home'; this.activeETF = null;
+            window.scrollTo({ top: 0, behavior: 'smooth' }); this.fetchHomePrices();
+        },
+
+        get activeETFName() { return this.activeETF ? ((ETF_CONFIG[this.activeETF] || ETF_CONFIG['DEFAULT']).name === '自訂ETF' ? this.activeETF : `${this.activeETF} ${(ETF_CONFIG[this.activeETF] || ETF_CONFIG['DEFAULT']).name}`) : ''; },
+        isIndicatorSupported(key) { return (ETF_CONFIG[this.activeETF] || ETF_CONFIG['DEFAULT']).indicators.includes(key); },
+
+        async _fetchWithProxy(url) {
+            for (let proxy of ['https://api.allorigins.win/raw?url=' + encodeURIComponent(url), 'https://corsproxy.io/?' + encodeURIComponent(url)]) {
+                try { const res = await fetch(proxy); if (res.ok) return await res.json(); } catch (e) {}
+            } return null;
+        },
+        async _fetchSimpleJson(url) { try { const res = await fetch(url); if (res.ok) return await res.json(); } catch (e) {} return null; },
+
+        loadHistoricalCache() {
+            try {
+                const cached = localStorage.getItem(`THH_History_V2_${this.activeETF}`);
+                if (cached) {
+                    const parsed = JSON.parse(cached);
+                    if (parsed && parsed.length > 0) { this.cachedHistoricalData = parsed; this.historicalDataLoaded = true; this.calculateIndicators(this.cachedHistoricalData); this.autoCheckIndicators(); }
+                } else this.cachedHistoricalData = null;
+            } catch (e) {}
+        },
+
+        async refreshPrice() {
+            if (this.isFetchingPrice) return; this.isFetchingPrice = true;
+            await this.fetchRealTimePrice(); await this.fetchDynamicDiscount(); this.autoCheckIndicators();
+            if(this.chartRendered && this.showChart) this.renderChart(); setTimeout(() => this.isFetchingPrice = false, 500);
+        },
+
+        async fetchRealTimePrice() {
+            const data = await this._fetchWithProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${this.activeETF}.TW?range=1d&interval=1m&_t=${Date.now()}`);
+            if (data?.chart?.result?.[0]) {
+                const res = data.chart.result[0];
+                let price = res.meta?.regularMarketPrice;
+                if (res.indicators?.quote?.[0]?.close) {
+                    const closes = res.indicators.quote[0].close;
+                    for (let i = closes.length - 1; i >= 0; i--) { if (closes[i] != null) { price = closes[i]; break; } }
+                }
+                if (price) {
+                    this.currentPrice = price; this.prevClose = res.meta?.chartPreviousClose || res.meta?.previousClose || this.prevClose;
+                    this.currentVolume = res.meta?.regularMarketVolume || this.currentVolume;
+                    const d = new Date((res.meta?.regularMarketTime || Date.now()/1000) * 1000);
+                    this.priceUpdateTime = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+                    this.realTimeFetched = true;
+                    this.homePrices[this.activeETF] = { price: this.currentPrice, prev: this.prevClose };
+                    this.saveData(false);
+                }
+            } else { this.priceUpdateTime = '即時連線失敗(顯示昨收)'; this.realTimeFetched = false; }
+        },
+
+        async fetchDynamicDiscount() {
+            if(!this.isIndicatorSupported('discount')) return;
+            let config = ETF_CONFIG[this.activeETF] || ETF_CONFIG['DEFAULT'], result = null; this.isEstimateDiscount = false;
+            try {
+                if (config.issuer === 'yuanta') { const ytData = await this._fetchSimpleJson('https://corsproxy.io/?' + encodeURIComponent(`https://www.yuantaetfs.com/api/FundTrdInfo/GetNavPrice?fundid=1066`)); if (ytData?.[0]?.pdRate) result = ytData[0].pdRate; }
+                else if (config.issuer === 'fubon' || config.issuer === 'cathay') throw new Error("Force Fallback");
+            } catch(e) {}
+            if (result === null && this.currentPrice > 0 && this.pbRatio && this.pbRatio !== '無資料') {
+                let pb = parseFloat(this.pbRatio);
+                if (pb > 0 && this.prevClose > 0) { let yesterdayNAV = this.prevClose / pb; let estimateDiscount = ((this.currentPrice - yesterdayNAV) / yesterdayNAV) * 100; result = estimateDiscount.toFixed(2); this.isEstimateDiscount = true; }
+            }
+            this.etfDiscount = result !== null ? `${result}%` : '無資料';
+        },
+
+        async fetchDataAndProcess() {
+            if (this.isFetching) return; this.isFetching = true; await this.fetchRealTimePrice();
+            let startStr = '', yfRange = 'max';
+            if (this.cachedHistoricalData?.length > 0) {
+                let lastDate = new Date(this.cachedHistoricalData[this.cachedHistoricalData.length - 1].time); lastDate.setDate(lastDate.getDate() - 2); startStr = this.getLocalYMD(lastDate);
+                let diff = (Date.now() - lastDate.getTime()) / 86400000; yfRange = diff <= 5 ? '5d' : diff <= 30 ? '1mo' : diff <= 90 ? '3mo' : diff <= 365 ? '1y' : 'max';
+            } else { const d = new Date(); d.setFullYear(d.getFullYear() - 12); startStr = this.getLocalYMD(d); }
+
+            let fetched = [];
+            const fmData = this.activeETF === '0050' ? await this._fetchSimpleJson(`https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${this.activeETF}&start_date=${startStr}`) : null;
+            if (fmData?.msg === 'success' && fmData.data?.length > 0) { fetched = fmData.data.map(i => ({ time: new Date(i.date).getTime(), open: i.open, close: i.close, high: i.max, low: i.min, volume: i.Trading_Volume })); } 
+            else {
+                const yfData = await this._fetchWithProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${this.activeETF}.TW?range=${yfRange}&interval=1d`);
+                if (yfData?.chart?.result?.[0]) { const res = yfData.chart.result[0], t = res.timestamp, q = res.indicators.quote[0]; if (t && q) for(let i=0; i<t.length; i++) if(q.close[i] != null) fetched.push({ time: t[i]*1000, open: q.open[i]||q.close[i], close: q.close[i], high: q.high[i], low: q.low[i], volume: q.volume[i]||0 }); }
+            }
+            if (this.activeETF === '0050') { const splitTime = new Date('2025-06-18T00:00:00+08:00').getTime(); fetched = fetched.map(i => i.time < splitTime ? { ...i, open: i.open/4, close: i.close/4, high: i.high/4, low: i.low/4 } : i); }
+            let map = new Map();
+            if (this.cachedHistoricalData) this.cachedHistoricalData.forEach(i => map.set(this.getLocalYMD(new Date(i.time)), i));
+            fetched.forEach(i => map.set(this.getLocalYMD(new Date(i.time)), i));
+            let finalData = Array.from(map.values()).sort((a, b) => a.time - b.time);
+            if (finalData.length > 0) { this.cachedHistoricalData = finalData; try { localStorage.setItem(`THH_History_V2_${this.activeETF}`, JSON.stringify(finalData)); } catch(e){} this.historicalDataLoaded = true; this.calculateIndicators(finalData); }
+            if (this.isIndicatorSupported('pb') || this.isIndicatorSupported('discount')) { const pbData = await this._fetchSimpleJson('https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_ALL'); this.pbRatio = (pbData && pbData.find(s => s.Code === this.activeETF)?.PBratio !== '-') ? parseFloat(pbData.find(s => s.Code === this.activeETF).PBratio).toFixed(2) : '無資料'; }
+            await this.fetchDynamicDiscount(); this.autoCheckIndicators(); this.isFetching = false;
+        },
+
+        calculateIndicators(data) {
+            if (!this.realTimeFetched || this.currentPrice <= 0) { this.currentPrice = data[data.length - 1].close; this.currentVolume = this.currentVolume || data[data.length - 1].volume || 0; }
+            let cleanData = [], seen = new Set();
+            for (let d of data) { let dStr = this.getLocalYMD(new Date(d.time)); if (!seen.has(dStr) && d.close > 0) { seen.add(dStr); cleanData.push({ time: dStr, open: d.open || d.close, high: Math.max(d.open, d.close, d.high, d.low), low: Math.min(d.open, d.close, d.high, d.low), close: d.close, volume: Math.max(0, d.volume || 0) }); } }
+            this.chartData = cleanData; if (cleanData.length >= 2 && (!this.realTimeFetched || !this.prevClose)) this.prevClose = cleanData[cleanData.length - 2].close;
+            let ma240Arr = [], ma2400Arr = [], sum240 = 0, sum2400 = 0;
+            for (let i = 0; i < cleanData.length; i++) {
+                sum240 += cleanData[i].close; sum2400 += cleanData[i].close;
+                if (i >= 240) sum240 -= cleanData[i - 240].close; if (i >= 2400) sum2400 -= cleanData[i - 2400].close;
+                if (i >= 239) ma240Arr.push({ time: cleanData[i].time, value: sum240 / 240 }); if (i >= 2399) ma2400Arr.push({ time: cleanData[i].time, value: sum2400 / 2400 });
+            }
+            this.ma240Data = ma240Arr; this.ma2400Data = ma2400Arr; this.calc_ma240 = ma240Arr.length > 0 ? ma240Arr[ma240Arr.length - 1].value : 0; this.calc_ma2400 = ma2400Arr.length > 0 ? ma2400Arr[ma2400Arr.length - 1].value : null;
+            if (cleanData.length >= 20) {
+                let sumVol = 0, sumPrice = 0; for(let i = cleanData.length - 20; i < cleanData.length; i++) { sumVol += cleanData[i].volume; sumPrice += cleanData[i].close; }
+                this.calc_ma20 = sumPrice / 20; let avgVol = sumVol / 20, targetVol = this.currentVolume > 0 ? this.currentVolume : cleanData[cleanData.length-1].volume;
+                this.volumeStatus = avgVol > 0 ? (targetVol > avgVol * 1.5 ? '🔥' : (targetVol < avgVol * 0.6 ? '🧊' : '🌊')) : '🌊'; this.priceStatus = this.currentPrice > this.calc_ma20 * 1.05 ? '🚀' : (this.currentPrice < this.calc_ma20 * 0.95 ? '📉' : '⚖️');
+            }
+            let k = 50;
+            for (let i = 8; i < cleanData.length; i++) {
+                let h = -Infinity, l = Infinity; for (let j = Math.max(0, i - 8); j <= i; j++) { if (cleanData[j].high > h) h = cleanData[j].high; if (cleanData[j].low < l) l = cleanData[j].low; }
+                let rsv = h === l ? 50 : ((cleanData[i].close - l) / (h - l)) * 100; k = (2/3) * k + (1/3) * rsv;
+            }
+            this.calc_k = k;
+        },
+
+        autoCheckIndicators() {
+            this.cond_k = this.calc_k > 0 && this.calc_k < 20; this.cond_ma240 = this.calc_ma240 > 0 && this.currentPrice < this.calc_ma240; this.cond_ma2400 = this.calc_ma2400 !== null && this.calc_ma2400 > 0 && this.currentPrice < this.calc_ma2400;
+            this.cond_pb = parseFloat(this.pbRatio) < 1.6; this.cond_cost90 = this.currentAvgCost > 0 && this.currentPrice <= this.currentAvgCost * 0.9; this.cond_cost80 = this.currentAvgCost > 0 && this.currentPrice <= this.currentAvgCost * 0.8;
+            this.cond_discount = parseFloat(this.etfDiscount) < 0; this.isBlueLight = this.isPanic = false;
+        },
+
+        get currentScore() {
+            let earned = 0, max = 0, config = ETF_CONFIG[this.activeETF] || ETF_CONFIG['DEFAULT'];
+            Object.keys(INDICATOR_RULES).forEach(key => { if (!config.indicators.includes(key) || (key === 'ma2400' && this.calc_ma2400 === null)) return; max += INDICATOR_RULES[key].weight; if (this['cond_' + key]) earned += INDICATOR_RULES[key].weight; });
+            return max > 0 ? Math.min(100, Math.round((earned / max) * 100)) : 0;
+        },
+
+        get inventoryState() {
+            let shares = parseFloat(this.baseShares) || 0, avgCost = parseFloat(this.baseAvgCost) || 0;
+            [...this.transactions].sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(t => {
+                let s = parseFloat(t.shares) || 0, amt = parseFloat(t.amount) || 0;
+                if (t.action === 'buy' || t.action === 'sync') { let total = shares * avgCost + amt; shares += s; avgCost = shares > 0 ? total / shares : 0; } 
+                else if (t.action === 'sell' || t.action === 'withdraw') shares = Math.max(0, shares - s);
+            });
+            return { shares, avgCost, totalCost: Math.round(shares * avgCost) };
+        },
+
+        get currentTotalShares() { return this.inventoryState.shares; },
+        get currentTotalCost() { return this.inventoryState.totalCost; },
+        get currentAvgCost() { return this.currentTotalShares > 0 ? parseFloat(this.inventoryState.avgCost.toFixed(2)) : 0; },
+        get totalCashOut() { return (parseFloat(this.baseShares) * parseFloat(this.baseAvgCost) || 0) + this.transactions.filter(t => t.action === 'buy' || t.action === 'sync').reduce((s, t) => s + (parseFloat(t.amount) || 0), 0); },
+        get totalCashIn() { return this.transactions.filter(t => t.action === 'sell' || t.action === 'dividend' || t.action === 'withdraw').reduce((s, t) => s + (parseFloat(t.amount) || 0), 0); },
+        get totalWithdrawn() { return this.transactions.filter(t => t.action === 'withdraw').reduce((s, t) => s + (parseFloat(t.amount) || 0), 0); },
+        get marketValueNum() { return this.currentPrice <= 0 ? 0 : Math.round(this.currentTotalShares * this.currentPrice); },
+        get profit() { return Math.round(this.marketValueNum + this.totalCashIn - this.totalCashOut); },
+        get roi() { return this.totalCashOut <= 0 ? null : (((this.marketValueNum + this.totalCashIn - this.totalCashOut) / this.totalCashOut) * 100).toFixed(2); },
+
+        get dailyProfit() {
+            if (!this.prevClose || this.currentPrice <= 0) return 0;
+            return Math.round(this.currentTotalShares * (this.currentPrice - this.prevClose));
+        },
+        get dailyProfitRate() {
+            if (!this.prevClose || this.currentPrice <= 0 || this.prevClose <= 0) return 0;
+            return (((this.currentPrice - this.prevClose) / this.prevClose) * 100).toFixed(2);
+        },
+
+        get recommendation() {
+            let s = this.currentScore, plans = this.investmentPlans || [], base = plans.reduce((sum, p) => sum + (parseFloat(p.amount)||0), 0) / (plans.length||1);
+            if (s >= 80) return { mult: 3, text: "歷史重壓區！千載難逢，強烈建議大舉加碼", color: "text-purple-700", bg: "bg-purple-50", border: "border-purple-200", amount: Math.round(base * 3) };
+            if (s >= 60) return { mult: 2, text: "恐慌超跌區！多項空頭指標觸發，大舉買進", color: "text-red-600", bg: "bg-red-50", border: "border-red-200", amount: Math.round(base * 2) };
+            if (s >= 40) return { mult: 1, text: "價值浮現區！中線趨勢轉弱，值得投入", color: "text-orange-600", bg: "bg-orange-50", border: "border-orange-200", amount: Math.round(base) };
+            if (s >= 20) return { mult: 0.5, text: "逢低佈局區！短線超跌，可小額試水溫", color: "text-yellow-700", bg: "bg-yellow-50", border: "border-yellow-200", amount: Math.round(base * 0.5) };
+            return { mult: 0, text: "維持原定期定額，保持紀律", color: "text-emerald-700", bg: "bg-emerald-50", border: "border-emerald-200", amount: 0 };
+        },
+
+        get annualizedROI() {
+            if (this.currentTotalShares <= 0 || this.currentPrice <= 0) return null;
+            let flows = [];
+            if (this.baseShares > 0) flows.push({ date: (this.startDate ? new Date(this.startDate) : new Date()).getTime(), amount: -(this.baseShares * this.baseAvgCost) });
+            this.transactions.forEach(t => flows.push({ date: new Date(t.date).getTime(), amount: (t.action === 'buy' || t.action === 'sync') ? -t.amount : t.amount }));
+            flows.push({ date: Date.now(), amount: this.currentTotalShares * this.currentPrice }); flows.sort((a, b) => a.date - b.date);
+            if (flows[flows.length - 1].date - flows[0].date < 86400000) return "時間過短"; 
+            let rate = 0.1; 
+            for (let i = 0; i < 100; i++) {
+                let npv = 0, dnpv = 0; flows.forEach(cf => { let t = (cf.date - flows[0].date) / 31557600000; npv += cf.amount / Math.pow(1 + rate, t); dnpv -= (t * cf.amount) / Math.pow(1 + rate, t + 1); });
+                if (Math.abs(npv) < 0.001) break; if (dnpv === 0) return "無法計算"; rate -= npv / dnpv;
+            }
+            return (rate < -0.99 || rate > 100) ? "極端值" : (rate * 100).toFixed(2);
+        },
+
+        get gkStatus() {
+            let rateDec = this.swrRate / 100;
+            let r = this.marketValueNum > 0 ? ((this.baseRetirementMV * rateDec) / this.marketValueNum) : 0;
+            let targetMonthly = (this.baseRetirementMV * rateDec) / 12;
+
+            if (this.marketValueNum === 0) return { state: 'empty', title: '尚未建立庫存', desc: '請先累積資產，才能開始規劃退休提領。', color: 'text-slate-600', bg: 'bg-slate-50', border: 'border-slate-200', recommendedMonthly: 0, bonus: 0 };
+            if (this.baseRetirementMV <= 0) return { state: 'unlocked', title: '🔒 鎖定基準以啟動護欄', desc: '請點擊上方按鈕，將目前的市值鎖定為提領基準，系統才能為您計算牛熊市加減薪！', color: 'text-slate-600', bg: 'bg-slate-50', border: 'border-slate-200', recommendedMonthly: Math.round((this.marketValueNum * rateDec) / 12), bonus: 0 };
+
+            let upperLimit = rateDec * 1.2, lowerLimit = rateDec * 0.8, diff = Math.round(targetMonthly * 0.1);
+
+            if (r > upperLimit) return { state: 'danger', title: '🚨 熊市警戒！觸發保本護欄', desc: `實質提領率飆升至 ${(r*100).toFixed(2)}%！建議縮減 10% 開支共體時艱。`, color: 'text-red-700', bg: 'bg-red-50', border: 'border-red-300', recommendedMonthly: Math.round(targetMonthly - diff), bonus: -diff };
+            if (r < lowerLimit) return { state: 'success', title: '🎉 牛市紅利！觸發加薪護欄', desc: `實質提領率降至 ${(r*100).toFixed(2)}%！符合通膨加薪條件，犒賞自己吧！`, color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-300', recommendedMonthly: Math.round(targetMonthly + diff), bonus: diff };
+            return { state: 'normal', title: '✅ 穩健區間 (維持現狀)', desc: `實質提領率 ${(r*100).toFixed(2)}% 落在安全範圍。維持原本的預算計畫即可。`, color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-300', recommendedMonthly: Math.round(targetMonthly), bonus: 0 };
+        },
+
+        lockRetirementBase() {
+            if (this.marketValueNum <= 0) return this.showMsg("目前總市值為 0，無法鎖定基準！");
+            this.baseRetirementMV = this.marketValueNum;
+            const pad = n => String(n).padStart(2, '0'); const d = new Date();
+            this.baseRetirementDate = `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())}`;
+            this.saveData(true);
+            this.showMsg(`✅ 成功鎖定今日市值為退休基準！\n系統將以此基準開啟護欄防護機制。`);
+        },
+
+        checkGlobalReminders() {
+            let today = new Date(), key = `${today.getFullYear()}-${today.getMonth()}`; let needsReminder = false;
+            for(let code in this.etfs) {
+                let etf = this.etfs[code], days = (etf.investmentPlans || []).map(p => parseInt(p.day)).filter(d => !isNaN(d));
+                if (days.length && today.getDate() > Math.max(...days) && this.globalSettings.lastRemindedMonth !== key) { needsReminder = true; break; }
+            }
+            if (needsReminder) this.showUpdateReminder = true;
+        },
+        dismissReminder() { this.globalSettings.lastRemindedMonth = `${new Date().getFullYear()}-${new Date().getMonth()}`; this.showUpdateReminder = false; this.saveData(false); },
+
+        processAutoDeduct() {
+            if (!this.cachedHistoricalData || !this.lastCheckDate || !this.investmentPlans?.length) return;
+            let today = new Date().setHours(0,0,0,0), lastCheck = new Date(this.lastCheckDate).setHours(0,0,0,0);
+            if (lastCheck >= today) return;
+
+            let logs = [], currDate = new Date(lastCheck); currDate.setDate(currDate.getDate() + 1);
+            let planStart = this.startDate ? new Date(this.startDate).setHours(0,0,0,0) : 0;
+
+            while (currDate <= today) {
+                if (currDate.getTime() >= planStart) {
+                    let plans = this.investmentPlans.filter(p => p.day === currDate.getDate() && p.amount > 0);
+                    for (let p of plans) {
+                        let execPrice = this.currentPrice, t = currDate.getTime();
+                        for (let d of this.cachedHistoricalData) if (d.time >= t) { execPrice = d.close; break; }
+                        let shares = Math.floor(p.amount / execPrice), cost = Math.round(shares * execPrice);
+                        this.transactions.push({ id: Date.now() + Math.random(), date: this.getLocalYMD(currDate), amount: cost, shares, price: execPrice, type: 'auto', action: 'buy' });
+                        logs.push(`📅 ${currDate.toLocaleDateString()}：買入 ${shares} 股 (扣 ${cost} 元)`);
+                    }
+                }
+                currDate.setDate(currDate.getDate() + 1);
+            }
+            if (logs.length > 0) { this.newLogs = logs; this.showLogs = true; }
+            this.lastCheckDate = new Date().getTime(); this.saveData(false);
+        },
+
+        toggleChart() {
+            if (!this.historicalDataLoaded) return;
+            this.showChart = !this.showChart;
+            if (this.showChart) {
+                let attempts = 0;
+                let checkContainer = setInterval(() => {
+                    const container = document.getElementById('lwc-chart');
+                    if (container && container.clientWidth > 0) { clearInterval(checkContainer); this.renderChart(); }
+                    if (++attempts > 20) { clearInterval(checkContainer); this.renderChart(); }
+                }, 50);
+            } else if (window.lwcChartInstance) { window.lwcChartInstance.remove(); window.lwcChartInstance = null; this.chartRendered = false; }
+        },
+
+        renderChart() {
+            if (typeof LightweightCharts === 'undefined') return alert("圖表套件載入失敗，請確認網路連線。");
+            const container = document.getElementById('lwc-chart');
+            if (!container) return;
+            if (window.lwcChartInstance) window.lwcChartInstance.remove();
+            container.innerHTML = ''; 
+
+            let chartWidth = container.clientWidth || (container.parentElement ? container.parentElement.clientWidth : window.innerWidth - 40);
+            try {
+                const chart = LightweightCharts.createChart(container, {
+                    width: Math.max(280, chartWidth), height: 400,
+                    layout: { background: { color: '#ffffff' }, textColor: '#475569' },
+                    grid: { vertLines: { color: '#f8fafc' }, horzLines: { color: '#f8fafc' } }, crosshair: { mode: 0 } 
+                });
+                window.lwcChartInstance = chart;
+                const candleSeries = chart.addCandlestickSeries({ upColor: '#ef4444', downColor: '#22c55e', borderVisible: false, wickUpColor: '#ef4444', wickDownColor: '#22c55e' });
+                const ma240Series = chart.addLineSeries({ color: '#f59e0b', lineWidth: 2, title: '年線', crosshairMarkerVisible: false });
+                const ma2400Series = chart.addLineSeries({ color: '#a855f7', lineWidth: 2, title: '十年線', crosshairMarkerVisible: false });
+                const volumeSeries = chart.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: '' });
+                volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+
+                if (this.chartData && this.chartData.length > 0) {
+                    candleSeries.setData(this.chartData); ma240Series.setData(this.ma240Data); ma2400Series.setData(this.ma2400Data);
+                    volumeSeries.setData(this.chartData.map(d => ({ time: d.time, value: d.volume, color: d.close >= d.open ? 'rgba(239, 68, 68, 0.4)' : 'rgba(34, 197, 94, 0.4)' })));
+                    chart.timeScale().fitContent();
+                }
+                this.chartRendered = true;
+                if (window.ResizeObserver) { new ResizeObserver(entries => { if (entries[0].target === container && window.lwcChartInstance && entries[0].contentRect.width > 0) { window.lwcChartInstance.applyOptions({ width: Math.floor(entries[0].contentRect.width) }); } }).observe(container); }
+            } catch (err) {}
+        },
+
+        downloadCSVTemplate() {
+            const content = "日期,類型(填:買入/賣出/提領/配息/調額),單價,股數,總金額\n2026-05-08,買入,150.5,100,15050\n2026-06-15,配息,0,0,2500";
+            const blob = new Blob(["\ufeff" + content], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = "ETF存股管家_明細匯入範例.csv";
+            document.body.appendChild(link); link.click(); document.body.removeChild(link);
+        },
+
+        exportTransactionsToCSV() {
+            if (!this.transactions || this.transactions.length === 0) return this.showMsg("目前沒有歷史明細可供匯出！");
+            let csvContent = "\ufeff日期,類型(填:買入/賣出/提領/配息/調額),單價,股數,總金額\n";
+            let typeMap = { 'buy': '買入', 'sell': '賣出', 'withdraw': '提領', 'dividend': '配息', 'sync': '調額' };
+            let sortedTxns = [...this.transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
+            sortedTxns.forEach(t => {
+                let typeStr = typeMap[t.action] || t.action;
+                csvContent += `${t.date},${typeStr},${t.price||0},${t.shares||0},${t.amount||0}\n`;
+            });
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `ETF存股管家_${this.activeETF}_歷史明細.csv`;
+            document.body.appendChild(link); link.click(); document.body.removeChild(link);
+        },
+
+        handleCSVUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const text = e.target.result;
+                const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
+                let parsed = [];
+                for(let i=1; i<lines.length; i++) {
+                    let cols = []; let inQuote = false; let current = '';
+                    for(let char of lines[i]) {
+                        if(char === '"') inQuote = !inQuote;
+                        else if(char === ',' && !inQuote) { cols.push(current); current = ''; }
+                        else current += char;
+                    }
+                    cols.push(current);
+
+                    if(cols.length >= 5) {
+                        let rawType = cols[1] ? cols[1].replace(/["']/g, '').trim() : ''; 
+                        let action = 'buy';
+                        if(rawType.includes('賣') || rawType.toLowerCase().includes('sell')) action = 'sell';
+                        else if(rawType.includes('提') || rawType.toLowerCase().includes('withdraw')) action = 'withdraw';
+                        else if(rawType.includes('息') || rawType.includes('股利') || rawType.includes('配')) action = 'dividend';
+                        else if(rawType.includes('調') || rawType.includes('校正') || rawType.includes('sync')) action = 'sync';
+
+                        let price = parseFloat(cols[2] ? cols[2].replace(/[,"]/g, '').trim() : '0') || 0;
+                        let shares = parseInt(cols[3] ? cols[3].replace(/[,"]/g, '').trim() : '0') || 0;
+                        let amount = parseInt(cols[4] ? cols[4].replace(/[,"]/g, '').trim() : '0') || 0;
+
+                        if (amount === 0 && price > 0 && shares > 0 && action !== 'dividend' && action !== 'sync') {
+                            amount = Math.round(price * shares);
+                        }
+
+                        let rawDate = cols[0] ? cols[0].replace(/["']/g, '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim() : '';
+                        rawDate = rawDate.replace(/\//g, '-');
+                        let dateParts = rawDate.split('-');
+                        if (dateParts.length === 3) {
+                            let y = dateParts[0]; let m = dateParts[1].padStart(2, '0'); let d = dateParts[2].padStart(2, '0');
+                            if (y.length <= 3 && parseInt(y) > 0) y = (parseInt(y) + 1911).toString();
+                            rawDate = `${y}-${m}-${d}`;
+                        }
+                        parsed.push({ id: Date.now() + i, date: rawDate, action: action, price: price, shares: shares, amount: amount });
+                    }
+                }
+                this.csvPreviewData = parsed; this.showCSVModal = true; event.target.value = '';
+            };
+            reader.readAsText(file);
+        },
+
+        confirmCSVImport() {
+            this.transactions = [...this.transactions, ...this.csvPreviewData];
+            this.showCSVModal = false; this.csvPreviewData = []; this.saveData(true);
+            this.showMsg("✅ CSV 歷史明細匯入成功！");
+        },
+
+        addPlan() { this.investmentPlans.push({ id: Date.now(), day: 15, amount: 10000 }); },
+        removePlan(id) { this.investmentPlans = this.investmentPlans.filter(p => p.id !== id); this.saveData(true); },
+
+        executeManualAdd() {
+            if (this.manualAction === 'dividend') {
+                if (!this.manualAmount || !this.manualDate) return this.showMsg('請輸入完整的配息日期與總金額！');
+                this.transactions.push({ id: Date.now(), date: this.manualDate, shares: 0, price: 0, amount: Math.round(this.manualAmount), action: 'dividend' });
+            } else if (this.manualAction === 'sync') {
+                if (this.manualShares == null || this.manualPrice == null || !this.manualDate) return this.showMsg('請輸入校正日期的實際總股數與均價！');
+                let curr = this.inventoryState, targetShares = Math.floor(this.manualShares), targetTotalCost = Math.round(targetShares * parseFloat(this.manualPrice)); 
+                this.transactions.push({ id: Date.now(), date: this.manualDate, shares: targetShares - curr.shares, price: 0, amount: targetTotalCost - curr.totalCost, action: 'sync' });
+                this.showMsg(`✅ 庫存校正已完成！\n自動補足差額股數：${targetShares - curr.shares} 股\n微調成本差額：${targetTotalCost - curr.totalCost} 元`);
+            } else {
+                if (!this.manualShares || !this.manualPrice || !this.manualDate) return this.showMsg('請輸入完整的日期、單價與股數！');
+                let finalAmount = this.manualAmount !== null ? Math.round(this.manualAmount) : Math.round(this.manualShares * this.manualPrice); 
+                this.transactions.push({ id: Date.now(), date: this.manualDate, shares: Math.floor(this.manualShares), price: this.manualPrice, amount: finalAmount, action: this.manualAction });
+            }
+            this.manualShares = this.manualPrice = this.manualAmount = null; this.manualAction = 'buy'; this.saveData(true);
+            if (this.manualAction !== 'sync') this.showMsg('✅ 交易已存入歷史明細！\n年化報酬率已重新精算。');
+        },
+
+        toggleYear(year) {
+            if (this.expandedYears.includes(year)) this.expandedYears = this.expandedYears.filter(y => y !== year);
+            else this.expandedYears.push(year);
+        },
+
+        get groupedTransactions() {
+            let groups = {};
+            this.transactions.forEach(t => {
+                let year = t.date ? t.date.substring(0, 4) : '未知';
+                if (!groups[year]) groups[year] = { year, txns: [], totalIn: 0, totalOut: 0 };
+                groups[year].txns.push(t);
+                if (t.action === 'buy' || t.action === 'sync') groups[year].totalIn += (t.amount || 0);
+                else if (t.action === 'sell' || t.action === 'dividend' || t.action === 'withdraw') groups[year].totalOut += (t.amount || 0);
+            });
+            let arr = Object.values(groups).sort((a, b) => (a.year === '未知' ? 1 : (b.year === '未知' ? -1 : a.year - b.year)));
+            arr.forEach(g => g.txns.sort((a, b) => new Date(a.date) - new Date(b.date))); 
+            return arr;
+        },
+
+        confirmRemoveTransaction(id) { this.pendingDeleteId = id; this.pendingDeleteType = 'single'; this.confirmBoxText = '確定要刪除這筆紀錄嗎？'; this.showConfirmBox = true; },
+        confirmClearTransactions() { this.pendingDeleteType = 'all'; this.confirmBoxText = '⚠️ 警告：確定清空「所有」明細？(無法復原)'; this.showConfirmBox = true; },
+
+        executeConfirmAction() {
+            if (this.pendingDeleteType === 'single') { this.transactions = this.transactions.filter(t => t.id !== this.pendingDeleteId); this.saveData(true); } 
+            else if (this.pendingDeleteType === 'all') { this.transactions = []; this.showMsg('🗑️ 所有歷史明細已清空！'); this.saveData(true); } 
+            else if (this.pendingDeleteType === 'etf') {
+                const code = this.pendingDeleteId; delete this.etfs[code]; if (this.homePrices[code]) delete this.homePrices[code];
+                if (this.currentView === 'detail' && this.activeETF === code) { this.activeETF = null; this.saveData(false); this.currentView = 'home'; window.scrollTo({ top: 0, behavior: 'smooth' }); this.fetchHomePrices(); } 
+                else { this.saveData(false); this.fetchHomePrices(); }
+                this.showMsg(`🗑️ 已成功刪除標的 ${code}！`);
+            }
+            this.closeConfirmBox();
+        },
+
+        exportSystemBackup(showMsg = true) {
+            let saved = null;
+            try { saved = localStorage.getItem('THH_ETF_Data_V1'); } catch(e) {}
+            if (!saved) return showMsg ? this.showMsg('目前沒有資料可以備份！') : null;
+            const now = new Date(); const pad = n => String(n).padStart(2, '0');
+            let timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+            const blob = new Blob([saved], { type: 'application/json' });
+            const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `ETF存股管家手動備份_${timestamp}.json`;
+            document.body.appendChild(link); link.click(); setTimeout(() => { document.body.removeChild(link); URL.revokeObjectURL(link.href); }, 100);
+            if(showMsg) this.showMsg('✅ 備份檔已下載！\n建議存入雲端硬碟以利未來還原。');
+        },
+
+        importSystemBackup(event) {
+            const file = event.target.files[0]; if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    let data = JSON.parse(e.target.result);
+                    if (data.baseShares !== undefined || data.transactions !== undefined) {
+                        let upgradedData = { etfs: { '0050': { baseShares: data.baseShares || 0, baseAvgCost: data.baseAvgCost || 0, transactions: (data.transactions || []).map(t => ({...t, action: t.action || 'buy'})), startDate: data.startDate || '', lastCheckDate: data.lastCheckDate || new Date().getTime(), investmentPlans: data.investmentPlans || [], isBlueLight: data.isBlueLight || false, isPanic: data.isPanic || false, baseRetirementMV: 0, baseRetirementDate: '', swrRate: 4.0 } }, global: { lastRemindedMonth: data.lastRemindedMonth || null } };
+                        try { localStorage.setItem('THH_ETF_Data_V1', JSON.stringify(upgradedData)); } catch(e) {}
+                        this.showMsg('✅ 偵測到舊版 0050 備份檔，已成功為您無縫升級並還原！\n按下確定後將重新載入。', true);
+                    } else if (data && data.etfs) {
+                        try { localStorage.setItem('THH_ETF_Data_V1', JSON.stringify(data)); } catch(e) {}
+                        this.showMsg('✅ 資料已成功還原！\n按下確定後將重新載入。', true);
+                    } else throw new Error("Invalid Format");
+                } catch (err) { this.showMsg('❌ 還原失敗！請確保上傳的是正確的系統備份檔。'); }
+            };
+            reader.readAsText(file); event.target.value = ''; 
+        },
+
+        showInfo(title, content) { this.infoBoxTitle = title; this.infoBoxContent = content; this.showInfoBox = true; },
+        closeInfoBox() { this.showInfoBox = false; },
+        showMsg(text, reload = false) { this.msgBoxText = text; this.reloadOnClose = reload; this.showMsgBox = true; },
+        closeMsgBox() { this.showMsgBox = false; if (this.reloadOnClose) window.location.reload(); },
+        closeConfirmBox() { this.showConfirmBox = false; this.pendingDeleteId = null; },
+        formatMoney(num) { return isNaN(num) || num == null ? '0' : Number(num).toLocaleString('zh-TW', { maximumFractionDigits: 0 }); },
+
+        async installApp() {
+            if (this.isIOS && !this.isStandalone) { this.showIOSInstallDialog = true; return; }
+            if (this.deferredPrompt) {
+                this.deferredPrompt.prompt();
+                const { outcome } = await this.deferredPrompt.userChoice;
+                if (outcome === 'accepted') this.deferredPrompt = null;
+            } else { this.showMsg("目前無法觸發自動安裝 💡\n\n您可能已經安裝過此應用程式，或者請嘗試透過瀏覽器選單中的「加到主畫面」來手動安裝。"); }
+        }
+    }));
+});
+</script>
+</head>
 <body class="bg-background text-slate-800 font-sans antialiased min-h-screen pb-20">
 
 <div x-data="investmentApp" x-cloak class="max-w-4xl mx-auto px-4 sm:px-6 pt-6 relative">
@@ -144,8 +935,8 @@
         <h2 class="text-2xl font-bold text-slate-800 drop-shadow-sm">我的存股清單</h2>
     </div>
 
-    <div class="grid grid-cols-1 gap-5 mb-8">
-        <div x-show="Object.keys(etfs).length === 0" class="py-20 flex flex-col items-center justify-center text-slate-400 bg-white/60 backdrop-blur-sm rounded-3xl border-2 border-dashed border-slate-300 shadow-inner">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-8">
+        <div x-show="Object.keys(etfs).length === 0" class="col-span-full py-20 flex flex-col items-center justify-center text-slate-400 bg-white/60 backdrop-blur-sm rounded-3xl border-2 border-dashed border-slate-300 shadow-inner">
             <div class="text-6xl mb-4 opacity-50 drop-shadow-md"><i class="fa-solid fa-folder-open text-blue-200"></i></div>
             <p class="text-2xl font-bold text-slate-600 mb-2">目前清單空空如也</p>
             <p class="text-base text-slate-500">點擊下方按鈕新增您的第一檔 ETF 吧！</p>
@@ -181,9 +972,9 @@
             </div>
         </template>
 
-        <div @click="showAddETFModal = true" class="bg-white/50 backdrop-blur-sm rounded-2xl border-2 border-dashed border-slate-300 hover:border-blue-400 hover:bg-blue-50 hover:shadow-md transition-all cursor-pointer flex flex-col items-center justify-center min-h-[160px] py-6 text-slate-400 hover:text-blue-500 group">
-            <div class="w-14 h-14 rounded-full bg-white flex items-center justify-center shadow-sm mb-3 group-hover:scale-110 transition-transform border border-slate-100"><i class="fa-solid fa-plus text-2xl"></i></div>
-            <span class="font-bold tracking-wide text-lg">新增追蹤</span>
+        <div @click="showAddETFModal = true" class="bg-white/50 backdrop-blur-sm rounded-2xl border-2 border-dashed border-slate-300 hover:border-blue-400 hover:bg-blue-50 hover:shadow-md transition-all cursor-pointer flex flex-col items-center justify-center min-h-[220px] text-slate-400 hover:text-blue-500 group">
+            <div class="w-16 h-16 rounded-full bg-white flex items-center justify-center shadow-sm mb-4 group-hover:scale-110 transition-transform border border-slate-100"><i class="fa-solid fa-plus text-3xl"></i></div>
+            <span class="font-bold tracking-wide text-xl">新增追蹤</span>
         </div>
     </div>
 
@@ -291,10 +1082,9 @@
                 <div class="p-3 sm:p-4 flex-1 flex flex-col justify-center border-b border-slate-100">
                     <div class="text-base sm:text-lg font-bold text-slate-500 mb-1">即時市值 (元)</div>
                     <div class="text-3xl sm:text-4xl font-black text-blue-600 tracking-tight mb-1" x-text="marketValueNum > 0 ? formatMoney(marketValueNum) : '0'"></div>
-                    <div class="mt-1 flex items-center gap-1 text-sm sm:text-base font-bold" x-show="prevClose > 0">
-                        <span class="text-slate-400">今日</span>
-                        <span :class="dailyProfit >= 0 ? 'text-red-500' : 'text-green-500'" x-text="dailyProfit > 0 ? '▲ ' + formatMoney(dailyProfit) : (dailyProfit < 0 ? '▼ ' + formatMoney(Math.abs(dailyProfit)) : '0')"></span>
-                        <span :class="parseFloat(dailyProfitRate) >= 0 ? 'text-red-500' : 'text-green-500'" x-text="parseFloat(dailyProfitRate) > 0 ? '(+' + dailyProfitRate + '%)' : (parseFloat(dailyProfitRate) < 0 ? '(-' + Math.abs(parseFloat(dailyProfitRate)).toFixed(2) + '%)' : '(0.00%)')"></span>
+                    <div class="flex items-center gap-1 text-sm sm:text-base font-bold text-slate-400" x-show="prevClose > 0">
+                        <span>昨日市值</span>
+                        <span x-text="currentTotalShares > 0 ? formatMoney(Math.round(currentTotalShares * prevClose)) : '0'"></span>
                     </div>
                 </div>
                 <div class="p-3 sm:p-4 flex-1 flex flex-col justify-center bg-slate-50/50 rounded-b-2xl">
@@ -499,7 +1289,7 @@
 
             <div class="bg-white rounded-3xl shadow-sm border border-slate-200 p-6 md:p-8">
                 <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-                    <h2 class="text-xl font-black text-slate-800 flex items-center gap-2"><i class="fa-solid fa-list text-blue-500 text-base"></i> 歷史明細管理</h2>
+                    <h2 class="text-xl font-black text-slate-800 flex items-center gap-2"><i class="fa-solid fa-list text-blue-500"></i> 歷史明細管理</h2>
                     <div class="flex flex-wrap gap-2">
                         <button @click="downloadCSVTemplate()" class="px-3 py-2 bg-slate-100 text-slate-600 text-sm font-bold rounded-lg hover:bg-slate-200 transition"><i class="fa-solid fa-download mr-1"></i>下載範例</button>
                         <button @click="exportTransactionsToCSV()" class="px-3 py-2 bg-slate-100 text-slate-600 text-sm font-bold rounded-lg hover:bg-slate-200 transition"><i class="fa-solid fa-file-export mr-1"></i>匯出 CSV</button>
@@ -538,7 +1328,7 @@
             </div>
 
             <div class="bg-white rounded-3xl shadow-sm border border-slate-200 p-6 md:p-8">
-                <h2 class="text-xl font-black text-slate-800 mb-5 flex items-center gap-2"><i class="fa-solid fa-calendar-check text-blue-500 text-base"></i> 定期定額計畫設定</h2>
+                <h2 class="text-xl font-black text-slate-800 mb-5 flex items-center gap-2"><i class="fa-solid fa-calendar-check text-blue-500"></i> 定期定額計畫設定</h2>
                 <div class="space-y-3 mb-5">
                     <template x-for="p in investmentPlans" :key="p.id">
                         <div class="flex flex-wrap sm:flex-nowrap items-center gap-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
@@ -566,4 +1356,5 @@
 
 </div> </div> </body>
 </html>
+
 
