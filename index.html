@@ -935,8 +935,8 @@ document.addEventListener('alpine:init', () => {
         <h2 class="text-2xl font-bold text-slate-800 drop-shadow-sm">我的存股清單</h2>
     </div>
 
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-8">
-        <div x-show="Object.keys(etfs).length === 0" class="col-span-full py-20 flex flex-col items-center justify-center text-slate-400 bg-white/60 backdrop-blur-sm rounded-3xl border-2 border-dashed border-slate-300 shadow-inner">
+    <div class="grid grid-cols-1 gap-5 mb-8">
+        <div x-show="Object.keys(etfs).length === 0" class="py-20 flex flex-col items-center justify-center text-slate-400 bg-white/60 backdrop-blur-sm rounded-3xl border-2 border-dashed border-slate-300 shadow-inner">
             <div class="text-6xl mb-4 opacity-50 drop-shadow-md"><i class="fa-solid fa-folder-open text-blue-200"></i></div>
             <p class="text-2xl font-bold text-slate-600 mb-2">目前清單空空如也</p>
             <p class="text-base text-slate-500">點擊下方按鈕新增您的第一檔 ETF 吧！</p>
@@ -972,9 +972,9 @@ document.addEventListener('alpine:init', () => {
             </div>
         </template>
 
-        <div @click="showAddETFModal = true" class="bg-white/50 backdrop-blur-sm rounded-2xl border-2 border-dashed border-slate-300 hover:border-blue-400 hover:bg-blue-50 hover:shadow-md transition-all cursor-pointer flex flex-col items-center justify-center min-h-[220px] text-slate-400 hover:text-blue-500 group">
-            <div class="w-16 h-16 rounded-full bg-white flex items-center justify-center shadow-sm mb-4 group-hover:scale-110 transition-transform border border-slate-100"><i class="fa-solid fa-plus text-3xl"></i></div>
-            <span class="font-bold tracking-wide text-xl">新增追蹤</span>
+        <div @click="showAddETFModal = true" class="bg-white/50 backdrop-blur-sm rounded-2xl border-2 border-dashed border-slate-300 hover:border-blue-400 hover:bg-blue-50 hover:shadow-md transition-all cursor-pointer flex flex-col items-center justify-center min-h-[160px] py-6 text-slate-400 hover:text-blue-500 group">
+            <div class="w-14 h-14 rounded-full bg-white flex items-center justify-center shadow-sm mb-3 group-hover:scale-110 transition-transform border border-slate-100"><i class="fa-solid fa-plus text-2xl"></i></div>
+            <span class="font-bold tracking-wide text-lg">新增追蹤</span>
         </div>
     </div>
 
@@ -1289,7 +1289,7 @@ document.addEventListener('alpine:init', () => {
 
             <div class="bg-white rounded-3xl shadow-sm border border-slate-200 p-6 md:p-8">
                 <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-                    <h2 class="text-xl font-black text-slate-800 flex items-center gap-2"><i class="fa-solid fa-list text-blue-500"></i> 歷史明細管理</h2>
+                    <h2 class="text-xl font-black text-slate-800 flex items-center gap-2"><i class="fa-solid fa-list text-blue-500 text-base"></i> 歷史明細管理</h2>
                     <div class="flex flex-wrap gap-2">
                         <button @click="downloadCSVTemplate()" class="px-3 py-2 bg-slate-100 text-slate-600 text-sm font-bold rounded-lg hover:bg-slate-200 transition"><i class="fa-solid fa-download mr-1"></i>下載範例</button>
                         <button @click="exportTransactionsToCSV()" class="px-3 py-2 bg-slate-100 text-slate-600 text-sm font-bold rounded-lg hover:bg-slate-200 transition"><i class="fa-solid fa-file-export mr-1"></i>匯出 CSV</button>
@@ -1328,7 +1328,7 @@ document.addEventListener('alpine:init', () => {
             </div>
 
             <div class="bg-white rounded-3xl shadow-sm border border-slate-200 p-6 md:p-8">
-                <h2 class="text-xl font-black text-slate-800 mb-5 flex items-center gap-2"><i class="fa-solid fa-calendar-check text-blue-500"></i> 定期定額計畫設定</h2>
+                <h2 class="text-xl font-black text-slate-800 mb-5 flex items-center gap-2"><i class="fa-solid fa-calendar-check text-blue-500 text-base"></i> 定期定額計畫設定</h2>
                 <div class="space-y-3 mb-5">
                     <template x-for="p in investmentPlans" :key="p.id">
                         <div class="flex flex-wrap sm:flex-nowrap items-center gap-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
