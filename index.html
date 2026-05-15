@@ -1176,8 +1176,8 @@ this.showMsg("目前無法觸發自動安裝 💡\n\n您可能已經安裝過此
 <div class="p-3 sm:p-4 flex-1 flex flex-col justify-center border-b border-slate-100">
 <div class="text-base sm:text-lg font-bold text-slate-500 mb-1">即時市值 (元)</div>
 <div class="text-3xl sm:text-4xl font-black text-blue-600 tracking-tight" x-text="marketValueNum > 0 ? formatMoney(marketValueNum) : '0'"></div>
-<div class="mt-1.5 flex items-center gap-1.5 text-sm sm:text-base font-bold text-slate-500">
-    <span>總資產比重：<span x-text="totalNetWorth > 0 ? ((marketValueNum / totalNetWorth) * 100).toFixed(2) : '0.00'"></span> %</span>
+<div class="mt-1.5 w-full text-left text-sm sm:text-base font-bold text-slate-500 tracking-tight">
+    總資產比重：<span x-text="totalNetWorth > 0 ? ((marketValueNum / totalNetWorth) * 100).toFixed(2) : '0.00'"></span> %
 </div>
 </div>
 <div class="p-3 sm:p-4 flex-1 flex flex-col justify-center bg-slate-50/50 rounded-b-2xl">
