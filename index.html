@@ -173,6 +173,30 @@ this.showInfo('運作原理與護欄機制', `<p><strong class="text-indigo-600 
                    <p><strong class="text-indigo-600 text-lg mt-4 block">🛡️ 防禦機制 (極度重要)：</strong><br>退休前務必準備 <strong>2~3 年生活費的現金緩衝墊</strong>。當遇到大股災，帳面重挫且提領率飆高時，絕對不要賣股票，改用這筆現金生活。</p>`);
 },
 
+showPriceStatusInfo() {
+    let title, content, ma20 = this.calc_ma20 ? this.calc_ma20.toFixed(2) : 0;
+    if (this.priceStatus === '🚀') {
+        title = '🚀 短線過熱'; content = `<p class="mb-2"><strong>目前狀態：</strong>市價高於月均線 (${ma20} 元) 達 5% 以上。</p><p class="mb-2 text-red-600 font-bold">技術面解讀：</p><p class="text-slate-700">代表短線正乖離過大，市場情緒過熱（超買），隨時可能發生技術性拉回或修正。</p><div class="mt-3 bg-red-50 p-3 rounded-lg border border-red-100"><p class="font-bold text-red-700 text-sm">💡 操作建議：</p><p class="text-sm text-red-600 mt-1">短線追高風險較大，若為單筆加碼建議暫緩，維持定期定額即可。</p></div>`;
+    } else if (this.priceStatus === '📉') {
+        title = '📉 短線超跌'; content = `<p class="mb-2"><strong>目前狀態：</strong>市價低於月均線 (${ma20} 元) 達 5% 以上。</p><p class="mb-2 text-green-600 font-bold">技術面解讀：</p><p class="text-slate-700">代表短線負乖離過大，市場過度恐慌（超賣），醞釀技術性反彈的機率極高。</p><div class="mt-3 bg-green-50 p-3 rounded-lg border border-green-100"><p class="font-bold text-green-700 text-sm">💡 操作建議：</p><p class="text-sm text-green-600 mt-1">這是長線存股族極佳的「逢低佈局、單筆加碼」時機，可考慮進場撿便宜。</p></div>`;
+    } else {
+        title = '⚖️ 貼近月線'; content = `<p class="mb-2"><strong>目前狀態：</strong>市價與月均線 (${ma20} 元) 乖離在 5% 以內。</p><p class="mb-2 text-slate-600 font-bold">技術面解讀：</p><p class="text-slate-700">屬於健康的合理區間震盪，未出現極端的超買或超賣情緒。</p><div class="mt-3 bg-slate-100 p-3 rounded-lg border border-slate-200"><p class="font-bold text-slate-700 text-sm">💡 操作建議：</p><p class="text-sm text-slate-600 mt-1">目前處於一般常態，維持原有的投資紀律與定期定額計畫即可。</p></div>`;
+    }
+    this.showInfo(title, content);
+},
+
+showVolumeStatusInfo() {
+    let title, content;
+    if (this.volumeStatus === '🔥') {
+        title = '🔥 熱門爆量'; content = `<p class="mb-2"><strong>目前狀態：</strong>今日成交量大於近月平均量能 1.5 倍以上。</p><p class="mb-2 text-red-600 font-bold">技術面解讀：</p><p class="text-slate-700">籌碼換手熱烈。若發生在連續下跌後的「低檔」，常為洗盤結束的反轉訊號；若是連續上漲後的「高檔」，則需警決主力出貨的可能。</p>`;
+    } else if (this.volumeStatus === '🧊') {
+        title = '🧊 冷清量縮'; content = `<p class="mb-2"><strong>目前狀態：</strong>今日成交量小於近月平均量能 0.6 倍。</p><p class="mb-2 text-blue-600 font-bold">技術面解讀：</p><p class="text-slate-700">市場觀望氣氛濃厚，買賣意願低迷。常出現於方向不明的盤整期，或暴跌後的窒息量（有時亦為底部特徵）。</p>`;
+    } else {
+        title = '🌊 溫和量能'; content = `<p class="mb-2"><strong>目前狀態：</strong>今日成交量接近近月平均水準。</p><p class="mb-2 text-cyan-600 font-bold">技術面解讀：</p><p class="text-slate-700">這是一般正常且平穩的流動性狀態，沒有異常的籌碼劇烈交換，市場情緒穩定。</p>`;
+    }
+    this.showInfo(title, content);
+},
+
 getLocalYMD(d = new Date()) {
 return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split('T')[0];
 },
@@ -1136,18 +1160,18 @@ this.showMsg("目前無法觸發自動安裝 💡\n\n您可能已經安裝過此
 <span class="text-base" x-text="'(' + (((currentPrice - prevClose) / prevClose) * 100).toFixed(2) + '%)'"></span>
 </span>
 </div>
-<div x-show="historicalDataLoaded && priceStatus" class="w-[130px] text-center text-sm font-bold px-2 py-1.5 rounded-md border shadow-sm whitespace-nowrap shrink-0" :class="priceStatus === '🚀' ? 'bg-red-50 text-red-600 border-red-200' : (priceStatus === '📉' ? 'bg-green-50 text-green-600 border-green-200' : 'bg-white text-slate-600 border-slate-200')">
+<button @click="showPriceStatusInfo()" x-show="historicalDataLoaded && priceStatus" class="w-[145px] text-center text-sm font-bold px-2 py-1.5 rounded-full border shadow-sm whitespace-nowrap shrink-0 transition-all active:scale-95 active:shadow-inner flex items-center justify-center gap-1.5 outline-none" :class="priceStatus === '🚀' ? 'bg-red-50 text-red-600 border-red-200' : (priceStatus === '📉' ? 'bg-green-50 text-green-600 border-green-200' : 'bg-white text-slate-600 border-slate-200')">
 <span x-text="priceStatus === '🚀' ? '🚀 短線過熱' : (priceStatus === '📉' ? '📉 短線超跌' : '⚖️ 貼近月線')"></span>
-</div>
-</div>
+<i class="fa-solid fa-circle-info opacity-50"></i>
+</button></div>
 <div class="w-full flex justify-between items-center gap-4 border-t border-slate-200/60 pt-2 mt-1">
 <div class="text-base font-bold text-slate-500 flex items-center gap-2">
 單日成交 <span class="text-2xl font-black text-slate-800" x-text="currentVolume > 0 ? formatMoney(currentVolume / 1000) + ' 張' : '-'"></span>
 </div>
-<div x-show="historicalDataLoaded && volumeStatus" class="w-[130px] text-center text-sm font-bold px-2 py-1.5 rounded-md border shadow-sm whitespace-nowrap shrink-0" :class="volumeStatus === '🔥' ? 'bg-red-50 text-red-600 border-red-200' : (volumeStatus === '🧊' ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-cyan-50 text-cyan-600 border-cyan-200')">
+<button @click="showVolumeStatusInfo()" x-show="historicalDataLoaded && volumeStatus" class="w-[145px] text-center text-sm font-bold px-2 py-1.5 rounded-full border shadow-sm whitespace-nowrap shrink-0 transition-all active:scale-95 active:shadow-inner flex items-center justify-center gap-1.5 outline-none" :class="volumeStatus === '🔥' ? 'bg-red-50 text-red-600 border-red-200' : (volumeStatus === '🧊' ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-cyan-50 text-cyan-600 border-cyan-200')">
 <span x-text="volumeStatus === '🔥' ? '🔥 熱門爆量' : (volumeStatus === '🧊' ? '🧊 冷清量縮' : '🌊 溫和量能')"></span>
-</div>
-</div>
+<i class="fa-solid fa-circle-info opacity-50"></i>
+</button></div>
 </div>
 </div>
 </div>
@@ -1806,7 +1830,6 @@ this.showMsg("目前無法觸發自動安裝 💡\n\n您可能已經安裝過此
 
 </body>
 </html>
-
 
 
 
