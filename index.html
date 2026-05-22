@@ -363,7 +363,12 @@ this.prevClose = this.homePrices[code].prev || 0;
 this.currentPrice = 0; this.prevClose = 0;
 }
 
+// ✅ 進入主控台前，先清空前一檔 ETF 的殘留變數，確保畫面乾淨
+this.currentVolume = 0; this.priceUpdateTime = '';
+this.volumeStatus = ''; this.priceStatus = '';
+this.cachedHistoricalData = null; 
 this.realTimeFetched = false; this.historicalDataLoaded = false; this.showChart = false;
+
 if(window.lwcChartInstance) { window.lwcChartInstance.remove(); window.lwcChartInstance = null; this.chartRendered = false; }
 this.currentView = 'detail'; this.activeTab = 'dashboard'; window.scrollTo({ top: 0, behavior: 'smooth' });
 this.loadHistoricalCache(); this.fetchDataAndProcess().then(() => this.processAutoDeduct());
@@ -401,8 +406,16 @@ if(this.chartRendered && this.showChart) this.renderChart(); setTimeout(() => th
 },
 
 async fetchRealTimePrice() {
-const data = await this._fetchWithProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${this.activeETF}.TW?range=1d&interval=1m&_t=${Date.now()}`);
+let requestETF = this.activeETF; // ✅ 鎖定派出請求時的 ETF 代號
+const data = await this._fetchWithProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${requestETF}.TW?range=1d&interval=1m&_t=${Date.now()}`);
+
+// ✅ 小精靈回來後核對身分：如果等待期間使用者切換了 ETF，立刻丟棄舊資料！
+if (this.activeETF !== requestETF) return; 
+
 if (data?.chart?.result?.[0]) {
+
+
+
 const res = data.chart.result[0];
 let price = res.meta?.regularMarketPrice;
 if (res.indicators?.quote?.[0]?.close) {
@@ -437,7 +450,13 @@ this.etfDiscount = result !== null ? `${result}%` : '無資料';
 },
 
 async fetchDataAndProcess() {
-if (this.isFetching) return; this.isFetching = true; await this.fetchRealTimePrice();
+if (this.isFetching) return; this.isFetching = true; 
+let requestETF = this.activeETF; // ✅ 鎖定請求
+await this.fetchRealTimePrice();
+
+// ✅ 防止連鎖污染：如果抓完即時股價發現切換了 ETF，直接中斷
+if (this.activeETF !== requestETF) { this.isFetching = false; return; } 
+
 let startStr = '', yfRange = 'max';
 if (this.cachedHistoricalData?.length > 0) {
 let lastDate = new Date(this.cachedHistoricalData[this.cachedHistoricalData.length - 1].time); lastDate.setDate(lastDate.getDate() - 2); startStr = this.getLocalYMD(lastDate);
@@ -1830,6 +1849,3 @@ this.showMsg("目前無法觸發自動安裝 💡\n\n您可能已經安裝過此
 
 </body>
 </html>
-
-
-
