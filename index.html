@@ -103,7 +103,9 @@ showInfoBox: false, infoBoxTitle: '', infoBoxContent: '', showSWRBox: false,
 isIOS: false, isStandalone: false, showIOSInstallDialog: false, deferredPrompt: null,
 
 showCSVModal: false, csvPreviewData: [],
+
 showHomeChart: false, homeChartMode: 'total', homeChartRange: '1Y', isHomeChartReady: false, isHomeChartLoading: false, homeTimelineData: [], homeChartInstance: null,
+showDetailNetWorthChart: false, detailChartRange: '1Y', isDetailChartReady: false, isDetailChartLoading: false, detailTimelineData: [], detailChartInstance: null,
 
 cond_k: false, cond_ma240: false, cond_ma2400: false, cond_pb: false, isBlueLight: false, isPanic: false, cond_cost90: false, cond_cost80: false, cond_discount: false,
 currentPrice: 0, prevClose: 0, currentVolume: 0, volumeStatus: '', priceStatus: '',
@@ -366,6 +368,84 @@ renderHomeChart() {
         if (window.ResizeObserver) { new ResizeObserver(entries => { if (entries[0].target === container && this.homeChartInstance && entries[0].contentRect.width > 0) { this.homeChartInstance.applyOptions({ width: Math.floor(entries[0].contentRect.width) }); } }).observe(container); }
     } catch(e){}
 },
+async prepareDetailChartData() {
+    if (this.isDetailChartReady || !this.activeETF || !this.cachedHistoricalData) return;
+    this.isDetailChartLoading = true;
+    
+    let txns = [];
+    if (this.baseShares > 0 && this.startDate) txns.push({ date: this.startDate, action: 'buy', shares: this.baseShares, amount: this.baseShares * this.baseAvgCost });
+    (this.transactions||[]).forEach(t => txns.push({ date: t.date, action: t.action, shares: t.shares, amount: t.amount }));
+    txns.sort((a,b) => new Date(a.date) - new Date(b.date));
+
+    if (txns.length === 0) { this.isDetailChartLoading = false; return; }
+
+    let historyMap = {}; let allDates = new Set();
+    this.cachedHistoricalData.forEach(h => { let dStr = this.getLocalYMD(new Date(h.time)); allDates.add(dStr); historyMap[dStr] = h.close; });
+    if (this.currentPrice > 0) { let todayStr = this.getLocalYMD(); allDates.add(todayStr); historyMap[todayStr] = this.currentPrice; }
+
+    let sortedDates = Array.from(allDates).sort((a,b) => new Date(a) - new Date(b));
+    sortedDates = sortedDates.filter(d => d >= txns[0].date);
+
+    let timeline = []; let currentShares = 0; let cumulativeNetInvested = 0; let lastPrice = 0; let txnIdx = 0;
+    for (let d of sortedDates) {
+        while (txnIdx < txns.length && txns[txnIdx].date <= d) {
+            let t = txns[txnIdx];
+            let s = parseFloat(t.shares)||0; let amt = parseFloat(t.amount)||0;
+            if (t.action === 'buy' || t.action === 'sync') { currentShares += s; cumulativeNetInvested += amt; } 
+            else if (t.action === 'sell' || t.action === 'withdraw') { currentShares = Math.max(0, currentShares - s); cumulativeNetInvested -= amt; } 
+            else if (t.action === 'dividend') { cumulativeNetInvested -= amt; }
+            txnIdx++;
+        }
+        if (historyMap[d]) lastPrice = historyMap[d];
+        timeline.push({ time: d, value: lastPrice * currentShares, cost: cumulativeNetInvested });
+    }
+    
+    this.detailTimelineData = timeline;
+    this.isDetailChartReady = true; this.isDetailChartLoading = false;
+    if (this.showDetailNetWorthChart) this.renderDetailNetWorthChart();
+},
+async toggleDetailNetWorthChart() {
+    this.showDetailNetWorthChart = !this.showDetailNetWorthChart;
+    if (this.showDetailNetWorthChart) {
+        if (!this.isDetailChartReady) await this.prepareDetailChartData();
+        setTimeout(() => this.renderDetailNetWorthChart(), 50);
+    } else {
+        if (this.detailChartInstance) { this.detailChartInstance.remove(); this.detailChartInstance = null; }
+    }
+},
+changeDetailChartRange(range) { this.detailChartRange = range; this.renderDetailNetWorthChart(); },
+renderDetailNetWorthChart() {
+    if (!this.showDetailNetWorthChart || !this.isDetailChartReady || this.detailTimelineData.length === 0) return;
+    const container = document.getElementById('detail-lwc-chart'); if (!container) return;
+    if (this.detailChartInstance) { this.detailChartInstance.remove(); this.detailChartInstance = null; }
+    container.innerHTML = '';
+    let chartWidth = container.clientWidth || (container.parentElement ? container.parentElement.clientWidth : window.innerWidth - 40);
+    
+    try {
+        const chart = LightweightCharts.createChart(container, { width: Math.max(280, chartWidth), height: 350, layout: { background: { color: '#ffffff' }, textColor: '#475569' }, grid: { vertLines: { color: '#f1f5f9' }, horzLines: { color: '#f1f5f9' } }, crosshair: { mode: 1 }, timeScale: { borderVisible: false } });
+        this.detailChartInstance = chart;
+        
+        let targetDate = new Date();
+        if(this.detailChartRange === '1M') targetDate.setMonth(targetDate.getMonth() - 1);
+        else if(this.detailChartRange === '3M') targetDate.setMonth(targetDate.getMonth() - 3);
+        else if(this.detailChartRange === '6M') targetDate.setMonth(targetDate.getMonth() - 6);
+        else if(this.detailChartRange === '1Y') targetDate.setFullYear(targetDate.getFullYear() - 1);
+        else if(this.detailChartRange === 'YTD') { targetDate.setMonth(0); targetDate.setDate(1); }
+        else targetDate.setFullYear(1970);
+        
+        let targetStr = this.getLocalYMD(targetDate);
+        let filteredData = this.detailTimelineData.filter(d => d.time >= targetStr);
+        if(filteredData.length === 0) filteredData = this.detailTimelineData; 
+
+        const areaSeries = chart.addAreaSeries({ lineColor: '#3b82f6', topColor: 'rgba(59, 130, 246, 0.4)', bottomColor: 'rgba(59, 130, 246, 0.0)', lineWidth: 2, title: '當下市值' });
+        const costSeries = chart.addLineSeries({ color: '#f59e0b', lineWidth: 2, lineStyle: 2, title: '累積本金' });
+        areaSeries.setData(filteredData.map(d => ({ time: d.time, value: d.value })));
+        costSeries.setData(filteredData.map(d => ({ time: d.time, value: d.cost })));
+        
+        chart.timeScale().fitContent();
+        if (window.ResizeObserver) { new ResizeObserver(entries => { if (entries[0].target === container && this.detailChartInstance && entries[0].contentRect.width > 0) { this.detailChartInstance.applyOptions({ width: Math.floor(entries[0].contentRect.width) }); } }).observe(container); }
+    } catch(e){}
+},
 
 getHomeETFInfo(code, priceObj) {
 let etf = this.etfs[code], price = parseFloat(priceObj?.price) || 0;
@@ -415,6 +495,9 @@ else { this.currentPrice = 0; this.prevClose = 0; }
 this.currentVolume = 0; this.priceUpdateTime = ''; this.volumeStatus = ''; this.priceStatus = ''; this.cachedHistoricalData = null; 
 this.realTimeFetched = false; this.historicalDataLoaded = false; this.showChart = false;
 if(window.lwcChartInstance) { window.lwcChartInstance.remove(); window.lwcChartInstance = null; this.chartRendered = false; }
+
+this.showDetailNetWorthChart = false; this.isDetailChartReady = false; this.detailTimelineData = []; if(this.detailChartInstance){this.detailChartInstance.remove(); this.detailChartInstance=null;}
+
 this.currentView = 'detail'; this.activeTab = 'dashboard'; window.scrollTo({ top: 0, behavior: 'smooth' });
 this.loadHistoricalCache(); this.fetchDataAndProcess().then(() => this.processAutoDeduct());
 },
@@ -1181,6 +1264,34 @@ if (outcome === 'accepted') this.deferredPrompt = null;
 <span class="text-lg sm:text-xl font-black text-blue-600 tracking-tighter" x-text="annualizedROI !== null ? (isNaN(annualizedROI) ? annualizedROI : (annualizedROI > 0 ? '+' + Math.abs(annualizedROI).toFixed(2) + '%' : (annualizedROI < 0 ? '-' + Math.abs(annualizedROI).toFixed(2) + '%' : '0%'))) : '-'"></span>
 </div>
 </div>
+</div>
+</div>
+
+<div class="mb-6 w-full">
+<button @click="toggleDetailNetWorthChart()" :disabled="!historicalDataLoaded || (transactions.length === 0 && baseShares === 0)" class="w-full py-4 bg-white border border-slate-200 text-blue-700 text-lg font-black rounded-2xl shadow-sm hover:shadow-md transition-all flex justify-center items-center gap-3 group disabled:opacity-50 disabled:cursor-not-allowed hover:-translate-y-1">
+<div class="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 shadow-inner group-hover:scale-110 transition-all text-lg"><i class="fa-solid fa-chart-area" :class="{'fa-bounce': isDetailChartLoading}"></i></div>
+<span x-text="showDetailNetWorthChart ? '收合淨值曲線圖' : (!historicalDataLoaded ? '圖表快取處理中...' : (isDetailChartLoading ? '資料運算中...' : '📊 展開真實淨值曲線圖'))"></span>
+</button>
+
+<div x-show="showDetailNetWorthChart" class="mt-4 bg-white p-4 sm:p-6 rounded-3xl border border-slate-100 shadow-lg relative" x-cloak x-transition>
+<div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+    <h3 class="text-xl font-black text-slate-800 flex items-center gap-2"><i class="fa-solid fa-chart-pie text-blue-500"></i> 單檔真實帳戶淨值曲線</h3>
+</div>
+
+<div class="bg-blue-50/50 border border-blue-100 rounded-xl p-3 mb-4 text-sm text-slate-600 leading-relaxed">
+    💡 <strong>提示：</strong>本圖表依據您填寫的「歷史明細」與即時回測的「歷史股價」疊加精算。實線為<strong class="text-blue-600">當下市值</strong>，虛線為<strong class="text-amber-500">累積投入本金</strong>。
+</div>
+
+<div class="flex flex-wrap gap-1.5 mb-4">
+    <template x-for="r in ['1M', '3M', '6M', '1Y', 'YTD', 'MAX']" :key="r">
+        <button @click="changeDetailChartRange(r)" class="px-3 py-1 text-xs font-bold rounded-full border transition" :class="detailChartRange === r ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'" x-text="r === 'YTD' ? '今年以來' : (r === 'MAX' ? '全部' : r)"></button>
+    </template>
+</div>
+
+<div x-show="isDetailChartLoading" class="w-full h-[350px] flex items-center justify-center bg-slate-50 rounded-xl border border-slate-100 shadow-inner">
+    <div class="text-slate-400 font-bold flex flex-col items-center gap-3"><i class="fa-solid fa-spinner fa-spin text-3xl"></i> 正在為您精算歷史軌跡...</div>
+</div>
+<div x-show="!isDetailChartLoading" id="detail-lwc-chart" style="width: 100%; min-height: 350px;" class="rounded-xl border border-slate-100 overflow-hidden shadow-inner"></div>
 </div>
 </div>
 
