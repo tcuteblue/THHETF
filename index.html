@@ -103,6 +103,7 @@ showInfoBox: false, infoBoxTitle: '', infoBoxContent: '', showSWRBox: false,
 isIOS: false, isStandalone: false, showIOSInstallDialog: false, deferredPrompt: null,
 
 showCSVModal: false, csvPreviewData: [],
+showHomeChart: false, homeChartMode: 'total', homeChartRange: '1Y', isHomeChartReady: false, isHomeChartLoading: false, homeTimelineData: [], homeChartInstance: null,
 
 cond_k: false, cond_ma240: false, cond_ma2400: false, cond_pb: false, isBlueLight: false, isPanic: false, cond_cost90: false, cond_cost80: false, cond_discount: false,
 currentPrice: 0, prevClose: 0, currentVolume: 0, volumeStatus: '', priceStatus: '',
@@ -229,6 +230,141 @@ if (price) newPrices[code] = { price: price, prev: prev };
 } catch(e) {}
 }));
 this.homePrices = newPrices; this.saveData(false); this.isFetchingHome = false;
+
+// 背景預載總資產趨勢圖資料 (延遲 1 秒避免卡住首頁)
+if(this.currentView === 'home' && !this.isHomeChartReady && !this.isHomeChartLoading) {
+    setTimeout(() => this.prepareHomeChartData(), 1000);
+}
+},
+
+async silentFetchMissingHistory() {
+    for (let code in this.etfs) {
+        let cached = null;
+        try { cached = JSON.parse(localStorage.getItem(`THH_History_V2_${code}`)); } catch(e){}
+        if (!cached || cached.length < 10) {
+            try {
+                const yfData = await this._fetchWithProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${code}.TW?range=max&interval=1d`);
+                if (yfData?.chart?.result?.[0]) {
+                    let res = yfData.chart.result[0], t = res.timestamp, q = res.indicators.quote[0];
+                    let fetched = [];
+                    if (t && q) for(let i=0; i<t.length; i++) if(q.close[i] != null) fetched.push({ time: t[i]*1000, close: q.close[i] });
+                    if (code === '0050') { const splitTime = new Date('2025-06-18T00:00:00+08:00').getTime(); fetched = fetched.map(i => i.time < splitTime ? { ...i, close: i.close/4 } : i); }
+                    try { localStorage.setItem(`THH_History_V2_${code}`, JSON.stringify(fetched)); } catch(e){}
+                }
+            } catch(e){}
+        }
+    }
+},
+async prepareHomeChartData() {
+    if (this.isHomeChartReady || Object.keys(this.etfs).length === 0) return;
+    this.isHomeChartLoading = true;
+    await this.silentFetchMissingHistory();
+    
+    let txns = [];
+    for (let code in this.etfs) {
+        let etf = this.etfs[code];
+        if (etf.baseShares > 0 && etf.startDate) txns.push({ code, date: etf.startDate, action: 'buy', shares: etf.baseShares, amount: etf.baseShares * etf.baseAvgCost });
+        (etf.transactions||[]).forEach(t => txns.push({ code, date: t.date, action: t.action, shares: t.shares, amount: t.amount }));
+    }
+    txns.sort((a,b) => new Date(a.date) - new Date(b.date));
+
+    let allDates = new Set(); let historyMap = {}; 
+    for (let code in this.etfs) {
+        historyMap[code] = {}; let cached = [];
+        try { cached = JSON.parse(localStorage.getItem(`THH_History_V2_${code}`)) || []; } catch(e){}
+        cached.forEach(h => { let dStr = this.getLocalYMD(new Date(h.time)); allDates.add(dStr); historyMap[code][dStr] = h.close; });
+        if(this.homePrices[code] && this.homePrices[code].price) { let todayStr = this.getLocalYMD(); allDates.add(todayStr); historyMap[code][todayStr] = this.homePrices[code].price; }
+    }
+
+    let sortedDates = Array.from(allDates).sort((a,b) => new Date(a) - new Date(b));
+    if (sortedDates.length === 0 || txns.length === 0) { this.isHomeChartLoading = false; return; }
+    sortedDates = sortedDates.filter(d => d >= txns[0].date);
+
+    let timeline = []; let currentShares = {}; let cumulativeNetInvested = 0; let lastPrices = {}; let txnIdx = 0;
+    for (let d of sortedDates) {
+        while (txnIdx < txns.length && txns[txnIdx].date <= d) {
+            let t = txns[txnIdx];
+            if (!currentShares[t.code]) currentShares[t.code] = 0;
+            let s = parseFloat(t.shares)||0; let amt = parseFloat(t.amount)||0;
+            if (t.action === 'buy' || t.action === 'sync') { currentShares[t.code] += s; cumulativeNetInvested += amt; } 
+            else if (t.action === 'sell' || t.action === 'withdraw') { currentShares[t.code] = Math.max(0, currentShares[t.code] - s); cumulativeNetInvested -= amt; } 
+            else if (t.action === 'dividend') { cumulativeNetInvested -= amt; }
+            txnIdx++;
+        }
+        let dailyTotalValue = 0; let etfValues = {};
+        for (let code in this.etfs) {
+            if (historyMap[code][d]) lastPrices[code] = historyMap[code][d];
+            let val = (lastPrices[code] || 0) * (currentShares[code] || 0);
+            etfValues[code] = val; dailyTotalValue += val;
+        }
+        timeline.push({ time: d, value: dailyTotalValue, cost: cumulativeNetInvested, etfValues: etfValues });
+    }
+    
+    this.homeTimelineData = timeline;
+    this.isHomeChartReady = true; this.isHomeChartLoading = false;
+    if (this.showHomeChart) this.renderHomeChart();
+},
+async toggleHomeChart() {
+    this.showHomeChart = !this.showHomeChart;
+    if (this.showHomeChart) {
+        if (!this.isHomeChartReady) await this.prepareHomeChartData();
+        setTimeout(() => this.renderHomeChart(), 50);
+    } else {
+        if (this.homeChartInstance) { this.homeChartInstance.remove(); this.homeChartInstance = null; }
+    }
+},
+changeHomeChartRange(range) { this.homeChartRange = range; this.renderHomeChart(); },
+renderHomeChart() {
+    if (!this.showHomeChart || !this.isHomeChartReady || this.homeTimelineData.length === 0) return;
+    const container = document.getElementById('home-lwc-chart'); if (!container) return;
+    if (this.homeChartInstance) { this.homeChartInstance.remove(); this.homeChartInstance = null; }
+    container.innerHTML = '';
+    let chartWidth = container.clientWidth || (container.parentElement ? container.parentElement.clientWidth : window.innerWidth - 40);
+    
+    try {
+        const chart = LightweightCharts.createChart(container, { width: Math.max(280, chartWidth), height: 350, layout: { background: { color: '#ffffff' }, textColor: '#475569' }, grid: { vertLines: { color: '#f1f5f9' }, horzLines: { color: '#f1f5f9' } }, crosshair: { mode: 1 }, timeScale: { borderVisible: false } });
+        this.homeChartInstance = chart;
+        
+        let targetDate = new Date();
+        if(this.homeChartRange === '1M') targetDate.setMonth(targetDate.getMonth() - 1);
+        else if(this.homeChartRange === '3M') targetDate.setMonth(targetDate.getMonth() - 3);
+        else if(this.homeChartRange === '6M') targetDate.setMonth(targetDate.getMonth() - 6);
+        else if(this.homeChartRange === '1Y') targetDate.setFullYear(targetDate.getFullYear() - 1);
+        else if(this.homeChartRange === 'YTD') { targetDate.setMonth(0); targetDate.setDate(1); }
+        else targetDate.setFullYear(1970);
+        
+        let targetStr = this.getLocalYMD(targetDate);
+        let filteredData = this.homeTimelineData.filter(d => d.time >= targetStr);
+        if(filteredData.length === 0) filteredData = this.homeTimelineData; 
+
+        if (this.homeChartMode === 'total') {
+            const areaSeries = chart.addAreaSeries({ lineColor: '#3b82f6', topColor: 'rgba(59, 130, 246, 0.4)', bottomColor: 'rgba(59, 130, 246, 0.0)', lineWidth: 2, title: '總市值' });
+            const costSeries = chart.addLineSeries({ color: '#f59e0b', lineWidth: 2, lineStyle: 2, title: '累積本金' });
+            areaSeries.setData(filteredData.map(d => ({ time: d.time, value: d.value })));
+            costSeries.setData(filteredData.map(d => ({ time: d.time, value: d.cost })));
+        } else {
+            let codes = Object.keys(this.etfs);
+            let colors = ['rgba(59, 130, 246,', 'rgba(16, 185, 129,', 'rgba(245, 158, 11,', 'rgba(139, 92, 246,', 'rgba(236, 72, 153,', 'rgba(14, 165, 233,'];
+            let stackSeriesData = []; let prevValues = new Array(filteredData.length).fill(0);
+            
+            for(let i=0; i<codes.length; i++) {
+                let c = codes[i]; let col = colors[i % colors.length];
+                let stackData = filteredData.map((d, idx) => {
+                    let val = (d.etfValues[c] || 0) + prevValues[idx]; prevValues[idx] = val;
+                    return { time: d.time, value: val };
+                });
+                stackSeriesData.push({ title: c, color: col, data: stackData });
+            }
+            // 反向畫圖以達到完美堆疊效果
+            for(let i = stackSeriesData.length - 1; i >= 0; i--) {
+                let s = stackSeriesData[i];
+                const series = chart.addAreaSeries({ lineColor: s.color+'1)', topColor: s.color+'0.8)', bottomColor: s.color+'0.2)', lineWidth: 1, title: s.title });
+                series.setData(s.data);
+            }
+        }
+        chart.timeScale().fitContent();
+        if (window.ResizeObserver) { new ResizeObserver(entries => { if (entries[0].target === container && this.homeChartInstance && entries[0].contentRect.width > 0) { this.homeChartInstance.applyOptions({ width: Math.floor(entries[0].contentRect.width) }); } }).observe(container); }
+    } catch(e){}
 },
 
 getHomeETFInfo(code, priceObj) {
@@ -491,10 +627,7 @@ let plans = this.investmentPlans.filter(p => p.day === currDate.getDate() && p.a
 for (let p of plans) {
 let execPrice = this.currentPrice, t = currDate.getTime();
 for (let d of this.cachedHistoricalData) if (d.time >= t) { execPrice = d.close; break; }
-
-// ✅ 自動抓取單價一律四捨五入至小數點第二位
 execPrice = parseFloat(Number(execPrice).toFixed(2));
-
 let shares = Math.floor(p.amount / execPrice), cost = Math.round(shares * execPrice);
 this.transactions.push({ id: Date.now() + Math.random(), date: this.getLocalYMD(currDate), amount: cost, shares, price: execPrice, type: 'auto', action: 'buy' });
 logs.push(`📅 ${currDate.toLocaleDateString()}：買入 ${shares} 股 (扣 ${cost} 元)`);
@@ -787,7 +920,7 @@ if (outcome === 'accepted') this.deferredPrompt = null;
 </div>
 </header>
 
-<div class="bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-600 rounded-3xl shadow-[0_20px_50px_-12px_rgba(59,130,246,0.5)] border border-white/20 p-8 mb-10 text-white relative overflow-hidden group transition-transform hover:-translate-y-1 duration-300">
+<div class="bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-600 rounded-3xl shadow-[0_20px_50px_-12px_rgba(59,130,246,0.5)] border border-white/20 p-8 mb-8 text-white relative overflow-hidden group transition-transform hover:-translate-y-1 duration-300">
 <button @click="fetchHomePrices()" class="absolute top-5 right-5 z-20 px-3 py-1.5 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg shadow-sm text-white font-bold text-sm transition-all flex items-center gap-1.5 backdrop-blur-md hover:scale-105">
 <i class="fa-solid fa-rotate-right" :class="{'animate-spin': isFetchingHome}"></i> 更新股價
 </button>
@@ -823,6 +956,38 @@ if (outcome === 'accepted') this.deferredPrompt = null;
 </div>
 </div>
 </div>
+</div>
+</div>
+
+<div class="mb-10 w-full">
+<button @click="toggleHomeChart()" :disabled="Object.keys(etfs).length === 0" class="w-full py-4 bg-white border border-slate-200 text-blue-700 text-lg font-black rounded-2xl shadow-sm hover:shadow-md transition-all flex justify-center items-center gap-3 group disabled:opacity-50 disabled:cursor-not-allowed hover:-translate-y-1">
+<div class="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 shadow-inner group-hover:scale-110 transition-all text-lg"><i class="fa-solid fa-chart-area" :class="{'fa-bounce': isHomeChartLoading}"></i></div>
+<span x-text="showHomeChart ? '收合總資產趨勢圖' : (isHomeChartLoading ? '資料預載中，點擊強制展開...' : '📊 展開總資產趨勢圖')"></span>
+</button>
+
+<div x-show="showHomeChart" class="mt-4 bg-white p-4 sm:p-6 rounded-3xl border border-slate-100 shadow-lg relative" x-cloak x-transition>
+<div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+    <h3 class="text-xl font-black text-slate-800 flex items-center gap-2"><i class="fa-solid fa-chart-pie text-blue-500"></i> 真實帳戶淨值曲線</h3>
+    <div class="flex bg-slate-100 p-1 rounded-lg shadow-inner shrink-0">
+        <button @click="homeChartMode = 'total'; renderHomeChart()" class="px-4 py-1.5 text-sm font-bold rounded-md transition" :class="homeChartMode === 'total' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'">雙線對比</button>
+        <button @click="homeChartMode = 'stacked'; renderHomeChart()" class="px-4 py-1.5 text-sm font-bold rounded-md transition" :class="homeChartMode === 'stacked' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'">資產堆疊</button>
+    </div>
+</div>
+
+<div class="bg-blue-50/50 border border-blue-100 rounded-xl p-3 mb-4 text-sm text-slate-600 leading-relaxed">
+    💡 <strong>提示：</strong>本圖表嚴格依據各檔 ETF 的「歷史明細」與「歷史股價」疊加精算。明細填寫越完整，曲線越能反映您的資產成長軌跡。實線為<strong class="text-blue-600">總市值</strong>，虛線為<strong class="text-amber-500">累積投入本金</strong>。
+</div>
+
+<div class="flex flex-wrap gap-1.5 mb-4">
+    <template x-for="r in ['1M', '3M', '6M', '1Y', 'YTD', 'MAX']" :key="r">
+        <button @click="changeHomeChartRange(r)" class="px-3 py-1 text-xs font-bold rounded-full border transition" :class="homeChartRange === r ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'" x-text="r === 'YTD' ? '今年以來' : (r === 'MAX' ? '全部' : r)"></button>
+    </template>
+</div>
+
+<div x-show="isHomeChartLoading" class="w-full h-[350px] flex items-center justify-center bg-slate-50 rounded-xl border border-slate-100 shadow-inner">
+    <div class="text-slate-400 font-bold flex flex-col items-center gap-3"><i class="fa-solid fa-spinner fa-spin text-3xl"></i> 正在為您回測精算歷史軌跡...</div>
+</div>
+<div x-show="!isHomeChartLoading" id="home-lwc-chart" style="width: 100%; min-height: 350px;" class="rounded-xl border border-slate-100 overflow-hidden shadow-inner"></div>
 </div>
 </div>
 
