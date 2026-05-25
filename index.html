@@ -1914,34 +1914,7 @@ if (outcome === 'accepted') this.deferredPrompt = null;
 </div>
 </div>
 
-<div class="bg-white p-6 md:p-8 rounded-2xl border border-slate-200 shadow-[0_4px_15px_rgb(0,0,0,0.02)] mb-8">
-<h3 class="font-black text-slate-800 mb-2 text-xl flex items-center gap-2"><span class="w-8 h-8 rounded bg-purple-100 text-purple-600 flex items-center justify-center text-sm shadow-inner"><i class="fa-solid fa-satellite-dish"></i></span> 系統連線診斷工具</h3>
-<p class="text-sm font-bold text-slate-500 mb-6">若遇到股價無法更新或無限轉圈圈，可一鍵測試目前各大免費通道的存活狀態與反應速度。</p>
 
-<div class="space-y-3 mb-6">
-<template x-for="res in diagnosticResults" :key="res.id">
-<div class="flex items-center justify-between p-3 sm:p-4 rounded-xl border transition-colors shadow-sm" :class="{'border-emerald-200 bg-emerald-50/50': res.status === 'success', 'border-red-200 bg-red-50/50': res.status === 'error', 'border-blue-200 bg-blue-50/50': res.status === 'testing', 'border-slate-100 bg-slate-50': res.status === 'idle'}">
-<div class="flex items-center gap-3">
-<div class="w-10 h-10 shrink-0 rounded-full flex items-center justify-center font-black shadow-inner" :class="{'text-slate-400 bg-white border border-slate-200': res.status === 'idle', 'text-blue-500 bg-white border border-blue-200': res.status === 'testing', 'text-emerald-500 bg-white border border-emerald-200': res.status === 'success', 'text-red-500 bg-white border border-red-200': res.status === 'error'}">
-<i class="fa-solid text-lg" :class="{'fa-minus': res.status === 'idle', 'fa-spinner fa-spin': res.status === 'testing', 'fa-check': res.status === 'success', 'fa-xmark': res.status === 'error'}"></i>
-</div>
-<div>
-<div class="font-black text-slate-700 text-sm sm:text-base" x-text="res.name"></div>
-<div class="text-xs font-bold text-slate-500 mt-1" x-show="res.status !== 'idle'">
-<span x-show="res.status === 'testing'">通訊測試中...</span>
-<span x-show="res.status === 'success' || res.status === 'error'" x-text="'反應延遲: ' + res.time + ' ms'"></span>
-<span x-show="res.status === 'error'" class="text-red-600 ml-2 bg-red-100 px-1.5 py-0.5 rounded shadow-sm" x-text="res.error"></span>
-</div>
-</div>
-</div>
-<div class="text-right shrink-0">
-<div class="text-xs font-bold text-slate-400 mb-0.5" x-show="res.status === 'success'">取得報價</div>
-<div class="font-black text-slate-800 text-lg" x-show="res.status === 'success'" x-text="res.price"></div>
-<div class="text-xs font-bold text-slate-300 mb-0.5" x-show="res.status === 'idle'">待命</div>
-</div>
-</div>
-</template>
-</div>
 <div class="bg-white p-6 md:p-8 rounded-2xl border border-slate-200 shadow-[0_4px_15px_rgb(0,0,0,0.02)] mb-8">
     <h3 class="font-black text-slate-800 mb-2 text-xl flex items-center gap-2">
         <span class="w-8 h-8 rounded bg-purple-100 text-purple-600 flex items-center justify-center text-sm shadow-inner">
