@@ -378,25 +378,29 @@ async prepareHomeChartData() {
     if (sortedDates.length === 0 || txns.length === 0) { this.isHomeChartLoading = false; return; }
     sortedDates = sortedDates.filter(d => d >= txns[0].date);
 
-    let timeline = []; let currentShares = {}; let cumulativeNetInvested = 0; let lastPrices = {}; let txnIdx = 0;
-    for (let d of sortedDates) {
-        while (txnIdx < txns.length && txns[txnIdx].date <= d) {
-            let t = txns[txnIdx];
-            if (!currentShares[t.code]) currentShares[t.code] = 0;
-            let s = parseFloat(t.shares)||0; let amt = parseFloat(t.amount)||0;
-            if (t.action === 'buy' || t.action === 'sync') { currentShares[t.code] += s; cumulativeNetInvested += amt; } 
-            else if (t.action === 'sell' || t.action === 'withdraw') { currentShares[t.code] = Math.max(0, currentShares[t.code] - s); cumulativeNetInvested -= amt; } 
-            else if (t.action === 'dividend') { cumulativeNetInvested -= amt; }
-            txnIdx++;
-        }
-        let dailyTotalValue = 0; let etfValues = {};
-        for (let code in this.etfs) {
-            if (historyMap[code][d]) lastPrices[code] = historyMap[code][d];
-            let val = (lastPrices[code] || 0) * (currentShares[code] || 0);
-            etfValues[code] = val; dailyTotalValue += val;
-        }
-        timeline.push({ time: d, value: dailyTotalValue, cost: cumulativeNetInvested, etfValues: etfValues });
+   let timeline = []; let currentShares = {}; let currentAvgCost = {}; let lastPrices = {}; let txnIdx = 0;
+for (let d of sortedDates) {
+    while (txnIdx < txns.length && txns[txnIdx].date <= d) {
+        let t = txns[txnIdx]; let c = t.code;
+        if (!currentShares[c]) currentShares[c] = 0; if (!currentAvgCost[c]) currentAvgCost[c] = 0;
+        let s = parseFloat(t.shares)||0; let amt = parseFloat(t.amount)||0;
+        if (t.action === 'buy' || t.action === 'sync') { 
+            let tot = currentShares[c] * currentAvgCost[c] + amt; 
+            currentShares[c] += s; 
+            currentAvgCost[c] = currentShares[c] > 0 ? tot / currentShares[c] : 0; 
+        } 
+        else if (t.action === 'sell' || t.action === 'withdraw') { currentShares[c] = Math.max(0, currentShares[c] - s); } 
+        txnIdx++;
     }
+    let dailyTotalValue = 0; let dailyTotalCost = 0; let etfValues = {};
+    for (let code in this.etfs) {
+        if (historyMap[code][d]) lastPrices[code] = historyMap[code][d];
+        let val = (lastPrices[code] || 0) * (currentShares[code] || 0);
+        etfValues[code] = val; dailyTotalValue += val;
+        dailyTotalCost += (currentShares[code] || 0) * (currentAvgCost[code] || 0);
+    }
+    timeline.push({ time: d, value: Math.round(dailyTotalValue), cost: Math.round(dailyTotalCost), etfValues: etfValues });
+}
     
     this.homeTimelineData = timeline;
     this.isHomeChartReady = true; this.isHomeChartLoading = false;
@@ -482,19 +486,24 @@ async prepareDetailChartData() {
     let sortedDates = Array.from(allDates).sort((a,b) => new Date(a) - new Date(b));
     sortedDates = sortedDates.filter(d => d >= txns[0].date);
 
-    let timeline = []; let currentShares = 0; let cumulativeNetInvested = 0; let lastPrice = 0; let txnIdx = 0;
-    for (let d of sortedDates) {
-        while (txnIdx < txns.length && txns[txnIdx].date <= d) {
-            let t = txns[txnIdx];
-            let s = parseFloat(t.shares)||0; let amt = parseFloat(t.amount)||0;
-            if (t.action === 'buy' || t.action === 'sync') { currentShares += s; cumulativeNetInvested += amt; } 
-            else if (t.action === 'sell' || t.action === 'withdraw') { currentShares = Math.max(0, currentShares - s); cumulativeNetInvested -= amt; } 
-            else if (t.action === 'dividend') { cumulativeNetInvested -= amt; }
-            txnIdx++;
-        }
-        if (historyMap[d]) lastPrice = historyMap[d];
-        timeline.push({ time: d, value: lastPrice * currentShares, cost: cumulativeNetInvested });
+   let timeline = []; let currentShares = 0; let currentAvgCost = 0; let lastPrice = 0; let txnIdx = 0;
+for (let d of sortedDates) {
+    while (txnIdx < txns.length && txns[txnIdx].date <= d) {
+        let t = txns[txnIdx];
+        let s = parseFloat(t.shares)||0; let amt = parseFloat(t.amount)||0;
+        if (t.action === 'buy' || t.action === 'sync') { 
+            let tot = currentShares * currentAvgCost + amt;
+            currentShares += s; 
+            currentAvgCost = currentShares > 0 ? tot / currentShares : 0;
+        } 
+        else if (t.action === 'sell' || t.action === 'withdraw') { 
+            currentShares = Math.max(0, currentShares - s); 
+        } 
+        txnIdx++;
     }
+    if (historyMap[d]) lastPrice = historyMap[d];
+    timeline.push({ time: d, value: Math.round(lastPrice * currentShares), cost: Math.round(currentShares * currentAvgCost) });
+}
     
     this.detailTimelineData = timeline;
     this.isDetailChartReady = true; this.isDetailChartLoading = false;
@@ -560,8 +569,19 @@ return { shares, marketValue, profit, price };
 
 get totalNetWorth() { let total = 0; for (let code in this.etfs) total += this.getHomeETFInfo(code, this.homePrices[code]).marketValue; return total; },
 get totalGlobalProfit() { let total = 0; for (let code in this.etfs) total += this.getHomeETFInfo(code, this.homePrices[code]).marketValue > 0 ? this.getHomeETFInfo(code, this.homePrices[code]).profit : 0; return total; },
-get totalGlobalCost() { let total = 0; for (let code in this.etfs) total += (parseFloat(this.etfs[code].baseShares) * parseFloat(this.etfs[code].baseAvgCost) || 0) + (this.etfs[code].transactions||[]).filter(t => t.action === 'buy' || t.action === 'sync').reduce((s, t) => s + (parseFloat(t.amount) || 0), 0); return total; },
-get totalGlobalCashIn() { let total = 0; for (let code in this.etfs) total += (this.etfs[code].transactions||[]).filter(t => t.action === 'sell' || t.action === 'dividend' || t.action === 'withdraw').reduce((s, t) => s + (parseFloat(t.amount) || 0), 0); return total; },
+get totalGlobalCost() { 
+    let total = 0; 
+    for (let code in this.etfs) { 
+        let shares = parseFloat(this.etfs[code].baseShares) || 0, avgCost = parseFloat(this.etfs[code].baseAvgCost) || 0; 
+        [...(this.etfs[code].transactions||[])].sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(t => { 
+            let s = parseFloat(t.shares) || 0, amt = parseFloat(t.amount) || 0; 
+            if (t.action === 'buy' || t.action === 'sync') { let tot = shares * avgCost + amt; shares += s; avgCost = shares > 0 ? tot / shares : 0; } 
+            else if (t.action === 'sell' || t.action === 'withdraw') { shares = Math.max(0, shares - s); } 
+        }); 
+        total += Math.round(shares * avgCost); 
+    } 
+    return total; 
+},get totalGlobalCashIn() { let total = 0; for (let code in this.etfs) total += (this.etfs[code].transactions||[]).filter(t => t.action === 'sell' || t.action === 'dividend' || t.action === 'withdraw').reduce((s, t) => s + (parseFloat(t.amount) || 0), 0); return total; },
 get globalROI() { if (this.totalGlobalCost <= 0) return null; return (((this.totalNetWorth + this.totalGlobalCashIn - this.totalGlobalCost) / this.totalGlobalCost) * 100).toFixed(2); },
 get totalDailyProfit() { let total = 0; for (let code in this.etfs) { let p = this.homePrices[code]; if (p && p.prev && p.price) { let info = this.getHomeETFInfo(code, p); total += info.shares * (p.price - p.prev); } } return Math.round(total); },
 get totalDailyProfitRate() { let totalPrevMarketValue = 0; for (let code in this.etfs) { let p = this.homePrices[code]; if (p && p.prev) { let info = this.getHomeETFInfo(code, p); totalPrevMarketValue += info.shares * p.prev; } } if (totalPrevMarketValue <= 0) return 0; return ((this.totalDailyProfit / totalPrevMarketValue) * 100).toFixed(2); },
