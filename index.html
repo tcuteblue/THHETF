@@ -186,6 +186,7 @@ showInfoBox: false, infoBoxTitle: '', infoBoxContent: '', showSWRBox: false,
 isIOS: false, isStandalone: false, showIOSInstallDialog: false, deferredPrompt: null,
 
 showCSVModal: false, csvPreviewData: [],
+isRunningDiagnostics: false, diagnosticResults: [ { id: 'allorigins', name: '1️⃣ Yahoo + AllOrigins', status: 'idle', time: 0, price: '-', error: '' }, { id: 'codetabs', name: '2️⃣ Yahoo + CodeTabs', status: 'idle', time: 0, price: '-', error: '' }, { id: 'corsproxy', name: '3️⃣ Yahoo + CorsProxy', status: 'idle', time: 0, price: '-', error: '' }, { id: 'twse', name: '4️⃣ 台灣證交所 (最後防線)', status: 'idle', time: 0, price: '-', error: '' } ],
 showHomeChart: false, homeChartMode: 'total', homeChartRange: '1Y', isHomeChartReady: false, isHomeChartLoading: false, homeTimelineData: [], homeChartInstance: null,
 showDetailNetWorthChart: false, detailChartRange: '1Y', isDetailChartReady: false, isDetailChartLoading: false, detailTimelineData: [], detailChartInstance: null,
 
@@ -647,6 +648,58 @@ async _fetchWithProxy(url) {
     return null;
 },
 async _fetchSimpleJson(url) { try { const res = await fetch(url); if (res.ok) return await res.json(); } catch (e) {} return null; },
+
+async runDiagnostics() {
+    if (this.isRunningDiagnostics) return;
+    this.isRunningDiagnostics = true;
+    this.diagnosticResults.forEach(r => { r.status = 'testing'; r.time = 0; r.price = '-'; r.error = ''; });
+
+    const testSymbol = '0050'; const timestamp = Date.now();
+    const endpoints = {
+        'allorigins': `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${testSymbol}.TW?range=1d&interval=1m&_cb=${timestamp}`)}`,
+        'codetabs': `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${testSymbol}.TW?range=1d&interval=1m&_cb=${timestamp}`)}`,
+        'corsproxy': `https://corsproxy.io/?${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${testSymbol}.TW?range=1d&interval=1m&_cb=${timestamp}`)}`,
+        'twse': `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${testSymbol}.tw&_cb=${timestamp}`)}`
+    };
+
+    const checkYahooData = (data) => {
+        if (data?.chart?.result?.[0]) {
+            const res = data.chart.result[0]; let price = res.meta?.regularMarketPrice;
+            if (res.indicators?.quote?.[0]?.close) { const closes = res.indicators.quote[0].close; for (let i = closes.length - 1; i >= 0; i--) { if (closes[i] != null) { price = closes[i]; break; } } }
+            return price;
+        } return null;
+    };
+    
+    const checkTwseData = (data) => {
+        if (data?.msgArray?.[0]) { let res = data.msgArray[0]; if (res.z && res.z !== '-') return parseFloat(res.z); }
+        return null;
+    };
+
+    const runTest = async (targetId, url, parser) => {
+        let item = this.diagnosticResults.find(r => r.id === targetId);
+        const startTime = performance.now();
+        try {
+            const controller = new AbortController(); const timeoutId = setTimeout(() => controller.abort(), 6000);
+            const res = await fetch(url, { signal: controller.signal, cache: 'no-store' });
+            clearTimeout(timeoutId);
+            if (res.ok) {
+                const data = await res.json(); const price = parser(data); const endTime = performance.now();
+                item.time = Math.round(endTime - startTime);
+                if (price) { item.price = price; item.status = 'success'; } else { item.status = 'error'; item.error = '格式變更'; }
+            } else { item.status = 'error'; item.error = `HTTP ${res.status}`; }
+        } catch (err) {
+            item.time = Math.round(performance.now() - startTime); item.status = 'error'; item.error = err.name === 'AbortError' ? '連線逾時' : '無法連線';
+        }
+    };
+
+    await Promise.all([
+        runTest('allorigins', endpoints['allorigins'], checkYahooData),
+        runTest('codetabs', endpoints['codetabs'], checkYahooData),
+        runTest('corsproxy', endpoints['corsproxy'], checkYahooData),
+        runTest('twse', endpoints['twse'], checkTwseData)
+    ]);
+    this.isRunningDiagnostics = false;
+},
 
 loadHistoricalCache() {
 try { const cached = localStorage.getItem(`THH_History_V2_${this.activeETF}`);
@@ -1848,6 +1901,41 @@ if (outcome === 'accepted') this.deferredPrompt = null;
 </div>
 </div>
 
+<div class="bg-white p-6 md:p-8 rounded-2xl border border-slate-200 shadow-[0_4px_15px_rgb(0,0,0,0.02)] mb-8">
+<h3 class="font-black text-slate-800 mb-2 text-xl flex items-center gap-2"><span class="w-8 h-8 rounded bg-purple-100 text-purple-600 flex items-center justify-center text-sm shadow-inner"><i class="fa-solid fa-satellite-dish"></i></span> 系統連線診斷工具</h3>
+<p class="text-sm font-bold text-slate-500 mb-6">若遇到股價無法更新或無限轉圈圈，可一鍵測試目前各大免費通道的存活狀態與反應速度。</p>
+
+<div class="space-y-3 mb-6">
+<template x-for="res in diagnosticResults" :key="res.id">
+<div class="flex items-center justify-between p-3 sm:p-4 rounded-xl border transition-colors shadow-sm" :class="{'border-emerald-200 bg-emerald-50/50': res.status === 'success', 'border-red-200 bg-red-50/50': res.status === 'error', 'border-blue-200 bg-blue-50/50': res.status === 'testing', 'border-slate-100 bg-slate-50': res.status === 'idle'}">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 shrink-0 rounded-full flex items-center justify-center font-black shadow-inner" :class="{'text-slate-400 bg-white border border-slate-200': res.status === 'idle', 'text-blue-500 bg-white border border-blue-200': res.status === 'testing', 'text-emerald-500 bg-white border border-emerald-200': res.status === 'success', 'text-red-500 bg-white border border-red-200': res.status === 'error'}">
+<i class="fa-solid text-lg" :class="{'fa-minus': res.status === 'idle', 'fa-spinner fa-spin': res.status === 'testing', 'fa-check': res.status === 'success', 'fa-xmark': res.status === 'error'}"></i>
+</div>
+<div>
+<div class="font-black text-slate-700 text-sm sm:text-base" x-text="res.name"></div>
+<div class="text-xs font-bold text-slate-500 mt-1" x-show="res.status !== 'idle'">
+<span x-show="res.status === 'testing'">通訊測試中...</span>
+<span x-show="res.status === 'success' || res.status === 'error'" x-text="'反應延遲: ' + res.time + ' ms'"></span>
+<span x-show="res.status === 'error'" class="text-red-600 ml-2 bg-red-100 px-1.5 py-0.5 rounded shadow-sm" x-text="res.error"></span>
+</div>
+</div>
+</div>
+<div class="text-right shrink-0">
+<div class="text-xs font-bold text-slate-400 mb-0.5" x-show="res.status === 'success'">取得報價</div>
+<div class="font-black text-slate-800 text-lg" x-show="res.status === 'success'" x-text="res.price"></div>
+<div class="text-xs font-bold text-slate-300 mb-0.5" x-show="res.status === 'idle'">待命</div>
+</div>
+</div>
+</template>
+</div>
+
+<button @click="runDiagnostics()" :disabled="isRunningDiagnostics" class="w-full py-4 bg-purple-600 text-white font-black text-lg rounded-xl shadow-md hover:bg-purple-700 hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:-translate-y-1 active:translate-y-0">
+<i class="fa-solid fa-satellite-dish mr-2" :class="{'fa-beat': isRunningDiagnostics}"></i>
+<span x-text="isRunningDiagnostics ? '跨海診斷通訊中，請稍候...' : '開始連線診斷'"></span>
+</button>
+</div>
+
 <div class="pt-8 border-t border-slate-200 text-center">
 <button @click="confirmDeleteETF(activeETF)" class="px-6 py-3 bg-red-50 text-red-600 font-bold rounded-xl hover:bg-red-100 hover:text-red-700 transition-all border border-red-100"><i class="fa-solid fa-trash-can mr-1"></i> 刪除此追蹤標的</button>
 </div>
@@ -1860,5 +1948,4 @@ if (outcome === 'accepted') this.deferredPrompt = null;
 
 </body>
 </html>
-
 
