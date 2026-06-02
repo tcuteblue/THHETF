@@ -664,9 +664,9 @@ async runDiagnostics() {
     const testSymbol = '0050'; const timestamp = Date.now();
     const endpoints = {
         'allorigins': `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${testSymbol}.TW?range=1d&interval=1m&_cb=${timestamp}`)}`,
-        'codetabs': `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${testSymbol}.TW?range=1d&interval=1m&_cb=${timestamp}`)}`,
+        'codetabs': `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(`https://query2.finance.yahoo.com/v8/finance/chart/${testSymbol}.TW?range=1d&interval=1m&_cb=${timestamp}`)}`,
         'corsproxy': `https://corsproxy.io/?${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${testSymbol}.TW?range=1d&interval=1m&_cb=${timestamp}`)}`,
-        'twse': `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${testSymbol}.tw&_cb=${timestamp}`)}`
+        'twse': `https://corsproxy.io/?${encodeURIComponent(`https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${testSymbol}.tw&_cb=${timestamp}`)}`
     };
 
     const checkYahooData = (data) => {
@@ -1973,5 +1973,7 @@ if (outcome === 'accepted') this.deferredPrompt = null;
 
 </body>
 </html>
+
+
 
 
