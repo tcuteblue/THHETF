@@ -188,12 +188,12 @@ isIOS: false, isStandalone: false, showIOSInstallDialog: false, deferredPrompt: 
 showCSVModal: false, csvPreviewData: [],
 diagCooldown: 0, 
 isRunningDiagnostics: false, 
-diagnosticResults: [ 
-    { id: 'allorigins', name: '1️⃣ Yahoo + AllOrigins', status: 'idle', time: 0, price: '-', error: '' }, 
-    { id: 'codetabs', name: '2️⃣ Yahoo + CodeTabs', status: 'idle', time: 0, price: '-', error: '' }, 
-    { id: 'corsproxy', name: '3️⃣ Yahoo + CorsProxy', status: 'idle', time: 0, price: '-', error: '' }, 
-    { id: 'twse', name: '4️⃣ 台灣證交所 (最後防線)', status: 'idle', time: 0, price: '-', error: '' } 
-],
+diagCooldown: 0, isRunningDiagnostics: false, diagnosticResults: [ 
+        { id: 'corsio', name: '1️⃣ Yahoo + CorsProxy.IO (主力)', status: 'idle', time: 0, price: '-', error: '' }, 
+        { id: 'corsorg', name: '2️⃣ Yahoo + CorsProxy.ORG (備援)', status: 'idle', time: 0, price: '-', error: '' }, 
+        { id: 'allorigins', name: '3️⃣ Yahoo + AllOrigins (備用)', status: 'idle', time: 0, price: '-', error: '' }, 
+        { id: 'twse', name: '4️⃣ 台灣證交所 (最後防線)', status: 'idle', time: 0, price: '-', error: '' } 
+    ],
 showHomeChart: false, homeChartMode: 'total', homeChartRange: '1Y', isHomeChartReady: false, isHomeChartLoading: false, homeTimelineData: [], homeChartInstance: null,
 showDetailNetWorthChart: false, detailChartRange: '1Y', isDetailChartReady: false, isDetailChartLoading: false, detailTimelineData: [], detailChartInstance: null,
 
@@ -633,10 +633,11 @@ isIndicatorSupported(key) { return (ETF_CONFIG[this.activeETF] || ETF_CONFIG['DE
 async _fetchWithProxy(url) { 
     const cacheBuster = url.includes('?') ? `&_cb=${Date.now()}` : `?_cb=${Date.now()}`;
     const finalUrl = encodeURIComponent(url + cacheBuster);
+    // 升級備援排序：優先使用最穩定的 .io 與 .org
     const proxies = [
-        'https://api.allorigins.win/raw?url=' + finalUrl,
-        'https://api.codetabs.com/v1/proxy?quest=' + finalUrl,
-        'https://corsproxy.io/?' + finalUrl
+        'https://corsproxy.io/?' + finalUrl,
+        'https://corsproxy.org/?' + finalUrl,
+        'https://api.allorigins.win/raw?url=' + finalUrl
     ];
     for (let proxy of proxies) { 
         try { 
@@ -663,9 +664,9 @@ async runDiagnostics() {
 
     const testSymbol = '0050'; const timestamp = Date.now();
     const endpoints = {
+        'corsio': `https://corsproxy.io/?${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${testSymbol}.TW?range=1d&interval=1m&_cb=${timestamp}`)}`,
+        'corsorg': `https://corsproxy.org/?${encodeURIComponent(`https://query2.finance.yahoo.com/v8/finance/chart/${testSymbol}.TW?range=1d&interval=1m&_cb=${timestamp}`)}`,
         'allorigins': `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${testSymbol}.TW?range=1d&interval=1m&_cb=${timestamp}`)}`,
-        'codetabs': `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(`https://query2.finance.yahoo.com/v8/finance/chart/${testSymbol}.TW?range=1d&interval=1m&_cb=${timestamp}`)}`,
-        'corsproxy': `https://corsproxy.io/?${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${testSymbol}.TW?range=1d&interval=1m&_cb=${timestamp}`)}`,
         'twse': `https://corsproxy.io/?${encodeURIComponent(`https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${testSymbol}.tw&_cb=${timestamp}`)}`
     };
 
@@ -699,10 +700,40 @@ async runDiagnostics() {
         }
     };
 
-    await Promise.all([
+    const checkYahooData = (data) => {
+        if (data?.chart?.result?.[0]) {
+            const res = data.chart.result[0]; let price = res.meta?.regularMarketPrice;
+            if (res.indicators?.quote?.[0]?.close) { const closes = res.indicators.quote[0].close; for (let i = closes.length - 1; i >= 0; i--) { if (closes[i] != null) { price = closes[i]; break; } } }
+            return price;
+        } return null;
+    };
+    
+    const checkTwseData = (data) => {
+        if (data?.msgArray?.[0]) { let res = data.msgArray[0]; if (res.z && res.z !== '-') return parseFloat(res.z); }
+        return null;
+    };
+
+    const runTest = async (targetId, url, parser) => {
+        let item = this.diagnosticResults.find(r => r.id === targetId);
+        const startTime = performance.now();
+        try {
+            const controller = new AbortController(); const timeoutId = setTimeout(() => controller.abort(), 6000);
+            const res = await fetch(url, { signal: controller.signal, cache: 'no-store' });
+            clearTimeout(timeoutId);
+            if (res.ok) {
+                const data = await res.json(); const price = parser(data); const endTime = performance.now();
+                item.time = Math.round(endTime - startTime);
+                if (price) { item.price = price; item.status = 'success'; } else { item.status = 'error'; item.error = '格式變更'; }
+            } else { item.status = 'error'; item.error = `HTTP ${res.status}`; }
+        } catch (err) {
+            item.time = Math.round(performance.now() - startTime); item.status = 'error'; item.error = err.name === 'AbortError' ? '連線逾時' : '無法連線';
+        }
+    };
+
+        await Promise.all([
+        runTest('corsio', endpoints['corsio'], checkYahooData),
+        runTest('corsorg', endpoints['corsorg'], checkYahooData),
         runTest('allorigins', endpoints['allorigins'], checkYahooData),
-        runTest('codetabs', endpoints['codetabs'], checkYahooData),
-        runTest('corsproxy', endpoints['corsproxy'], checkYahooData),
         runTest('twse', endpoints['twse'], checkTwseData)
     ]);
     this.isRunningDiagnostics = false;
@@ -1973,7 +2004,3 @@ if (outcome === 'accepted') this.deferredPrompt = null;
 
 </body>
 </html>
-
-
-
-
