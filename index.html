@@ -189,11 +189,12 @@ showCSVModal: false, csvPreviewData: [],
 diagCooldown: 0, 
 isRunningDiagnostics: false, 
 diagnosticResults: [ 
-{ id: 'allorigins', name: '1️⃣ Yahoo + AllOrigins', status: 'idle', time: 0, price: '-', error: '' }, 
-{ id: 'codetabs', name: '2️⃣ Yahoo + CodeTabs', status: 'idle', time: 0, price: '-', error: '' }, 
-{ id: 'corsproxy', name: '3️⃣ Yahoo + CorsProxy', status: 'idle', time: 0, price: '-', error: '' }, 
-{ id: 'twse', name: '4️⃣ 台灣證交所 (最後防線)', status: 'idle', time: 0, price: '-', error: '' } 
-],
+        { id: 'corsio', name: '1️⃣ Yahoo + CorsProxy.IO (主力)', status: 'idle', time: 0, price: '-', error: '' }, 
+        { id: 'corsorg', name: '2️⃣ Yahoo + CorsProxy.ORG (備援)', status: 'idle', time: 0, price: '-', error: '' }, 
+        { id: 'allorigins', name: '3️⃣ Yahoo + AllOrigins (備用)', status: 'idle', time: 0, price: '-', error: '' }, 
+        { id: 'twse', name: '4️⃣ 台灣證交所 (最後防線)', status: 'idle', time: 0, price: '-', error: '' } 
+    ],
+
 showHomeChart: false, homeChartMode: 'total', homeChartRange: '1Y', isHomeChartReady: false, isHomeChartLoading: false, homeTimelineData: [], homeChartInstance: null,
 showDetailNetWorthChart: false, detailChartRange: '1Y', isDetailChartReady: false, isDetailChartLoading: false, detailTimelineData: [], detailChartInstance: null,
 
@@ -308,256 +309,256 @@ try { localStorage.setItem('THH_ETF_Data_V1', JSON.stringify({ etfs: this.etfs, 
 },
 
 async fetchHomePrices() {
-if (this.isFetchingHome) return; this.isFetchingHome = true;
-let codes = Object.keys(this.etfs); if (codes.length === 0) { this.isFetchingHome = false; return; }
-let newPrices = { ...this.homePrices };
-
-await Promise.all(codes.map(async (code) => {
-try {
-let price = null, prev = null;
-// 1️⃣ 第一防線：透過多重 Proxy 向 Yahoo 抓取即時報價
-const data = await this._fetchWithProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${code}.TW?range=1d&interval=1m&_t=${Date.now()}`);
-if (data?.chart?.result?.[0]) {
-const res = data.chart.result[0]; price = res.meta?.regularMarketPrice; prev = res.meta?.chartPreviousClose || price;
-if (res.indicators?.quote?.[0]?.close) { const closes = res.indicators.quote[0].close; for (let i = closes.length - 1; i >= 0; i--) { if (closes[i] != null) { price = closes[i]; break; } } }
-}
-
-// 2️⃣ 最終防線：如果 Yahoo 三個通道都塞車失敗，啟動台灣證交所備援
-if (!price) {
-const twseData = await this._fetchWithProxy(`https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${code}.tw&_t=${Date.now()}`);
-if (twseData?.msgArray?.[0]) {
-let res = twseData.msgArray[0];
-if (res.z && res.z !== '-') price = parseFloat(res.z);
-if (res.y && res.y !== '-') prev = parseFloat(res.y);
-}
-}
-
-if (price) newPrices[code] = { price: price, prev: prev };
-} catch(e) {}
-}));
-
-this.homePrices = newPrices; this.saveData(false); this.isFetchingHome = false;
-
-if(this.currentView === 'home' && !this.isHomeChartReady && !this.isHomeChartLoading) {
-setTimeout(() => this.prepareHomeChartData(), 1000);
-}
+    if (this.isFetchingHome) return; this.isFetchingHome = true;
+    let codes = Object.keys(this.etfs); if (codes.length === 0) { this.isFetchingHome = false; return; }
+    let newPrices = { ...this.homePrices };
+    
+    await Promise.all(codes.map(async (code) => {
+        try {
+            let price = null, prev = null;
+            // 1️⃣ 第一防線：透過多重 Proxy 向 Yahoo 抓取即時報價
+            const data = await this._fetchWithProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${code}.TW?range=1d&interval=1m&_t=${Date.now()}`);
+            if (data?.chart?.result?.[0]) {
+                const res = data.chart.result[0]; price = res.meta?.regularMarketPrice; prev = res.meta?.chartPreviousClose || price;
+                if (res.indicators?.quote?.[0]?.close) { const closes = res.indicators.quote[0].close; for (let i = closes.length - 1; i >= 0; i--) { if (closes[i] != null) { price = closes[i]; break; } } }
+            }
+            
+            // 2️⃣ 最終防線：如果 Yahoo 三個通道都塞車失敗，啟動台灣證交所備援
+            if (!price) {
+                const twseData = await this._fetchWithProxy(`https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${code}.tw&_t=${Date.now()}`);
+                if (twseData?.msgArray?.[0]) {
+                    let res = twseData.msgArray[0];
+                    if (res.z && res.z !== '-') price = parseFloat(res.z);
+                    if (res.y && res.y !== '-') prev = parseFloat(res.y);
+                }
+            }
+            
+            if (price) newPrices[code] = { price: price, prev: prev };
+        } catch(e) {}
+    }));
+    
+    this.homePrices = newPrices; this.saveData(false); this.isFetchingHome = false;
+    
+    if(this.currentView === 'home' && !this.isHomeChartReady && !this.isHomeChartLoading) {
+        setTimeout(() => this.prepareHomeChartData(), 1000);
+    }
 },
 
 async silentFetchMissingHistory() {
-for (let code in this.etfs) {
-let cached = null;
-try { cached = JSON.parse(localStorage.getItem(`THH_History_V2_${code}`)); } catch(e){}
-if (!cached || cached.length < 10) {
-try {
-const yfData = await this._fetchWithProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${code}.TW?range=max&interval=1d`);
-if (yfData?.chart?.result?.[0]) {
-let res = yfData.chart.result[0], t = res.timestamp, q = res.indicators.quote[0];
-let fetched = [];
-if (t && q) for(let i=0; i<t.length; i++) if(q.close[i] != null) fetched.push({ time: t[i]*1000, close: q.close[i] });
-if (code === '0050') { const splitTime = new Date('2025-06-18T00:00:00+08:00').getTime(); fetched = fetched.map(i => i.time < splitTime ? { ...i, close: i.close/4 } : i); }
-try { localStorage.setItem(`THH_History_V2_${code}`, JSON.stringify(fetched)); } catch(e){}
-}
-} catch(e){}
-}
-}
+    for (let code in this.etfs) {
+        let cached = null;
+        try { cached = JSON.parse(localStorage.getItem(`THH_History_V2_${code}`)); } catch(e){}
+        if (!cached || cached.length < 10) {
+            try {
+                const yfData = await this._fetchWithProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${code}.TW?range=max&interval=1d`);
+                if (yfData?.chart?.result?.[0]) {
+                    let res = yfData.chart.result[0], t = res.timestamp, q = res.indicators.quote[0];
+                    let fetched = [];
+                    if (t && q) for(let i=0; i<t.length; i++) if(q.close[i] != null) fetched.push({ time: t[i]*1000, close: q.close[i] });
+                    if (code === '0050') { const splitTime = new Date('2025-06-18T00:00:00+08:00').getTime(); fetched = fetched.map(i => i.time < splitTime ? { ...i, close: i.close/4 } : i); }
+                    try { localStorage.setItem(`THH_History_V2_${code}`, JSON.stringify(fetched)); } catch(e){}
+                }
+            } catch(e){}
+        }
+    }
 },
 async prepareHomeChartData() {
-if (this.isHomeChartReady || Object.keys(this.etfs).length === 0) return;
-this.isHomeChartLoading = true;
-await this.silentFetchMissingHistory();
+    if (this.isHomeChartReady || Object.keys(this.etfs).length === 0) return;
+    this.isHomeChartLoading = true;
+    await this.silentFetchMissingHistory();
+    
+    let txns = [];
+    for (let code in this.etfs) {
+        let etf = this.etfs[code];
+        if (etf.baseShares > 0 && etf.startDate) txns.push({ code, date: etf.startDate, action: 'buy', shares: etf.baseShares, amount: etf.baseShares * etf.baseAvgCost });
+        (etf.transactions||[]).forEach(t => txns.push({ code, date: t.date, action: t.action, shares: t.shares, amount: t.amount }));
+    }
+    txns.sort((a,b) => new Date(a.date) - new Date(b.date));
 
-let txns = [];
-for (let code in this.etfs) {
-let etf = this.etfs[code];
-if (etf.baseShares > 0 && etf.startDate) txns.push({ code, date: etf.startDate, action: 'buy', shares: etf.baseShares, amount: etf.baseShares * etf.baseAvgCost });
-(etf.transactions||[]).forEach(t => txns.push({ code, date: t.date, action: t.action, shares: t.shares, amount: t.amount }));
-}
-txns.sort((a,b) => new Date(a.date) - new Date(b.date));
+    let allDates = new Set(); let historyMap = {}; 
+    for (let code in this.etfs) {
+        historyMap[code] = {}; let cached = [];
+        try { cached = JSON.parse(localStorage.getItem(`THH_History_V2_${code}`)) || []; } catch(e){}
+        cached.forEach(h => { let dStr = this.getLocalYMD(new Date(h.time)); allDates.add(dStr); historyMap[code][dStr] = h.close; });
+        if(this.homePrices[code] && this.homePrices[code].price) { let todayStr = this.getLocalYMD(); allDates.add(todayStr); historyMap[code][todayStr] = this.homePrices[code].price; }
+    }
 
-let allDates = new Set(); let historyMap = {}; 
-for (let code in this.etfs) {
-historyMap[code] = {}; let cached = [];
-try { cached = JSON.parse(localStorage.getItem(`THH_History_V2_${code}`)) || []; } catch(e){}
-cached.forEach(h => { let dStr = this.getLocalYMD(new Date(h.time)); allDates.add(dStr); historyMap[code][dStr] = h.close; });
-if(this.homePrices[code] && this.homePrices[code].price) { let todayStr = this.getLocalYMD(); allDates.add(todayStr); historyMap[code][todayStr] = this.homePrices[code].price; }
-}
+    let sortedDates = Array.from(allDates).sort((a,b) => new Date(a) - new Date(b));
+    if (sortedDates.length === 0 || txns.length === 0) { this.isHomeChartLoading = false; return; }
+    sortedDates = sortedDates.filter(d => d >= txns[0].date);
 
-let sortedDates = Array.from(allDates).sort((a,b) => new Date(a) - new Date(b));
-if (sortedDates.length === 0 || txns.length === 0) { this.isHomeChartLoading = false; return; }
-sortedDates = sortedDates.filter(d => d >= txns[0].date);
-
-let timeline = []; let currentShares = {}; let currentAvgCost = {}; let lastPrices = {}; let txnIdx = 0;
+   let timeline = []; let currentShares = {}; let currentAvgCost = {}; let lastPrices = {}; let txnIdx = 0;
 for (let d of sortedDates) {
-while (txnIdx < txns.length && txns[txnIdx].date <= d) {
-let t = txns[txnIdx]; let c = t.code;
-if (!currentShares[c]) currentShares[c] = 0; if (!currentAvgCost[c]) currentAvgCost[c] = 0;
-let s = parseFloat(t.shares)||0; let amt = parseFloat(t.amount)||0;
-if (t.action === 'buy' || t.action === 'sync') { 
-let tot = currentShares[c] * currentAvgCost[c] + amt; 
-currentShares[c] += s; 
-currentAvgCost[c] = currentShares[c] > 0 ? tot / currentShares[c] : 0; 
-} 
-else if (t.action === 'sell' || t.action === 'withdraw') { currentShares[c] = Math.max(0, currentShares[c] - s); } 
-txnIdx++;
+    while (txnIdx < txns.length && txns[txnIdx].date <= d) {
+        let t = txns[txnIdx]; let c = t.code;
+        if (!currentShares[c]) currentShares[c] = 0; if (!currentAvgCost[c]) currentAvgCost[c] = 0;
+        let s = parseFloat(t.shares)||0; let amt = parseFloat(t.amount)||0;
+        if (t.action === 'buy' || t.action === 'sync') { 
+            let tot = currentShares[c] * currentAvgCost[c] + amt; 
+            currentShares[c] += s; 
+            currentAvgCost[c] = currentShares[c] > 0 ? tot / currentShares[c] : 0; 
+        } 
+        else if (t.action === 'sell' || t.action === 'withdraw') { currentShares[c] = Math.max(0, currentShares[c] - s); } 
+        txnIdx++;
+    }
+    let dailyTotalValue = 0; let dailyTotalCost = 0; let etfValues = {};
+    for (let code in this.etfs) {
+        if (historyMap[code][d]) lastPrices[code] = historyMap[code][d];
+        let val = (lastPrices[code] || 0) * (currentShares[code] || 0);
+        etfValues[code] = val; dailyTotalValue += val;
+        dailyTotalCost += (currentShares[code] || 0) * (currentAvgCost[code] || 0);
+    }
+    timeline.push({ time: d, value: Math.round(dailyTotalValue), cost: Math.round(dailyTotalCost), etfValues: etfValues });
 }
-let dailyTotalValue = 0; let dailyTotalCost = 0; let etfValues = {};
-for (let code in this.etfs) {
-if (historyMap[code][d]) lastPrices[code] = historyMap[code][d];
-let val = (lastPrices[code] || 0) * (currentShares[code] || 0);
-etfValues[code] = val; dailyTotalValue += val;
-dailyTotalCost += (currentShares[code] || 0) * (currentAvgCost[code] || 0);
-}
-timeline.push({ time: d, value: Math.round(dailyTotalValue), cost: Math.round(dailyTotalCost), etfValues: etfValues });
-}
-
-this.homeTimelineData = timeline;
-this.isHomeChartReady = true; this.isHomeChartLoading = false;
-if (this.showHomeChart) this.renderHomeChart();
+    
+    this.homeTimelineData = timeline;
+    this.isHomeChartReady = true; this.isHomeChartLoading = false;
+    if (this.showHomeChart) this.renderHomeChart();
 },
 async toggleHomeChart() {
-this.showHomeChart = !this.showHomeChart;
-if (this.showHomeChart) {
-if (!this.isHomeChartReady) await this.prepareHomeChartData();
-setTimeout(() => this.renderHomeChart(), 50);
-} else {
-if (this.homeChartInstance) { this.homeChartInstance.remove(); this.homeChartInstance = null; }
-}
+    this.showHomeChart = !this.showHomeChart;
+    if (this.showHomeChart) {
+        if (!this.isHomeChartReady) await this.prepareHomeChartData();
+        setTimeout(() => this.renderHomeChart(), 50);
+    } else {
+        if (this.homeChartInstance) { this.homeChartInstance.remove(); this.homeChartInstance = null; }
+    }
 },
 changeHomeChartRange(range) { this.homeChartRange = range; this.renderHomeChart(); },
 renderHomeChart() {
-if (!this.showHomeChart || !this.isHomeChartReady || this.homeTimelineData.length === 0) return;
-const container = document.getElementById('home-lwc-chart'); if (!container) return;
-if (this.homeChartInstance) { this.homeChartInstance.remove(); this.homeChartInstance = null; }
-container.innerHTML = '';
-let chartWidth = container.clientWidth || (container.parentElement ? container.parentElement.clientWidth : window.innerWidth - 40);
+    if (!this.showHomeChart || !this.isHomeChartReady || this.homeTimelineData.length === 0) return;
+    const container = document.getElementById('home-lwc-chart'); if (!container) return;
+    if (this.homeChartInstance) { this.homeChartInstance.remove(); this.homeChartInstance = null; }
+    container.innerHTML = '';
+    let chartWidth = container.clientWidth || (container.parentElement ? container.parentElement.clientWidth : window.innerWidth - 40);
+    
+    try {
+        const chart = LightweightCharts.createChart(container, { width: Math.max(280, chartWidth), height: 350, layout: { background: { color: '#ffffff' }, textColor: '#475569' }, grid: { vertLines: { color: '#f1f5f9' }, horzLines: { color: '#f1f5f9' } }, crosshair: { mode: 1 }, timeScale: { borderVisible: false } });
+        this.homeChartInstance = chart;
+        
+        let targetDate = new Date();
+        if(this.homeChartRange === '1M') targetDate.setMonth(targetDate.getMonth() - 1);
+        else if(this.homeChartRange === '3M') targetDate.setMonth(targetDate.getMonth() - 3);
+        else if(this.homeChartRange === '6M') targetDate.setMonth(targetDate.getMonth() - 6);
+        else if(this.homeChartRange === '1Y') targetDate.setFullYear(targetDate.getFullYear() - 1);
+        else if(this.homeChartRange === 'YTD') { targetDate.setMonth(0); targetDate.setDate(1); }
+        else targetDate.setFullYear(1970);
+        
+        let targetStr = this.getLocalYMD(targetDate);
+        let filteredData = this.homeTimelineData.filter(d => d.time >= targetStr);
+        if(filteredData.length === 0) filteredData = this.homeTimelineData; 
 
-try {
-const chart = LightweightCharts.createChart(container, { width: Math.max(280, chartWidth), height: 350, layout: { background: { color: '#ffffff' }, textColor: '#475569' }, grid: { vertLines: { color: '#f1f5f9' }, horzLines: { color: '#f1f5f9' } }, crosshair: { mode: 1 }, timeScale: { borderVisible: false } });
-this.homeChartInstance = chart;
-
-let targetDate = new Date();
-if(this.homeChartRange === '1M') targetDate.setMonth(targetDate.getMonth() - 1);
-else if(this.homeChartRange === '3M') targetDate.setMonth(targetDate.getMonth() - 3);
-else if(this.homeChartRange === '6M') targetDate.setMonth(targetDate.getMonth() - 6);
-else if(this.homeChartRange === '1Y') targetDate.setFullYear(targetDate.getFullYear() - 1);
-else if(this.homeChartRange === 'YTD') { targetDate.setMonth(0); targetDate.setDate(1); }
-else targetDate.setFullYear(1970);
-
-let targetStr = this.getLocalYMD(targetDate);
-let filteredData = this.homeTimelineData.filter(d => d.time >= targetStr);
-if(filteredData.length === 0) filteredData = this.homeTimelineData; 
-
-if (this.homeChartMode === 'total') {
-const areaSeries = chart.addAreaSeries({ lineColor: '#3b82f6', topColor: 'rgba(59, 130, 246, 0.4)', bottomColor: 'rgba(59, 130, 246, 0.0)', lineWidth: 2, title: '總市值' });
-const costSeries = chart.addLineSeries({ color: '#f59e0b', lineWidth: 2, lineStyle: 2, title: '累積本金' });
-areaSeries.setData(filteredData.map(d => ({ time: d.time, value: d.value })));
-costSeries.setData(filteredData.map(d => ({ time: d.time, value: d.cost })));
-} else {
-let codes = Object.keys(this.etfs);
-let colors = ['rgba(59, 130, 246,', 'rgba(16, 185, 129,', 'rgba(245, 158, 11,', 'rgba(139, 92, 246,', 'rgba(236, 72, 153,', 'rgba(14, 165, 233,'];
-let stackSeriesData = []; let prevValues = new Array(filteredData.length).fill(0);
-
-for(let i=0; i<codes.length; i++) {
-let c = codes[i]; let col = colors[i % colors.length];
-let stackData = filteredData.map((d, idx) => {
-let val = (d.etfValues[c] || 0) + prevValues[idx]; prevValues[idx] = val;
-return { time: d.time, value: val };
-});
-stackSeriesData.push({ title: c, color: col, data: stackData });
-}
-for(let i = stackSeriesData.length - 1; i >= 0; i--) {
-let s = stackSeriesData[i];
-const series = chart.addAreaSeries({ lineColor: s.color+'1)', topColor: s.color+'0.8)', bottomColor: s.color+'0.2)', lineWidth: 1, title: s.title });
-series.setData(s.data);
-}
-}
-chart.timeScale().fitContent();
-if (window.ResizeObserver) { new ResizeObserver(entries => { if (entries[0].target === container && this.homeChartInstance && entries[0].contentRect.width > 0) { this.homeChartInstance.applyOptions({ width: Math.floor(entries[0].contentRect.width) }); } }).observe(container); }
-} catch(e){}
+        if (this.homeChartMode === 'total') {
+            const areaSeries = chart.addAreaSeries({ lineColor: '#3b82f6', topColor: 'rgba(59, 130, 246, 0.4)', bottomColor: 'rgba(59, 130, 246, 0.0)', lineWidth: 2, title: '總市值' });
+            const costSeries = chart.addLineSeries({ color: '#f59e0b', lineWidth: 2, lineStyle: 2, title: '累積本金' });
+            areaSeries.setData(filteredData.map(d => ({ time: d.time, value: d.value })));
+            costSeries.setData(filteredData.map(d => ({ time: d.time, value: d.cost })));
+        } else {
+            let codes = Object.keys(this.etfs);
+            let colors = ['rgba(59, 130, 246,', 'rgba(16, 185, 129,', 'rgba(245, 158, 11,', 'rgba(139, 92, 246,', 'rgba(236, 72, 153,', 'rgba(14, 165, 233,'];
+            let stackSeriesData = []; let prevValues = new Array(filteredData.length).fill(0);
+            
+            for(let i=0; i<codes.length; i++) {
+                let c = codes[i]; let col = colors[i % colors.length];
+                let stackData = filteredData.map((d, idx) => {
+                    let val = (d.etfValues[c] || 0) + prevValues[idx]; prevValues[idx] = val;
+                    return { time: d.time, value: val };
+                });
+                stackSeriesData.push({ title: c, color: col, data: stackData });
+            }
+            for(let i = stackSeriesData.length - 1; i >= 0; i--) {
+                let s = stackSeriesData[i];
+                const series = chart.addAreaSeries({ lineColor: s.color+'1)', topColor: s.color+'0.8)', bottomColor: s.color+'0.2)', lineWidth: 1, title: s.title });
+                series.setData(s.data);
+            }
+        }
+        chart.timeScale().fitContent();
+        if (window.ResizeObserver) { new ResizeObserver(entries => { if (entries[0].target === container && this.homeChartInstance && entries[0].contentRect.width > 0) { this.homeChartInstance.applyOptions({ width: Math.floor(entries[0].contentRect.width) }); } }).observe(container); }
+    } catch(e){}
 },
 
 async prepareDetailChartData() {
-if (this.isDetailChartReady || !this.activeETF || !this.cachedHistoricalData) return;
-this.isDetailChartLoading = true;
+    if (this.isDetailChartReady || !this.activeETF || !this.cachedHistoricalData) return;
+    this.isDetailChartLoading = true;
+    
+    let txns = [];
+    if (this.baseShares > 0 && this.startDate) txns.push({ date: this.startDate, action: 'buy', shares: this.baseShares, amount: this.baseShares * this.baseAvgCost });
+    (this.transactions||[]).forEach(t => txns.push({ date: t.date, action: t.action, shares: t.shares, amount: t.amount }));
+    txns.sort((a,b) => new Date(a.date) - new Date(b.date));
 
-let txns = [];
-if (this.baseShares > 0 && this.startDate) txns.push({ date: this.startDate, action: 'buy', shares: this.baseShares, amount: this.baseShares * this.baseAvgCost });
-(this.transactions||[]).forEach(t => txns.push({ date: t.date, action: t.action, shares: t.shares, amount: t.amount }));
-txns.sort((a,b) => new Date(a.date) - new Date(b.date));
+    if (txns.length === 0) { this.isDetailChartLoading = false; return; }
 
-if (txns.length === 0) { this.isDetailChartLoading = false; return; }
+    let historyMap = {}; let allDates = new Set();
+    this.cachedHistoricalData.forEach(h => { let dStr = this.getLocalYMD(new Date(h.time)); allDates.add(dStr); historyMap[dStr] = h.close; });
+    if (this.currentPrice > 0) { let todayStr = this.getLocalYMD(); allDates.add(todayStr); historyMap[todayStr] = this.currentPrice; }
 
-let historyMap = {}; let allDates = new Set();
-this.cachedHistoricalData.forEach(h => { let dStr = this.getLocalYMD(new Date(h.time)); allDates.add(dStr); historyMap[dStr] = h.close; });
-if (this.currentPrice > 0) { let todayStr = this.getLocalYMD(); allDates.add(todayStr); historyMap[todayStr] = this.currentPrice; }
+    let sortedDates = Array.from(allDates).sort((a,b) => new Date(a) - new Date(b));
+    sortedDates = sortedDates.filter(d => d >= txns[0].date);
 
-let sortedDates = Array.from(allDates).sort((a,b) => new Date(a) - new Date(b));
-sortedDates = sortedDates.filter(d => d >= txns[0].date);
-
-let timeline = []; let currentShares = 0; let currentAvgCost = 0; let lastPrice = 0; let txnIdx = 0;
+   let timeline = []; let currentShares = 0; let currentAvgCost = 0; let lastPrice = 0; let txnIdx = 0;
 for (let d of sortedDates) {
-while (txnIdx < txns.length && txns[txnIdx].date <= d) {
-let t = txns[txnIdx];
-let s = parseFloat(t.shares)||0; let amt = parseFloat(t.amount)||0;
-if (t.action === 'buy' || t.action === 'sync') { 
-let tot = currentShares * currentAvgCost + amt;
-currentShares += s; 
-currentAvgCost = currentShares > 0 ? tot / currentShares : 0;
-} 
-else if (t.action === 'sell' || t.action === 'withdraw') { 
-currentShares = Math.max(0, currentShares - s); 
-} 
-txnIdx++;
+    while (txnIdx < txns.length && txns[txnIdx].date <= d) {
+        let t = txns[txnIdx];
+        let s = parseFloat(t.shares)||0; let amt = parseFloat(t.amount)||0;
+        if (t.action === 'buy' || t.action === 'sync') { 
+            let tot = currentShares * currentAvgCost + amt;
+            currentShares += s; 
+            currentAvgCost = currentShares > 0 ? tot / currentShares : 0;
+        } 
+        else if (t.action === 'sell' || t.action === 'withdraw') { 
+            currentShares = Math.max(0, currentShares - s); 
+        } 
+        txnIdx++;
+    }
+    if (historyMap[d]) lastPrice = historyMap[d];
+    timeline.push({ time: d, value: Math.round(lastPrice * currentShares), cost: Math.round(currentShares * currentAvgCost) });
 }
-if (historyMap[d]) lastPrice = historyMap[d];
-timeline.push({ time: d, value: Math.round(lastPrice * currentShares), cost: Math.round(currentShares * currentAvgCost) });
-}
-
-this.detailTimelineData = timeline;
-this.isDetailChartReady = true; this.isDetailChartLoading = false;
-if (this.showDetailNetWorthChart) this.renderDetailNetWorthChart();
+    
+    this.detailTimelineData = timeline;
+    this.isDetailChartReady = true; this.isDetailChartLoading = false;
+    if (this.showDetailNetWorthChart) this.renderDetailNetWorthChart();
 },
 async toggleDetailNetWorthChart() {
-this.showDetailNetWorthChart = !this.showDetailNetWorthChart;
-if (this.showDetailNetWorthChart) {
-if (!this.isDetailChartReady) await this.prepareDetailChartData();
-setTimeout(() => this.renderDetailNetWorthChart(), 50);
-} else {
-if (this.detailChartInstance) { this.detailChartInstance.remove(); this.detailChartInstance = null; }
-}
+    this.showDetailNetWorthChart = !this.showDetailNetWorthChart;
+    if (this.showDetailNetWorthChart) {
+        if (!this.isDetailChartReady) await this.prepareDetailChartData();
+        setTimeout(() => this.renderDetailNetWorthChart(), 50);
+    } else {
+        if (this.detailChartInstance) { this.detailChartInstance.remove(); this.detailChartInstance = null; }
+    }
 },
 changeDetailChartRange(range) { this.detailChartRange = range; this.renderDetailNetWorthChart(); },
 renderDetailNetWorthChart() {
-if (!this.showDetailNetWorthChart || !this.isDetailChartReady || this.detailTimelineData.length === 0) return;
-const container = document.getElementById('detail-lwc-chart'); if (!container) return;
-if (this.detailChartInstance) { this.detailChartInstance.remove(); this.detailChartInstance = null; }
-container.innerHTML = '';
-let chartWidth = container.clientWidth || (container.parentElement ? container.parentElement.clientWidth : window.innerWidth - 40);
+    if (!this.showDetailNetWorthChart || !this.isDetailChartReady || this.detailTimelineData.length === 0) return;
+    const container = document.getElementById('detail-lwc-chart'); if (!container) return;
+    if (this.detailChartInstance) { this.detailChartInstance.remove(); this.detailChartInstance = null; }
+    container.innerHTML = '';
+    let chartWidth = container.clientWidth || (container.parentElement ? container.parentElement.clientWidth : window.innerWidth - 40);
+    
+    try {
+        const chart = LightweightCharts.createChart(container, { width: Math.max(280, chartWidth), height: 350, layout: { background: { color: '#ffffff' }, textColor: '#475569' }, grid: { vertLines: { color: '#f1f5f9' }, horzLines: { color: '#f1f5f9' } }, crosshair: { mode: 1 }, timeScale: { borderVisible: false } });
+        this.detailChartInstance = chart;
+        
+        let targetDate = new Date();
+        if(this.detailChartRange === '1M') targetDate.setMonth(targetDate.getMonth() - 1);
+        else if(this.detailChartRange === '3M') targetDate.setMonth(targetDate.getMonth() - 3);
+        else if(this.detailChartRange === '6M') targetDate.setMonth(targetDate.getMonth() - 6);
+        else if(this.detailChartRange === '1Y') targetDate.setFullYear(targetDate.getFullYear() - 1);
+        else if(this.detailChartRange === 'YTD') { targetDate.setMonth(0); targetDate.setDate(1); }
+        else targetDate.setFullYear(1970);
+        
+        let targetStr = this.getLocalYMD(targetDate);
+        let filteredData = this.detailTimelineData.filter(d => d.time >= targetStr);
+        if(filteredData.length === 0) filteredData = this.detailTimelineData; 
 
-try {
-const chart = LightweightCharts.createChart(container, { width: Math.max(280, chartWidth), height: 350, layout: { background: { color: '#ffffff' }, textColor: '#475569' }, grid: { vertLines: { color: '#f1f5f9' }, horzLines: { color: '#f1f5f9' } }, crosshair: { mode: 1 }, timeScale: { borderVisible: false } });
-this.detailChartInstance = chart;
-
-let targetDate = new Date();
-if(this.detailChartRange === '1M') targetDate.setMonth(targetDate.getMonth() - 1);
-else if(this.detailChartRange === '3M') targetDate.setMonth(targetDate.getMonth() - 3);
-else if(this.detailChartRange === '6M') targetDate.setMonth(targetDate.getMonth() - 6);
-else if(this.detailChartRange === '1Y') targetDate.setFullYear(targetDate.getFullYear() - 1);
-else if(this.detailChartRange === 'YTD') { targetDate.setMonth(0); targetDate.setDate(1); }
-else targetDate.setFullYear(1970);
-
-let targetStr = this.getLocalYMD(targetDate);
-let filteredData = this.detailTimelineData.filter(d => d.time >= targetStr);
-if(filteredData.length === 0) filteredData = this.detailTimelineData; 
-
-const areaSeries = chart.addAreaSeries({ lineColor: '#3b82f6', topColor: 'rgba(59, 130, 246, 0.4)', bottomColor: 'rgba(59, 130, 246, 0.0)', lineWidth: 2, title: '當下市值' });
-const costSeries = chart.addLineSeries({ color: '#f59e0b', lineWidth: 2, lineStyle: 2, title: '累積本金' });
-areaSeries.setData(filteredData.map(d => ({ time: d.time, value: d.value })));
-costSeries.setData(filteredData.map(d => ({ time: d.time, value: d.cost })));
-
-chart.timeScale().fitContent();
-if (window.ResizeObserver) { new ResizeObserver(entries => { if (entries[0].target === container && this.detailChartInstance && entries[0].contentRect.width > 0) { this.detailChartInstance.applyOptions({ width: Math.floor(entries[0].contentRect.width) }); } }).observe(container); }
-} catch(e){}
+        const areaSeries = chart.addAreaSeries({ lineColor: '#3b82f6', topColor: 'rgba(59, 130, 246, 0.4)', bottomColor: 'rgba(59, 130, 246, 0.0)', lineWidth: 2, title: '當下市值' });
+        const costSeries = chart.addLineSeries({ color: '#f59e0b', lineWidth: 2, lineStyle: 2, title: '累積本金' });
+        areaSeries.setData(filteredData.map(d => ({ time: d.time, value: d.value })));
+        costSeries.setData(filteredData.map(d => ({ time: d.time, value: d.cost })));
+        
+        chart.timeScale().fitContent();
+        if (window.ResizeObserver) { new ResizeObserver(entries => { if (entries[0].target === container && this.detailChartInstance && entries[0].contentRect.width > 0) { this.detailChartInstance.applyOptions({ width: Math.floor(entries[0].contentRect.width) }); } }).observe(container); }
+    } catch(e){}
 },
 
 getHomeETFInfo(code, priceObj) {
@@ -578,17 +579,17 @@ return { shares, marketValue, profit, price };
 get totalNetWorth() { let total = 0; for (let code in this.etfs) total += this.getHomeETFInfo(code, this.homePrices[code]).marketValue; return total; },
 get totalGlobalProfit() { let total = 0; for (let code in this.etfs) total += this.getHomeETFInfo(code, this.homePrices[code]).marketValue > 0 ? this.getHomeETFInfo(code, this.homePrices[code]).profit : 0; return total; },
 get totalGlobalCost() { 
-let total = 0; 
-for (let code in this.etfs) { 
-let shares = parseFloat(this.etfs[code].baseShares) || 0, avgCost = parseFloat(this.etfs[code].baseAvgCost) || 0; 
-[...(this.etfs[code].transactions||[])].sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(t => { 
-let s = parseFloat(t.shares) || 0, amt = parseFloat(t.amount) || 0; 
-if (t.action === 'buy' || t.action === 'sync') { let tot = shares * avgCost + amt; shares += s; avgCost = shares > 0 ? tot / shares : 0; } 
-else if (t.action === 'sell' || t.action === 'withdraw') { shares = Math.max(0, shares - s); } 
-}); 
-total += Math.round(shares * avgCost); 
-} 
-return total; 
+    let total = 0; 
+    for (let code in this.etfs) { 
+        let shares = parseFloat(this.etfs[code].baseShares) || 0, avgCost = parseFloat(this.etfs[code].baseAvgCost) || 0; 
+        [...(this.etfs[code].transactions||[])].sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(t => { 
+            let s = parseFloat(t.shares) || 0, amt = parseFloat(t.amount) || 0; 
+            if (t.action === 'buy' || t.action === 'sync') { let tot = shares * avgCost + amt; shares += s; avgCost = shares > 0 ? tot / shares : 0; } 
+            else if (t.action === 'sell' || t.action === 'withdraw') { shares = Math.max(0, shares - s); } 
+        }); 
+        total += Math.round(shares * avgCost); 
+    } 
+    return total; 
 },get totalGlobalCashIn() { let total = 0; for (let code in this.etfs) total += (this.etfs[code].transactions||[]).filter(t => t.action === 'sell' || t.action === 'dividend' || t.action === 'withdraw').reduce((s, t) => s + (parseFloat(t.amount) || 0), 0); return total; },
 get globalROI() { if (this.totalGlobalCost <= 0) return null; return (((this.totalNetWorth + this.totalGlobalCashIn - this.totalGlobalCost) / this.totalGlobalCost) * 100).toFixed(2); },
 get totalDailyProfit() { let total = 0; for (let code in this.etfs) { let p = this.homePrices[code]; if (p && p.prev && p.price) { let info = this.getHomeETFInfo(code, p); total += info.shares * (p.price - p.prev); } } return Math.round(total); },
@@ -725,44 +726,44 @@ if(this.chartRendered && this.showChart) this.renderChart(); setTimeout(() => th
 },
 
 async fetchRealTimePrice() {
-let requestETF = this.activeETF; 
-let price = null, prev = null, vol = null, timeStr = '';
+    let requestETF = this.activeETF; 
+    let price = null, prev = null, vol = null, timeStr = '';
+    
+    const data = await this._fetchWithProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${requestETF}.TW?range=1d&interval=1m&_t=${Date.now()}`);
+    if (this.activeETF !== requestETF) return; 
 
-const data = await this._fetchWithProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${requestETF}.TW?range=1d&interval=1m&_t=${Date.now()}`);
-if (this.activeETF !== requestETF) return; 
+    if (data?.chart?.result?.[0]) {
+        const res = data.chart.result[0]; price = res.meta?.regularMarketPrice; prev = res.meta?.chartPreviousClose || res.meta?.previousClose;
+        if (res.indicators?.quote?.[0]?.close) { const closes = res.indicators.quote[0].close; for (let i = closes.length - 1; i >= 0; i--) { if (closes[i] != null) { price = closes[i]; break; } } }
+        vol = res.meta?.regularMarketVolume;
+        const d = new Date((res.meta?.regularMarketTime || Date.now()/1000) * 1000);
+        timeStr = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    }
+    
+    if (!price) {
+        const twseData = await this._fetchWithProxy(`https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${requestETF}.tw&_t=${Date.now()}`);
+        if (this.activeETF !== requestETF) return;
+        if (twseData?.msgArray?.[0]) {
+            let res = twseData.msgArray[0];
+            if (res.z && res.z !== '-') price = parseFloat(res.z);
+            if (res.y && res.y !== '-') prev = parseFloat(res.y);
+            if (res.v && res.v !== '-') vol = parseFloat(res.v) * 1000;
+            timeStr = `證交所備援 ${res.d.substring(4,6)}/${res.d.substring(6,8)} ${res.t}`;
+        }
+    }
 
-if (data?.chart?.result?.[0]) {
-const res = data.chart.result[0]; price = res.meta?.regularMarketPrice; prev = res.meta?.chartPreviousClose || res.meta?.previousClose;
-if (res.indicators?.quote?.[0]?.close) { const closes = res.indicators.quote[0].close; for (let i = closes.length - 1; i >= 0; i--) { if (closes[i] != null) { price = closes[i]; break; } } }
-vol = res.meta?.regularMarketVolume;
-const d = new Date((res.meta?.regularMarketTime || Date.now()/1000) * 1000);
-timeStr = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-}
-
-if (!price) {
-const twseData = await this._fetchWithProxy(`https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${requestETF}.tw&_t=${Date.now()}`);
-if (this.activeETF !== requestETF) return;
-if (twseData?.msgArray?.[0]) {
-let res = twseData.msgArray[0];
-if (res.z && res.z !== '-') price = parseFloat(res.z);
-if (res.y && res.y !== '-') prev = parseFloat(res.y);
-if (res.v && res.v !== '-') vol = parseFloat(res.v) * 1000;
-timeStr = `證交所備援 ${res.d.substring(4,6)}/${res.d.substring(6,8)} ${res.t}`;
-}
-}
-
-if (price) {
-this.currentPrice = price; 
-if (prev) this.prevClose = prev; else if (!this.prevClose) this.prevClose = price;
-if (vol) this.currentVolume = vol;
-this.priceUpdateTime = timeStr;
-this.realTimeFetched = true;
-this.homePrices[this.activeETF] = { price: this.currentPrice, prev: this.prevClose }; 
-this.saveData(false);
-} else { 
-this.priceUpdateTime = '即時連線失敗(顯示昨收)'; 
-this.realTimeFetched = false; 
-}
+    if (price) {
+        this.currentPrice = price; 
+        if (prev) this.prevClose = prev; else if (!this.prevClose) this.prevClose = price;
+        if (vol) this.currentVolume = vol;
+        this.priceUpdateTime = timeStr;
+        this.realTimeFetched = true;
+        this.homePrices[this.activeETF] = { price: this.currentPrice, prev: this.prevClose }; 
+        this.saveData(false);
+    } else { 
+        this.priceUpdateTime = '即時連線失敗(顯示昨收)'; 
+        this.realTimeFetched = false; 
+    }
 },
 
 async fetchDynamicDiscount() {
@@ -1194,25 +1195,25 @@ if (outcome === 'accepted') this.deferredPrompt = null;
 
 <div x-show="showHomeChart" class="mt-4 bg-white p-4 sm:p-6 rounded-3xl border border-slate-100 shadow-lg relative" x-cloak x-transition>
 <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
-<h3 class="text-xl font-black text-slate-800 flex items-center gap-2"><i class="fa-solid fa-chart-pie text-blue-500"></i> 真實帳戶淨值曲線</h3>
-<div class="flex bg-slate-100 p-1 rounded-lg shadow-inner shrink-0">
-<button @click="homeChartMode = 'total'; renderHomeChart()" class="px-4 py-1.5 text-sm font-bold rounded-md transition" :class="homeChartMode === 'total' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'">雙線對比</button>
-<button @click="homeChartMode = 'stacked'; renderHomeChart()" class="px-4 py-1.5 text-sm font-bold rounded-md transition" :class="homeChartMode === 'stacked' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'">資產堆疊</button>
-</div>
+    <h3 class="text-xl font-black text-slate-800 flex items-center gap-2"><i class="fa-solid fa-chart-pie text-blue-500"></i> 真實帳戶淨值曲線</h3>
+    <div class="flex bg-slate-100 p-1 rounded-lg shadow-inner shrink-0">
+        <button @click="homeChartMode = 'total'; renderHomeChart()" class="px-4 py-1.5 text-sm font-bold rounded-md transition" :class="homeChartMode === 'total' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'">雙線對比</button>
+        <button @click="homeChartMode = 'stacked'; renderHomeChart()" class="px-4 py-1.5 text-sm font-bold rounded-md transition" :class="homeChartMode === 'stacked' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'">資產堆疊</button>
+    </div>
 </div>
 
 <div class="bg-blue-50/50 border border-blue-100 rounded-xl p-3 mb-4 text-sm text-slate-600 leading-relaxed">
-💡 <strong>提示：</strong>本圖表嚴格依據各檔 ETF 的「歷史明細」與「歷史股價」疊加精算。明細填寫越完整，曲線越能反映您的資產成長軌跡。實線為<strong class="text-blue-600">總市值</strong>，虛線為<strong class="text-amber-500">累積投入本金</strong>。
+    💡 <strong>提示：</strong>本圖表嚴格依據各檔 ETF 的「歷史明細」與「歷史股價」疊加精算。明細填寫越完整，曲線越能反映您的資產成長軌跡。實線為<strong class="text-blue-600">總市值</strong>，虛線為<strong class="text-amber-500">累積投入本金</strong>。
 </div>
 
 <div class="flex flex-wrap gap-1.5 mb-4">
-<template x-for="r in ['1M', '3M', '6M', '1Y', 'YTD', 'MAX']" :key="r">
-<button @click="changeHomeChartRange(r)" class="px-3 py-1 text-xs font-bold rounded-full border transition" :class="homeChartRange === r ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'" x-text="r === 'YTD' ? '今年以來' : (r === 'MAX' ? '全部' : r)"></button>
-</template>
+    <template x-for="r in ['1M', '3M', '6M', '1Y', 'YTD', 'MAX']" :key="r">
+        <button @click="changeHomeChartRange(r)" class="px-3 py-1 text-xs font-bold rounded-full border transition" :class="homeChartRange === r ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'" x-text="r === 'YTD' ? '今年以來' : (r === 'MAX' ? '全部' : r)"></button>
+    </template>
 </div>
 
 <div x-show="isHomeChartLoading" class="w-full h-[350px] flex items-center justify-center bg-slate-50 rounded-xl border border-slate-100 shadow-inner">
-<div class="text-slate-400 font-bold flex flex-col items-center gap-3"><i class="fa-solid fa-spinner fa-spin text-3xl"></i> 正在為您回測精算歷史軌跡...</div>
+    <div class="text-slate-400 font-bold flex flex-col items-center gap-3"><i class="fa-solid fa-spinner fa-spin text-3xl"></i> 正在為您回測精算歷史軌跡...</div>
 </div>
 <div x-show="!isHomeChartLoading" id="home-lwc-chart" style="width: 100%; min-height: 350px;" class="rounded-xl border border-slate-100 overflow-hidden shadow-inner"></div>
 </div>
@@ -1420,21 +1421,21 @@ if (outcome === 'accepted') this.deferredPrompt = null;
 
 <div x-show="showDetailNetWorthChart" class="mt-4 bg-white p-4 sm:p-6 rounded-3xl border border-slate-100 shadow-lg relative" x-cloak x-transition>
 <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
-<h3 class="text-xl font-black text-slate-800 flex items-center gap-2"><i class="fa-solid fa-chart-pie text-blue-500"></i> 單檔真實帳戶淨值曲線</h3>
+    <h3 class="text-xl font-black text-slate-800 flex items-center gap-2"><i class="fa-solid fa-chart-pie text-blue-500"></i> 單檔真實帳戶淨值曲線</h3>
 </div>
 
 <div class="bg-blue-50/50 border border-blue-100 rounded-xl p-3 mb-4 text-sm text-slate-600 leading-relaxed">
-💡 <strong>提示：</strong>本圖表依據您填寫的「歷史明細」與即時回測的「歷史股價」疊加精算。實線為<strong class="text-blue-600">當下市值</strong>，虛線為<strong class="text-amber-500">累積投入本金</strong>。
+    💡 <strong>提示：</strong>本圖表依據您填寫的「歷史明細」與即時回測的「歷史股價」疊加精算。實線為<strong class="text-blue-600">當下市值</strong>，虛線為<strong class="text-amber-500">累積投入本金</strong>。
 </div>
 
 <div class="flex flex-wrap gap-1.5 mb-4">
-<template x-for="r in ['1M', '3M', '6M', '1Y', 'YTD', 'MAX']" :key="r">
-<button @click="changeDetailChartRange(r)" class="px-3 py-1 text-xs font-bold rounded-full border transition" :class="detailChartRange === r ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'" x-text="r === 'YTD' ? '今年以來' : (r === 'MAX' ? '全部' : r)"></button>
-</template>
+    <template x-for="r in ['1M', '3M', '6M', '1Y', 'YTD', 'MAX']" :key="r">
+        <button @click="changeDetailChartRange(r)" class="px-3 py-1 text-xs font-bold rounded-full border transition" :class="detailChartRange === r ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'" x-text="r === 'YTD' ? '今年以來' : (r === 'MAX' ? '全部' : r)"></button>
+    </template>
 </div>
 
 <div x-show="isDetailChartLoading" class="w-full h-[350px] flex items-center justify-center bg-slate-50 rounded-xl border border-slate-100 shadow-inner">
-<div class="text-slate-400 font-bold flex flex-col items-center gap-3"><i class="fa-solid fa-spinner fa-spin text-3xl"></i> 正在為您精算歷史軌跡...</div>
+    <div class="text-slate-400 font-bold flex flex-col items-center gap-3"><i class="fa-solid fa-spinner fa-spin text-3xl"></i> 正在為您精算歷史軌跡...</div>
 </div>
 <div x-show="!isDetailChartLoading" id="detail-lwc-chart" style="width: 100%; min-height: 350px;" class="rounded-xl border border-slate-100 overflow-hidden shadow-inner"></div>
 </div>
@@ -1914,102 +1915,54 @@ if (outcome === 'accepted') this.deferredPrompt = null;
 </div> <div class="h-6"></div>
 
 <div class="bg-white p-6 md:p-8 rounded-2xl border border-slate-200 shadow-[0_4px_15px_rgb(0,0,0,0.02)] mb-8">
-<h3 class="font-black text-slate-800 mb-2 text-xl flex items-center gap-2">
-<span class="w-8 h-8 rounded bg-purple-100 text-purple-600 flex items-center justify-center text-sm shadow-inner">
-<i class="fa-solid fa-satellite-dish"></i>
-</span> 系統連線診斷工具
-</h3>
-<p class="text-sm font-bold text-slate-500 mb-6">若遇到股價無法更新或無限轉圈圈，可一鍵測試目前各大免費通道的存活狀態與反應速度。</p>
+    <h3 class="font-black text-slate-800 mb-2 text-xl flex items-center gap-2">
+        <span class="w-8 h-8 rounded bg-purple-100 text-purple-600 flex items-center justify-center text-sm shadow-inner">
+            <i class="fa-solid fa-satellite-dish"></i>
+        </span> 系統連線診斷工具
+    </h3>
+    <p class="text-sm font-bold text-slate-500 mb-6">若遇到股價無法更新或無限轉圈圈，可一鍵測試目前各大免費通道的存活狀態與反應速度。</p>
 
-<div class="space-y-3 mb-6">
-<template x-for="res in diagnosticResults" :key="res.id">
-<div class="flex items-center justify-between p-3 sm:p-4 rounded-xl border transition-colors shadow-sm" :class="{'border-emerald-200 bg-emerald-50/50': res.status === 'success', 'border-red-200 bg-red-50/50': res.status === 'error', 'border-blue-200 bg-blue-50/50': res.status === 'testing', 'border-slate-100 bg-slate-50': res.status === 'idle'}">
-<div class="flex items-center gap-3 w-full">
-<div class="w-10 h-10 shrink-0 rounded-full flex items-center justify-center font-black shadow-inner" :class="{'text-slate-400 bg-white border border-slate-200': res.status === 'idle', 'text-blue-500 bg-white border border-blue-200': res.status === 'testing', 'text-emerald-500 bg-white border border-emerald-200': res.status === 'success', 'text-red-500 bg-white border border-red-200': res.status === 'error'}">
-<i class="fa-solid text-lg" :class="{'fa-minus': res.status === 'idle', 'fa-spinner fa-spin': res.status === 'testing', 'fa-check': res.status === 'success', 'fa-xmark': res.status === 'error'}"></i>
-</div>
-<div class="w-full">
-<div class="font-black text-slate-700 text-sm sm:text-base" x-text="res.name"></div>
-<div class="text-xs font-bold text-slate-500 mt-1 flex flex-col gap-1.5" x-show="res.status !== 'idle'">
-<div x-show="res.status === 'testing'">通訊測試中...</div>
-<div x-show="res.status === 'success' || res.status === 'error'" x-text="'反應延遲: ' + res.time + ' ms'"></div>
-<div x-show="res.status === 'error'">
-<span class="text-red-600 bg-red-100 px-2 py-0.5 rounded shadow-sm" x-text="res.error"></span>
-</div>
-<div x-show="res.status === 'success'">
-<span class="text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded shadow-sm">連線成功</span>
-</div>
-</div>
-</div>
-</div>
-</div>
-</template>
-</div>
-
-<div class="bg-red-50 border border-red-100 rounded-xl p-3 mb-4 flex items-start gap-2">
-<div class="text-red-500 mt-0.5"><i class="fa-solid fa-triangle-exclamation"></i></div>
-<div class="text-sm font-bold text-red-600 leading-relaxed">
-強烈警語：請勿頻繁測試！短時間內密集連線，將觸發伺服器防禦機制，導致您的 IP 被暫時封鎖無法抓取股價。每次測試後需等待 30 秒冷卻。
-</div>
-</div>
-
-<button @click="runDiagnostics()" :disabled="isRunningDiagnostics || diagCooldown > 0" class="w-full py-4 bg-purple-600 text-white font-black text-lg rounded-xl shadow-md hover:bg-purple-700 hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:-translate-y-1 active:translate-y-0 disabled:hover:-translate-y-0">
-<i class="fa-solid fa-satellite-dish mr-2" :class="{'fa-beat': isRunningDiagnostics}"></i>
-<span x-text="isRunningDiagnostics ? '跨海診斷通訊中，請稍候...' : (diagCooldown > 0 ? '系統冷卻中，請等待 ' + diagCooldown + ' 秒' : '開始連線診斷')"></span>
-</button>
-</div>
-
-<div class="h-6"></div>
-
-    <div class="bg-white p-6 md:p-8 rounded-2xl border border-slate-200 shadow-[0_4px_15px_rgb(0,0,0,0.02)] mb-8">
-        <h3 class="font-black text-slate-800 mb-2 text-xl flex items-center gap-2">
-            <span class="w-8 h-8 rounded bg-purple-100 text-purple-600 flex items-center justify-center text-sm shadow-inner">
-                <i class="fa-solid fa-satellite-dish"></i>
-            </span> 系統連線診斷工具
-        </h3>
-        <p class="text-sm font-bold text-slate-500 mb-6">若遇到股價無法更新或無限轉圈圈，可一鍵測試目前各大免費通道的存活狀態與反應速度。</p>
-
-        <div class="space-y-3 mb-6">
-            <template x-for="res in diagnosticResults" :key="res.id">
-                <div class="flex items-center justify-between p-3 sm:p-4 rounded-xl border transition-colors shadow-sm" :class="{'border-emerald-200 bg-emerald-50/50': res.status === 'success', 'border-red-200 bg-red-50/50': res.status === 'error', 'border-blue-200 bg-blue-50/50': res.status === 'testing', 'border-slate-100 bg-slate-50': res.status === 'idle'}">
-                    <div class="flex items-center gap-3 w-full">
-                        <div class="w-10 h-10 shrink-0 rounded-full flex items-center justify-center font-black shadow-inner" :class="{'text-slate-400 bg-white border border-slate-200': res.status === 'idle', 'text-blue-500 bg-white border border-blue-200': res.status === 'testing', 'text-emerald-500 bg-white border border-emerald-200': res.status === 'success', 'text-red-500 bg-white border border-red-200': res.status === 'error'}">
-                            <i class="fa-solid text-lg" :class="{'fa-minus': res.status === 'idle', 'fa-spinner fa-spin': res.status === 'testing', 'fa-check': res.status === 'success', 'fa-xmark': res.status === 'error'}"></i>
-                        </div>
-                        <div class="w-full">
-                            <div class="font-black text-slate-700 text-sm sm:text-base" x-text="res.name"></div>
-                            <div class="text-xs font-bold text-slate-500 mt-1 flex flex-col gap-1.5" x-show="res.status !== 'idle'">
-                                <div x-show="res.status === 'testing'">通訊測試中...</div>
-                                <div x-show="res.status === 'success' || res.status === 'error'" x-text="'反應延遲: ' + res.time + ' ms'"></div>
-                                <div x-show="res.status === 'error'">
-                                    <span class="text-red-600 bg-red-100 px-2 py-0.5 rounded shadow-sm" x-text="res.error"></span>
-                                </div>
-                                <div x-show="res.status === 'success'">
-                                    <span class="text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded shadow-sm">連線成功</span>
-                                </div>
+    <div class="space-y-3 mb-6">
+        <template x-for="res in diagnosticResults" :key="res.id">
+            <div class="flex items-center justify-between p-3 sm:p-4 rounded-xl border transition-colors shadow-sm" :class="{'border-emerald-200 bg-emerald-50/50': res.status === 'success', 'border-red-200 bg-red-50/50': res.status === 'error', 'border-blue-200 bg-blue-50/50': res.status === 'testing', 'border-slate-100 bg-slate-50': res.status === 'idle'}">
+                <div class="flex items-center gap-3 w-full">
+                    <div class="w-10 h-10 shrink-0 rounded-full flex items-center justify-center font-black shadow-inner" :class="{'text-slate-400 bg-white border border-slate-200': res.status === 'idle', 'text-blue-500 bg-white border border-blue-200': res.status === 'testing', 'text-emerald-500 bg-white border border-emerald-200': res.status === 'success', 'text-red-500 bg-white border border-red-200': res.status === 'error'}">
+                        <i class="fa-solid text-lg" :class="{'fa-minus': res.status === 'idle', 'fa-spinner fa-spin': res.status === 'testing', 'fa-check': res.status === 'success', 'fa-xmark': res.status === 'error'}"></i>
+                    </div>
+                    <div class="w-full">
+                        <div class="font-black text-slate-700 text-sm sm:text-base" x-text="res.name"></div>
+                        <div class="text-xs font-bold text-slate-500 mt-1 flex flex-col gap-1.5" x-show="res.status !== 'idle'">
+                            <div x-show="res.status === 'testing'">通訊測試中...</div>
+                            <div x-show="res.status === 'success' || res.status === 'error'" x-text="'反應延遲: ' + res.time + ' ms'"></div>
+                            <div x-show="res.status === 'error'">
+                                <span class="text-red-600 bg-red-100 px-2 py-0.5 rounded shadow-sm" x-text="res.error"></span>
+                            </div>
+                            <div x-show="res.status === 'success'">
+                                <span class="text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded shadow-sm">連線成功</span>
                             </div>
                         </div>
                     </div>
                 </div>
-            </template>
-        </div>
-
-        <div class="bg-red-50 border border-red-100 rounded-xl p-3 mb-4 flex items-start gap-2">
-            <div class="text-red-500 mt-0.5"><i class="fa-solid fa-triangle-exclamation"></i></div>
-            <div class="text-sm font-bold text-red-600 leading-relaxed">
-                強烈警語：請勿頻繁測試！短時間內密集連線，將觸發伺服器防禦機制，導致您的 IP 被暫時封鎖無法抓取股價。每次測試後需等待 30 秒冷卻。
             </div>
+        </template>
+    </div>
+
+    <div class="bg-red-50 border border-red-100 rounded-xl p-3 mb-4 flex items-start gap-2">
+        <div class="text-red-500 mt-0.5"><i class="fa-solid fa-triangle-exclamation"></i></div>
+        <div class="text-sm font-bold text-red-600 leading-relaxed">
+            強烈警語：請勿頻繁測試！短時間內密集連線，將觸發伺服器防禦機制，導致您的 IP 被暫時封鎖無法抓取股價。每次測試後需等待 30 秒冷卻。
         </div>
-
-        <button @click="runDiagnostics()" :disabled="isRunningDiagnostics || diagCooldown > 0" class="w-full py-4 bg-purple-600 text-white font-black text-lg rounded-xl shadow-md hover:bg-purple-700 hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:-translate-y-1 active:translate-y-0 disabled:hover:-translate-y-0">
-            <i class="fa-solid fa-satellite-dish mr-2" :class="{'fa-beat': isRunningDiagnostics}"></i>
-            <span x-text="isRunningDiagnostics ? '跨海診斷通訊中，請稍候...' : (diagCooldown > 0 ? '系統冷卻中，請等待 ' + diagCooldown + ' 秒' : '開始連線診斷')"></span>
-        </button>
     </div>
 
-    <div class="pt-8 border-t border-slate-200 text-center">
-        <button @click="confirmDeleteETF(activeETF)" class="px-6 py-3 bg-red-50 text-red-600 font-bold rounded-xl hover:bg-red-100 hover:text-red-700 transition-all border border-red-100"><i class="fa-solid fa-trash-can mr-1"></i> 刪除此追蹤標的</button>
-    </div>
+    <button @click="runDiagnostics()" :disabled="isRunningDiagnostics || diagCooldown > 0" class="w-full py-4 bg-purple-600 text-white font-black text-lg rounded-xl shadow-md hover:bg-purple-700 hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:-translate-y-1 active:translate-y-0 disabled:hover:-translate-y-0">
+        <i class="fa-solid fa-satellite-dish mr-2" :class="{'fa-beat': isRunningDiagnostics}"></i>
+        <span x-text="isRunningDiagnostics ? '跨海診斷通訊中，請稍候...' : (diagCooldown > 0 ? '系統冷卻中，請等待 ' + diagCooldown + ' 秒' : '開始連線診斷')"></span>
+    </button>
+</div>
+
+<div class="pt-8 border-t border-slate-200 text-center">
+<button @click="confirmDeleteETF(activeETF)" class="px-6 py-3 bg-red-50 text-red-600 font-bold rounded-xl hover:bg-red-100 hover:text-red-700 transition-all border border-red-100"><i class="fa-solid fa-trash-can mr-1"></i> 刪除此追蹤標的</button>
+</div>
 </div>
 </div>
 </div>
@@ -2019,6 +1972,7 @@ if (outcome === 'accepted') this.deferredPrompt = null;
 
 </body>
 </html>
+
 
 
 
