@@ -739,9 +739,27 @@ if (cached) { const parsed = JSON.parse(cached); if (parsed && parsed.length > 0
 },
 
 async refreshPrice() {
-if (this.isFetchingPrice) return; this.isFetchingPrice = true;
-await this.fetchRealTimePrice(); await this.fetchDynamicDiscount(); this.autoCheckIndicators();
-if(this.chartRendered && this.showChart) this.renderChart(); setTimeout(() => this.isFetchingPrice = false, 500);
+    if (this.isFetchingPrice) return; 
+    this.isFetchingPrice = true;
+    
+    // 🌟 裝上安全防護網
+    try {
+        await this.fetchRealTimePrice(); 
+        await this.fetchDynamicDiscount(); 
+        this.autoCheckIndicators();
+        
+        if(this.chartRendered && this.showChart) {
+            this.renderChart();
+        }
+    } catch (error) {
+        // 如果被阻擋或發生錯誤，靜默攔截，不讓程式卡死
+        console.warn('[安全攔截] 詳細頁面取得最新股價時發生錯誤:', error);
+    } finally {
+        // 🌟 絕對安全氣囊：不管成功或失敗，0.5秒後一定會發出「停止轉圈」的指令
+        setTimeout(() => {
+            this.isFetchingPrice = false;
+        }, 500);
+    }
 },
 
 async fetchRealTimePrice() {
@@ -1341,7 +1359,7 @@ if (outcome === 'accepted') this.deferredPrompt = null;
 
 <div class="w-full lg:w-auto flex flex-col gap-3">
 <div class="text-base sm:text-lg text-slate-600 flex items-center lg:justify-end gap-2 sm:gap-3 font-bold whitespace-nowrap overflow-x-auto no-scrollbar pr-2 shrink-0">
-<span>最新市價</span>
+<span>最新股價</span>
 <span x-show="priceUpdateTime" class="text-sm sm:text-base bg-white border border-slate-200 text-slate-600 px-2.5 py-1 rounded-md font-mono tracking-tight shadow-sm shrink-0" x-text="priceUpdateTime.includes('失敗') ? priceUpdateTime : '取得時間 ' + priceUpdateTime" :class="{'text-red-500 border-red-200': priceUpdateTime.includes('失敗')}"></span>
 <button @click="refreshPrice()" class="px-3 py-1.5 bg-white border border-slate-200 rounded-md shadow-sm transition text-blue-600 font-bold text-sm sm:text-base hover:text-blue-700 hover:bg-blue-50 flex items-center gap-1.5 shrink-0"><i class="fa-solid fa-arrows-rotate" :class="{'animate-spin': isFetchingPrice}"></i>更新股價</button>
 </div>
