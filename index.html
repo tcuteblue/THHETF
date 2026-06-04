@@ -308,11 +308,52 @@ this.globalSettings.lastBackupTime = displayTime;
 try { localStorage.setItem('THH_ETF_Data_V1', JSON.stringify({ etfs: this.etfs, global: this.globalSettings, homePrices: this.homePrices })); } catch(e) {}
 },
 
+// 🚀 新增：全域共用的標準化取價引擎
+async _getStandardizedPrice(code) {
+    let price = null, prev = null, vol = null, timeStr = '';
+    const timestamp = Date.now();
+    
+    try {
+        // 1️⃣ 第一防線：透過多重 Proxy 向 Yahoo 抓取即時報價
+        const data = await this._fetchWithProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${code}.TW?range=1d&interval=1m&_t=${timestamp}`);
+        if (data?.chart?.result?.[0]) {
+            const res = data.chart.result[0]; 
+            price = res.meta?.regularMarketPrice; 
+            prev = res.meta?.chartPreviousClose || res.meta?.previousClose || price;
+            
+            if (res.indicators?.quote?.[0]?.close) { 
+                const closes = res.indicators.quote[0].close; 
+                for (let i = closes.length - 1; i >= 0; i--) { 
+                    if (closes[i] != null) { price = closes[i]; break; } 
+                } 
+            }
+            vol = res.meta?.regularMarketVolume;
+            const d = new Date((res.meta?.regularMarketTime || timestamp/1000) * 1000);
+            timeStr = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+        }
+        
+        // 2️⃣ 最終防線：如果 Yahoo 失敗，啟動台灣證交所備援
+        if (!price) {
+            const twseData = await this._fetchWithProxy(`https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${code}.tw&_t=${timestamp}`);
+            if (twseData?.msgArray?.[0]) {
+                let res = twseData.msgArray[0];
+                if (res.z && res.z !== '-') price = parseFloat(res.z);
+                if (res.y && res.y !== '-') prev = parseFloat(res.y);
+                if (res.v && res.v !== '-') vol = parseFloat(res.v) * 1000;
+                timeStr = `證交所備援 ${res.d.substring(4,6)}/${res.d.substring(6,8)} ${res.t}`;
+            }
+        }
+    } catch (error) {
+        console.warn(`[底層引擎] 取得 ${code} 報價時發生例外狀況:`, error);
+    }
+    
+    return { price, prev, vol, timeStr };
+},
+
 async fetchHomePrices() {
     if (this.isFetchingHome) return; 
     this.isFetchingHome = true;
     
-    // 🌟 加入最外層的安全防護網 (try...finally)
     try {
         let codes = Object.keys(this.etfs); 
         if (codes.length === 0) return; 
@@ -320,45 +361,22 @@ async fetchHomePrices() {
         let newPrices = { ...this.homePrices };
         
         await Promise.all(codes.map(async (code) => {
-            try {
-                let price = null, prev = null;
-                // 1️⃣ 第一防線：透過多重 Proxy 向 Yahoo 抓取即時報價
-                const data = await this._fetchWithProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${code}.TW?range=1d&interval=1m&_t=${Date.now()}`);
-                if (data?.chart?.result?.[0]) {
-                    const res = data.chart.result[0]; price = res.meta?.regularMarketPrice; prev = res.meta?.chartPreviousClose || price;
-                    if (res.indicators?.quote?.[0]?.close) { const closes = res.indicators.quote[0].close; for (let i = closes.length - 1; i >= 0; i--) { if (closes[i] != null) { price = closes[i]; break; } } }
-                }
-                
-                // 2️⃣ 最終防線：如果 Yahoo 三個通道都塞車失敗，啟動台灣證交所備援
-                if (!price) {
-                    const twseData = await this._fetchWithProxy(`https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${code}.tw&_t=${Date.now()}`);
-                    if (twseData?.msgArray?.[0]) {
-                        let res = twseData.msgArray[0];
-                        if (res.z && res.z !== '-') price = parseFloat(res.z);
-                        if (res.y && res.y !== '-') prev = parseFloat(res.y);
-                    }
-                }
-                
-                // 保留您原本的存檔格式
-                if (price) newPrices[code] = { price: price, prev: prev };
-            } catch(e) {
-                console.warn(`[安全攔截] 無法取得 ${code} 報價:`, e);
+            // 呼叫共用引擎，一行搞定所有複雜邏輯！
+            const result = await this._getStandardizedPrice(code);
+            if (result.price) {
+                newPrices[code] = { price: result.price, prev: result.prev };
             }
         }));
         
-        // 保留您原本的存檔與圖表邏輯
         this.homePrices = newPrices; 
         this.saveData(false); 
         
         if(this.currentView === 'home' && !this.isHomeChartReady && !this.isHomeChartLoading) {
             setTimeout(() => this.prepareHomeChartData(), 1000);
         }
-
     } catch (error) {
         console.error('[安全攔截] 主控台更新股價發生未知錯誤:', error);
     } finally {
-        // 🌟 絕對安全氣囊：不管成功、失敗、還是被封鎖，這行一定會執行！
-        // 它保證了「轉圈圈」動畫絕對會乖乖停下來。
         this.isFetchingHome = false;
     }
 },
@@ -764,36 +782,19 @@ async refreshPrice() {
 
 async fetchRealTimePrice() {
     let requestETF = this.activeETF; 
-    let price = null, prev = null, vol = null, timeStr = '';
     
-    const data = await this._fetchWithProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${requestETF}.TW?range=1d&interval=1m&_t=${Date.now()}`);
+    // 呼叫共用引擎，一行搞定！
+    const result = await this._getStandardizedPrice(requestETF);
+    
+    // 防呆：如果等待期間切換了別檔 ETF，則放棄更新畫面
     if (this.activeETF !== requestETF) return; 
 
-    if (data?.chart?.result?.[0]) {
-        const res = data.chart.result[0]; price = res.meta?.regularMarketPrice; prev = res.meta?.chartPreviousClose || res.meta?.previousClose;
-        if (res.indicators?.quote?.[0]?.close) { const closes = res.indicators.quote[0].close; for (let i = closes.length - 1; i >= 0; i--) { if (closes[i] != null) { price = closes[i]; break; } } }
-        vol = res.meta?.regularMarketVolume;
-        const d = new Date((res.meta?.regularMarketTime || Date.now()/1000) * 1000);
-        timeStr = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-    }
-    
-    if (!price) {
-        const twseData = await this._fetchWithProxy(`https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${requestETF}.tw&_t=${Date.now()}`);
-        if (this.activeETF !== requestETF) return;
-        if (twseData?.msgArray?.[0]) {
-            let res = twseData.msgArray[0];
-            if (res.z && res.z !== '-') price = parseFloat(res.z);
-            if (res.y && res.y !== '-') prev = parseFloat(res.y);
-            if (res.v && res.v !== '-') vol = parseFloat(res.v) * 1000;
-            timeStr = `證交所備援 ${res.d.substring(4,6)}/${res.d.substring(6,8)} ${res.t}`;
-        }
-    }
-
-    if (price) {
-        this.currentPrice = price; 
-        if (prev) this.prevClose = prev; else if (!this.prevClose) this.prevClose = price;
-        if (vol) this.currentVolume = vol;
-        this.priceUpdateTime = timeStr;
+    if (result.price) {
+        this.currentPrice = result.price; 
+        if (result.prev) this.prevClose = result.prev; else if (!this.prevClose) this.prevClose = result.price;
+        if (result.vol) this.currentVolume = result.vol;
+        if (result.timeStr) this.priceUpdateTime = result.timeStr;
+        
         this.realTimeFetched = true;
         this.homePrices[this.activeETF] = { price: this.currentPrice, prev: this.prevClose }; 
         this.saveData(false);
