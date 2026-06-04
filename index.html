@@ -817,36 +817,76 @@ this.etfDiscount = result !== null ? `${result}%` : '無資料';
 },
 
 async fetchDataAndProcess() {
-if (this.isFetching) return; this.isFetching = true; 
-let requestETF = this.activeETF; 
-await this.fetchRealTimePrice();
-if (this.activeETF !== requestETF) { this.isFetching = false; return; } 
+    if (this.isFetching) return; 
+    this.isFetching = true; 
+    
+    // 🌟 為初始化與歷史資料載入，裝上絕對安全防護網
+    try {
+        let requestETF = this.activeETF; 
+        await this.fetchRealTimePrice();
+        // 只要提早 return，finally 也會自動執行關閉圈圈
+        if (this.activeETF !== requestETF) return; 
 
-let startStr = '', yfRange = 'max';
-if (this.cachedHistoricalData?.length > 0) {
-let lastDate = new Date(this.cachedHistoricalData[this.cachedHistoricalData.length - 1].time); lastDate.setDate(lastDate.getDate() - 2); startStr = this.getLocalYMD(lastDate);
-let diff = (Date.now() - lastDate.getTime()) / 86400000; yfRange = diff <= 5 ? '5d' : diff <= 30 ? '1mo' : diff <= 90 ? '3mo' : diff <= 365 ? '1y' : 'max';
-} else { const d = new Date(); d.setFullYear(d.getFullYear() - 12); startStr = this.getLocalYMD(d); }
+        let startStr = '', yfRange = 'max';
+        if (this.cachedHistoricalData?.length > 0) {
+            let lastDate = new Date(this.cachedHistoricalData[this.cachedHistoricalData.length - 1].time); 
+            lastDate.setDate(lastDate.getDate() - 2); 
+            startStr = this.getLocalYMD(lastDate);
+            let diff = (Date.now() - lastDate.getTime()) / 86400000; 
+            yfRange = diff <= 5 ? '5d' : diff <= 30 ? '1mo' : diff <= 90 ? '3mo' : diff <= 365 ? '1y' : 'max';
+        } else { 
+            const d = new Date(); 
+            d.setFullYear(d.getFullYear() - 12); 
+            startStr = this.getLocalYMD(d); 
+        }
 
-let fetched = [];
-const fmData = this.activeETF === '0050' ? await this._fetchSimpleJson(`https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${this.activeETF}&start_date=${startStr}`) : null;
-if (this.activeETF !== requestETF) { this.isFetching = false; return; }
+        let fetched = [];
+        const fmData = this.activeETF === '0050' ? await this._fetchSimpleJson(`https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${this.activeETF}&start_date=${startStr}`) : null;
+        if (this.activeETF !== requestETF) return;
 
-if (fmData?.msg === 'success' && fmData.data?.length > 0) { fetched = fmData.data.map(i => ({ time: new Date(i.date).getTime(), open: i.open, close: i.close, high: i.max, low: i.min, volume: i.Trading_Volume })); } 
-else {
-const yfData = await this._fetchWithProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${this.activeETF}.TW?range=${yfRange}&interval=1d`);
-if (this.activeETF !== requestETF) { this.isFetching = false; return; }
+        if (fmData?.msg === 'success' && fmData.data?.length > 0) { 
+            fetched = fmData.data.map(i => ({ time: new Date(i.date).getTime(), open: i.open, close: i.close, high: i.max, low: i.min, volume: i.Trading_Volume })); 
+        } else {
+            const yfData = await this._fetchWithProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${this.activeETF}.TW?range=${yfRange}&interval=1d`);
+            if (this.activeETF !== requestETF) return;
 
-if (yfData?.chart?.result?.[0]) { const res = yfData.chart.result[0], t = res.timestamp, q = res.indicators.quote[0]; if (t && q) for(let i=0; i<t.length; i++) if(q.close[i] != null) fetched.push({ time: t[i]*1000, open: q.open[i]||q.close[i], close: q.close[i], high: q.high[i], low: q.low[i], volume: q.volume[i]||0 }); }
-}
-if (this.activeETF === '0050') { const splitTime = new Date('2025-06-18T00:00:00+08:00').getTime(); fetched = fetched.map(i => i.time < splitTime ? { ...i, open: i.open/4, close: i.close/4, high: i.high/4, low: i.low/4 } : i); }
-let map = new Map();
-if (this.cachedHistoricalData) this.cachedHistoricalData.forEach(i => map.set(this.getLocalYMD(new Date(i.time)), i));
-fetched.forEach(i => map.set(this.getLocalYMD(new Date(i.time)), i));
-let finalData = Array.from(map.values()).sort((a, b) => a.time - b.time);
-if (finalData.length > 0) { this.cachedHistoricalData = finalData; try { localStorage.setItem(`THH_History_V2_${this.activeETF}`, JSON.stringify(finalData)); } catch(e){} this.historicalDataLoaded = true; this.calculateIndicators(finalData); }
-if (this.isIndicatorSupported('pb') || this.isIndicatorSupported('discount')) { const pbData = await this._fetchSimpleJson('https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_ALL'); this.pbRatio = (pbData && pbData.find(s => s.Code === this.activeETF)?.PBratio !== '-') ? parseFloat(pbData.find(s => s.Code === this.activeETF).PBratio).toFixed(2) : '無資料'; }
-await this.fetchDynamicDiscount(); this.autoCheckIndicators(); this.isFetching = false;
+            if (yfData?.chart?.result?.[0]) { 
+                const res = yfData.chart.result[0], t = res.timestamp, q = res.indicators.quote[0]; 
+                if (t && q) for(let i=0; i<t.length; i++) if(q.close[i] != null) fetched.push({ time: t[i]*1000, open: q.open[i]||q.close[i], close: q.close[i], high: q.high[i], low: q.low[i], volume: q.volume[i]||0 }); 
+            }
+        }
+        
+        if (this.activeETF === '0050') { 
+            const splitTime = new Date('2025-06-18T00:00:00+08:00').getTime(); 
+            fetched = fetched.map(i => i.time < splitTime ? { ...i, open: i.open/4, close: i.close/4, high: i.high/4, low: i.low/4 } : i); 
+        }
+        
+        let map = new Map();
+        if (this.cachedHistoricalData) this.cachedHistoricalData.forEach(i => map.set(this.getLocalYMD(new Date(i.time)), i));
+        fetched.forEach(i => map.set(this.getLocalYMD(new Date(i.time)), i));
+        let finalData = Array.from(map.values()).sort((a, b) => a.time - b.time);
+        
+        if (finalData.length > 0) { 
+            this.cachedHistoricalData = finalData; 
+            try { localStorage.setItem(`THH_History_V2_${this.activeETF}`, JSON.stringify(finalData)); } catch(e){} 
+            this.historicalDataLoaded = true; 
+            this.calculateIndicators(finalData); 
+        }
+        
+        if (this.isIndicatorSupported('pb') || this.isIndicatorSupported('discount')) { 
+            const pbData = await this._fetchSimpleJson('https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_ALL'); 
+            this.pbRatio = (pbData && pbData.find(s => s.Code === this.activeETF)?.PBratio !== '-') ? parseFloat(pbData.find(s => s.Code === this.activeETF).PBratio).toFixed(2) : '無資料'; 
+        }
+        
+        await this.fetchDynamicDiscount(); 
+        this.autoCheckIndicators(); 
+        
+    } catch (error) {
+        console.warn('[安全攔截] 載入個股歷史資料時發生錯誤:', error);
+    } finally {
+        // 🌟 絕對安全氣囊：不管抓歷史資料、還是淨值比發生什麼錯誤，圈圈都會被強制關閉！
+        this.isFetching = false;
+    }
 },
 
 calculateIndicators(data) {
