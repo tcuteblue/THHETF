@@ -977,13 +977,29 @@ return (rate < -0.99 || rate > 100) ? "極端值" : (rate * 100).toFixed(2);
 },
 
 get gkStatus() {
-let rateDec = this.swrRate / 100, r = this.marketValueNum > 0 ? ((this.baseRetirementMV * rateDec) / this.marketValueNum) : 0, targetMonthly = (this.baseRetirementMV * rateDec) / 12;
-if (this.marketValueNum === 0) return { state: 'empty', title: '尚未建立庫存', desc: '請先累積資產，才能開始規劃退休提領。', color: 'text-slate-600', bg: 'bg-slate-50', border: 'border-slate-200', recommendedMonthly: 0, bonus: 0 };
-if (this.baseRetirementMV <= 0) return { state: 'unlocked', title: '🔒 鎖定基準以啟動護欄', desc: '請點擊上方按鈕，將目前的市值鎖定為提領基準，系統才能為您計算牛熊市加減薪！', color: 'text-slate-600', bg: 'bg-slate-50', border: 'border-slate-200', recommendedMonthly: Math.round((this.marketValueNum * rateDec) / 12), bonus: 0 };
-let upperLimit = rateDec * 1.2, lowerLimit = rateDec * 0.8, diff = Math.round(targetMonthly * 0.1);
-if (r > upperLimit) return { state: 'danger', title: '🚨 熊市警戒！觸發保本護欄', desc: `實質提領率飆升至 ${(r*100).toFixed(2)}%！建議縮減 10% 開支共體時艱。`, color: 'text-red-700', bg: 'bg-red-50', border: 'border-red-300', recommendedMonthly: Math.round(targetMonthly - diff), bonus: -diff };
-if (r < lowerLimit) return { state: 'success', title: '🎉 牛市紅利！觸發加薪護欄', desc: `實質提領率降至 ${(r*100).toFixed(2)}%！符合通膨加薪條件，犒賞自己吧！`, color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-300', recommendedMonthly: Math.round(targetMonthly + diff), bonus: diff };
-return { state: 'normal', title: '✅ 穩健區間 (維持現狀)', desc: `實質提領率 ${(r*100).toFixed(2)}% 落在安全範圍。維持原本的預算計畫即可。`, color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-300', recommendedMonthly: Math.round(targetMonthly), bonus: 0 };
+    let rateDec = this.swrRate / 100, r = this.marketValueNum > 0 ? ((this.baseRetirementMV * rateDec) / this.marketValueNum) : 0, targetMonthly = (this.baseRetirementMV * rateDec) / 12;
+    
+    if (this.marketValueNum === 0) return { state: 'empty', title: '尚未建立庫存', desc: '請先累積資產，才能開始規劃退休提領。', color: 'text-slate-600', bg: 'bg-slate-50', border: 'border-slate-200', recommendedMonthly: 0, bonus: 0 };
+    if (this.baseRetirementMV <= 0) return { state: 'unlocked', title: '🔒 鎖定基準以啟動護欄', desc: '請點擊上方按鈕，將目前的市值鎖定為提領基準，系統才能為您計算牛熊市加減薪！', color: 'text-slate-600', bg: 'bg-slate-50', border: 'border-slate-200', recommendedMonthly: Math.round((this.marketValueNum * rateDec) / 12), bonus: 0 };
+    
+    let upperLimit = rateDec * 1.2, lowerLimit = rateDec * 0.8, diff = Math.round(targetMonthly * 0.1);
+    let currentRateStr = (r * 100).toFixed(2);
+    
+    // 🚀 動態計算目前的護欄上下限 % 數（保留小數點後 1 位，例如 3.2% 和 4.8%）
+    let lowerRateStr = (lowerLimit * 100).toFixed(1);
+    let upperRateStr = (upperLimit * 100).toFixed(1);
+    let rangeText = `（${lowerRateStr}% ~ ${upperRateStr}%）`;
+    
+    // 預先準備好三個狀態的漂亮外框標籤
+    let dangerBadge = `<span class="inline-block text-base font-bold px-2 py-0.5 mx-1 rounded-lg shadow-sm border text-red-700 bg-red-100 border-red-300">實質提領 ${currentRateStr}%</span>`;
+    let successBadge = `<span class="inline-block text-base font-bold px-2 py-0.5 mx-1 rounded-lg shadow-sm border text-emerald-700 bg-emerald-100 border-emerald-300">實質提領 ${currentRateStr}%</span>`;
+    let normalBadge = `<span class="inline-block text-base font-bold px-2 py-0.5 mx-1 rounded-lg shadow-sm border text-blue-700 bg-blue-100 border-blue-300">實質提領 ${currentRateStr}%</span>`;
+    
+    // 將計算好的動態範圍文字融入句子中
+    if (r > upperLimit) return { state: 'danger', title: '🚨 熊市警戒！觸發保本護欄', desc: `目前${dangerBadge}已飆升超越安全護欄範圍${rangeText}！建議縮減 10% 開支共體時艱。`, color: 'text-red-700', bg: 'bg-red-50', border: 'border-red-300', recommendedMonthly: Math.round(targetMonthly - diff), bonus: -diff };
+    if (r < lowerLimit) return { state: 'success', title: '🎉 牛市紅利！觸發加薪護欄', desc: `目前${successBadge}已低於安全護欄範圍${rangeText}！符合通膨加薪條件，犒賞自己吧！`, color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-300', recommendedMonthly: Math.round(targetMonthly + diff), bonus: diff };
+    
+    return { state: 'normal', title: '✅ 穩健區間 (維持現狀)', desc: `目前${normalBadge}落在安全護欄範圍${rangeText}內。維持原本的預算計畫即可。`, color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-300', recommendedMonthly: Math.round(targetMonthly), bonus: 0 };
 },
 
 lockRetirementBase() {
@@ -1782,7 +1798,7 @@ if (outcome === 'accepted') this.deferredPrompt = null;
 
 <div class="p-6 md:p-8 rounded-3xl border transition-colors duration-500 shadow-sm" :class="`${gkStatus.bg} ${gkStatus.border}`">
 <div class="text-2xl font-black mb-3 flex items-center gap-2" :class="gkStatus.color"><span x-text="gkStatus.title"></span></div>
-<div class="text-base font-medium text-slate-700 leading-relaxed mb-6" x-text="gkStatus.desc"></div>
+<div class="text-base font-medium text-slate-700 leading-relaxed mb-6" x-html="gkStatus.desc"></div>
 <div class="pt-6 border-t border-slate-200/60 text-center">
 <span class="text-base font-bold text-slate-500 block mb-2">依據護欄機制，本月安全提領額度</span>
 <div class="text-5xl sm:text-6xl font-black mb-3" :class="gkStatus.color" x-text="formatMoney(gkStatus.recommendedMonthly) + ' 元'"></div>
