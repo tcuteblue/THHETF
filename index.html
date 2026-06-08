@@ -912,6 +912,8 @@ async fetchDataAndProcess() {
 calculateIndicators(data) {
 if (this.currentPrice <= 0) { this.currentPrice = data[data.length - 1].close; }
 if (this.currentVolume <= 0) { this.currentVolume = data[data.length - 1].volume || 0; }
+if (!this.realTimeFetched && data.length > 0) { let d = new Date(data[data.length - 1].time); this.priceUpdateTime = `收盤 ${d.getMonth()+1}/${d.getDate()} 13:30`; }
+
 
 let cleanData = [], seen = new Set();
 for (let d of data) { let dStr = this.getLocalYMD(new Date(d.time)); if (!seen.has(dStr) && d.close > 0) { seen.add(dStr); cleanData.push({ time: dStr, open: d.open || d.close, high: Math.max(d.open, d.close, d.high, d.low), low: Math.min(d.open, d.close, d.high, d.low), close: d.close, volume: Math.max(0, d.volume || 0) }); } }
