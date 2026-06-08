@@ -188,13 +188,12 @@ isIOS: false, isStandalone: false, showIOSInstallDialog: false, deferredPrompt: 
 showCSVModal: false, csvPreviewData: [],
 diagCooldown: 0, 
 isRunningDiagnostics: false, 
-// 在 data() 區塊內的 diagnosticResults 請確保長這樣：
-diagnosticResults: [
-    { id: 'myproxy', name: '1️⃣ Cloudflare 私有高速通道 (主力)' },
-    { id: 'corsio', name: '2️⃣ Yahoo + CorsProxy.IO (備援)' },
-    { id: 'thingproxy', name: '3️⃣ Yahoo + ThingProxy (最後備用)' },
-    { id: 'twse', name: '4️⃣ 證交所 API 備援' }
-],
+diagnosticResults: [ 
+        { id: 'corsio', name: '1️⃣ Yahoo + CorsProxy.IO (主力)', status: 'idle', time: 0, price: '-', error: '' }, 
+        { id: 'corsorg', name: '2️⃣ Yahoo + CorsProxy.ORG (備援)', status: 'idle', time: 0, price: '-', error: '' }, 
+        { id: 'allorigins', name: '3️⃣ Yahoo + AllOrigins (備用)', status: 'idle', time: 0, price: '-', error: '' }, 
+        { id: 'twse', name: '4️⃣ 台灣證交所 (最後防線)', status: 'idle', time: 0, price: '-', error: '' } 
+    ],
 
 showHomeChart: false, homeChartMode: 'total', homeChartRange: '1Y', isHomeChartReady: false, isHomeChartLoading: false, homeTimelineData: [], homeChartInstance: null,
 showDetailNetWorthChart: false, detailChartRange: '1Y', isDetailChartReady: false, isDetailChartLoading: false, detailTimelineData: [], detailChartInstance: null,
@@ -309,7 +308,7 @@ this.globalSettings.lastBackupTime = displayTime;
 try { localStorage.setItem('THH_ETF_Data_V1', JSON.stringify({ etfs: this.etfs, global: this.globalSettings, homePrices: this.homePrices })); } catch(e) {}
 },
 
-// 🚀 修正版：全域共用的標準化取價引擎（解決時間戳延遲問題）
+// 🚀 新增：全域共用的標準化取價引擎
 async _getStandardizedPrice(code) {
     let price = null, prev = null, vol = null, timeStr = '';
     const timestamp = Date.now();
@@ -322,29 +321,14 @@ async _getStandardizedPrice(code) {
             price = res.meta?.regularMarketPrice; 
             prev = res.meta?.chartPreviousClose || res.meta?.previousClose || price;
             
-            // 🌟 核心修正：預設採用全域時間，但準備從時間陣列抓取精準時間
-            let targetTimestamp = res.meta?.regularMarketTime || (timestamp / 1000);
-            
             if (res.indicators?.quote?.[0]?.close) { 
                 const closes = res.indicators.quote[0].close; 
-                const timestamps = res.timestamp; // 🌟 抓取 Yahoo 隨附的每分鐘時間戳陣列
-                
                 for (let i = closes.length - 1; i >= 0; i--) { 
-                    if (closes[i] != null) { 
-                        price = closes[i]; 
-                        
-                        // 🌟 關鍵改進：如果時間陣列存在，就拿跟最新股價「同一個位置」的時間戳
-                        if (timestamps && timestamps[i]) {
-                            targetTimestamp = timestamps[i];
-                        }
-                        break; 
-                    } 
+                    if (closes[i] != null) { price = closes[i]; break; } 
                 } 
             }
             vol = res.meta?.regularMarketVolume;
-            
-            // 使用完全同步後的 targetTimestamp 來轉換時間字串
-            const d = new Date(targetTimestamp * 1000);
+            const d = new Date((res.meta?.regularMarketTime || timestamp/1000) * 1000);
             timeStr = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
         }
         
@@ -684,12 +668,15 @@ goHome() { this.saveData(false); this.currentView = 'home'; this.activeETF = nul
 get activeETFName() { return this.activeETF ? ((ETF_CONFIG[this.activeETF] || ETF_CONFIG['DEFAULT']).name === '自訂ETF' ? this.activeETF : `${this.activeETF} ${(ETF_CONFIG[this.activeETF] || ETF_CONFIG['DEFAULT']).name}`) : ''; },
 isIndicatorSupported(key) { return (ETF_CONFIG[this.activeETF] || ETF_CONFIG['DEFAULT']).indicators.includes(key); },
 
-async _fetchWithProxy(url) {
-    const proxies = [
-        'https://myetfproxy.tcuteblue.workers.dev/?url=',  // 👈 第1順位：您的專屬高速通道
-        'https://corsproxy.io/?url=',                      // 👈 第2順位：舊主力退居備援
-        'https://thingproxy.freeboard.io/fetch/'           // 👈 第3順位：最後備用
-    ];
+async _fetchWithProxy(url) { 
+        const cacheBuster = url.includes('?') ? `&_cb=${Date.now()}` : `?_cb=${Date.now()}`;
+        const finalUrl = encodeURIComponent(url + cacheBuster);
+        // 🚀 升級備援排序：優先使用最穩定的 .io 與 .org
+        const proxies = [
+            'https://corsproxy.io/?' + finalUrl,
+            'https://corsproxy.org/?' + finalUrl,
+            'https://api.allorigins.win/raw?url=' + finalUrl
+        ];
 
         for (let proxy of proxies) {
             try {
@@ -709,12 +696,12 @@ async _fetchWithProxy(url) {
         this.diagnosticResults.forEach(r => { r.status = 'testing'; r.time = 0; r.price = '-'; r.error = ''; });
 
         const testSymbol = '0050'; const timestamp = Date.now();
-      const endpoints = {
-    'myproxy': `https://myetfproxy.tcuteblue.workers.dev/?url=${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${testSymbol}.TW?range=1d&interval=1m&_cb=${timestamp}`)}`,
-    'corsio': `https://corsproxy.io/?${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${testSymbol}.TW?range=1d&interval=1m&_cb=${timestamp}`)}`,
-    'thingproxy': `https://thingproxy.freeboard.io/fetch/${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${testSymbol}.TW?range=1d&interval=1m&_cb=${timestamp}`)}`,
-    'twse': `https://myetfproxy.tcuteblue.workers.dev/?url=${encodeURIComponent(`https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${testSymbol}.tw&_cb=${timestamp}`)}`
-};
+        const endpoints = {
+            'corsio': `https://corsproxy.io/?${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${testSymbol}.TW?range=1d&interval=1m&_cb=${timestamp}`)}`,
+            'corsorg': `https://corsproxy.org/?${encodeURIComponent(`https://query2.finance.yahoo.com/v8/finance/chart/${testSymbol}.TW?range=1d&interval=1m&_cb=${timestamp}`)}`,
+            'allorigins': `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${testSymbol}.TW?range=1d&interval=1m&_cb=${timestamp}`)}`,
+            'twse': `https://corsproxy.io/?${encodeURIComponent(`https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${testSymbol}.tw&_cb=${timestamp}`)}`
+        };
 
         const checkYahooData = (data) => {
             if (data?.chart?.result?.[0]) {
@@ -747,17 +734,19 @@ async _fetchWithProxy(url) {
         };
 
         await Promise.all([
-    runTest('myproxy', endpoints.myproxy, checkYahooData),
-    runTest('corsio', endpoints.corsio, checkYahooData),
-    runTest('thingproxy', endpoints.thingproxy, checkYahooData),
-    runTest('twse', endpoints.twse, checkTwseData)
-]);
-
+            runTest('corsio', endpoints['corsio'], checkYahooData),
+            runTest('corsorg', endpoints['corsorg'], checkYahooData),
+            runTest('allorigins', endpoints['allorigins'], checkYahooData),
+            runTest('twse', endpoints['twse'], checkTwseData)
+        ]);
+        
         this.isRunningDiagnostics = false;
+        
+        // 啟動 30 秒冷卻倒數防呆機制
         this.diagCooldown = 30;
-        let timer = setInterval(() => {
+        let cdTimer = setInterval(() => {
             this.diagCooldown--;
-            if (this.diagCooldown <= 0) clearInterval(timer);
+            if (this.diagCooldown <= 0) clearInterval(cdTimer);
         }, 1000);
     },
 
@@ -826,18 +815,6 @@ if (result === null && this.currentPrice > 0 && this.pbRatio && this.pbRatio !==
 let pb = parseFloat(this.pbRatio); if (pb > 0 && this.prevClose > 0) { let yesterdayNAV = this.prevClose / pb; let estimateDiscount = ((this.currentPrice - yesterdayNAV) / yesterdayNAV) * 100; result = estimateDiscount.toFixed(2); this.isEstimateDiscount = true; }
 }
 this.etfDiscount = result !== null ? `${result}%` : '無資料';
-},
-
-// 補上這個小幫手函數，解決您的錯誤警報
-async _fetchSimpleJson(url) {
-    try {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-        return await res.json();
-    } catch (e) {
-        console.error('[小幫手] 請求 JSON 失敗:', e);
-        return null; // 回傳 null 以避免程式崩潰
-    }
 },
 
 async fetchDataAndProcess() {
