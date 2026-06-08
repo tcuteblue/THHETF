@@ -190,8 +190,8 @@ diagCooldown: 0,
 isRunningDiagnostics: false, 
 diagnosticResults: [ 
         { id: 'corsio', name: '1️⃣ Yahoo + CorsProxy.IO (主力)', status: 'idle', time: 0, price: '-', error: '' }, 
-        { id: 'corsorg', name: '2️⃣ Yahoo + CorsProxy.ORG (備援)', status: 'idle', time: 0, price: '-', error: '' }, 
-        { id: 'allorigins', name: '3️⃣ Yahoo + AllOrigins (備用)', status: 'idle', time: 0, price: '-', error: '' }, 
+        { id: 'corsorg', name: '2️⃣ Yahoo + CodeTabs (備援)', status: 'idle', time: 0, price: '-', error: '' }, 
+        { id: 'allorigins', name: '3️⃣ Yahoo + ThingProxy (備用)', status: 'idle', time: 0, price: '-', error: '' }, 
         { id: 'twse', name: '4️⃣ 台灣證交所 (最後防線)', status: 'idle', time: 0, price: '-', error: '' } 
     ],
 
@@ -689,8 +689,8 @@ async _fetchWithProxy(url) {
         // 🚀 升級備援排序：優先使用最穩定的 .io 與 .org
         const proxies = [
             'https://corsproxy.io/?' + finalUrl,
-            'https://corsproxy.org/?' + finalUrl,
-            'https://api.allorigins.win/raw?url=' + finalUrl
+            'https://api.codetabs.com/v1/proxy?quest=' + finalUrl,
+            'https://thingproxy.freeboard.io/fetch/' + finalUrl
         ];
 
         for (let proxy of proxies) {
