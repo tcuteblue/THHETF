@@ -1833,6 +1833,196 @@ if (outcome === 'accepted') this.deferredPrompt = null;
 </div>
 </div>
 
+<div x-show="activeTab === 'withdraw'" class="mt-8 border-t border-gray-200 pt-6">
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+        
+        <div class="p-5 border-b border-gray-100 bg-gray-50 flex items-center gap-2">
+            <span class="text-xl">📊</span>
+            <h3 class="text-lg font-black text-gray-800">定期定額扣款提領延伸試算</h3>
+        </div>
+
+        <div class="p-5 bg-blue-50 text-blue-800 m-5 rounded-xl text-sm leading-relaxed border border-blue-100">
+            <strong class="block mb-2 text-base text-blue-900">📈 關於 8% 年化報酬率的設定基準</strong>
+            很多剛接觸 0050 或 006208 的人會好奇，長期投資真的能賺那麼多嗎？事實上，真實市場每年的報酬率幾乎不可能是剛剛好的 8%。在遇到牛市大好時，大盤常常會有超過 10%、甚至 20% 以上的驚人漲幅；但遇到熊市回檔時，也可能會面臨低於 8% 甚至是負報酬的虧損。<br><br>
+            然而，投資大盤 ETF 的獲利來自「股價成長」與「股息配發」，根據歷史回測，只要做到「股息再投入」發揮複利效應，並有紀律地度過多空循環，台股大盤過去 20 年的「長期平均年化報酬率」大約就落在 8% 左右。這表示 8% 並非過度樂觀的幻想，而是拉長時間來看，最務實且合理的市場平均報酬。
+        </div>
+
+        <div class="px-5 py-3 bg-blue-600 text-white font-bold text-sm tracking-wide">第一階段：資產累積期</div>
+        <div class="p-5 bg-gray-50/50 border-b border-gray-100">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div class="flex flex-col">
+                    <label class="mb-1 text-xs font-bold text-gray-500">每月投入金額 (元)</label>
+                    <input type="number" id="pmt" value="15000" min="0" step="1000" class="p-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white font-medium">
+                </div>
+                <div class="flex flex-col">
+                    <label class="mb-1 text-xs font-bold text-gray-500">預期年化報酬率 (%)</label>
+                    <input type="number" id="rate" value="8" min="0" step="0.1" class="p-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white font-medium">
+                </div>
+                <div class="flex flex-col">
+                    <label class="mb-1 text-xs font-bold text-gray-500">準備年限 (年)</label>
+                    <input type="number" id="years" value="20" min="1" max="50" class="p-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white font-medium">
+                </div>
+            </div>
+        </div>
+        
+        <div class="p-4 bg-blue-50/50 text-center text-sm font-bold border-b border-gray-100 text-gray-700">
+            準備期滿累積總市值：<span id="final-capital" class="text-blue-600 text-xl font-black ml-1">0</span> 元
+        </div>
+
+        <div class="p-4 max-h-60 overflow-y-auto border-b-2 border-gray-200 bg-white">
+            <table class="w-full text-right border-collapse text-xs">
+                <thead>
+                    <tr class="bg-gray-50 sticky top-0 z-10 shadow-[0_1px_0_0_rgba(229,231,235,1)]">
+                        <th class="p-2 text-left font-bold text-gray-600 bg-gray-50">年份</th>
+                        <th class="p-2 font-bold text-gray-600 bg-gray-50">累計投入本金</th>
+                        <th class="p-2 font-bold text-gray-600 bg-gray-50">累計賺取金額</th>
+                        <th class="p-2 font-bold text-gray-600 bg-gray-50">期末總市值</th>
+                    </tr>
+                </thead>
+                <tbody id="result-body" class="divide-y divide-gray-100"></tbody>
+            </table>
+        </div>
+
+        <div class="px-5 py-3 bg-green-700 text-white font-bold text-sm tracking-wide">第二階段：退休動態提領期</div>
+        
+        <div class="p-5 bg-green-50 text-green-800 m-5 rounded-xl text-sm leading-relaxed border border-green-100">
+            <strong class="block mb-2 text-base text-green-900">🛡️ 什麼是動態提領（安全提領率）？</strong>
+            傳統的退休提領是「每年領固定金額」，但在遇到嚴重的市場熊市時，固定提領會加速消耗本金，增加提早破產的風險。這裡採用的策略運作邏輯如下：
+            <ul class="list-disc pl-5 mt-2 space-y-1 text-green-900/90">
+                <li><strong>每年年初計算：</strong> 系統會以「當年年初的總市值」乘上您設定的提領率（如 4%），算出「今年度」可以花費的總預算。</li>
+                <li><strong>自動調節生活費：</strong> 若去年大盤上漲，今年可領的錢會變多（幫自己加薪）；若去年大盤下跌，今年可領的錢會變少（共體時艱少花點）。</li>
+                <li><strong>永不破產的底氣：</strong> 因為每次都是提領「剩餘總市值的固定比例」，理論上資產永遠不會真正歸零，讓您的退休金具備極強的抗風險韌性。</li>
+            </ul>
+        </div>
+
+        <div class="p-5 bg-gray-50/50 border-b border-gray-100">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div class="flex flex-col">
+                    <label class="mb-1 text-xs font-bold text-gray-500">退休期年化報酬 (%)</label>
+                    <input type="number" id="retireRate" value="8" min="0" step="0.1" class="p-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white font-medium">
+                </div>
+                <div class="flex flex-col">
+                    <label class="mb-1 text-xs font-bold text-gray-500">每年提領率 (%)</label>
+                    <input type="number" id="withdrawRate" value="4" min="0.1" step="0.1" class="p-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white font-medium">
+                </div>
+                <div class="flex flex-col">
+                    <label class="mb-1 text-xs font-bold text-gray-500">預估餘命/提領年限</label>
+                    <input type="number" id="retireYears" value="25" min="1" max="50" class="p-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white font-medium">
+                </div>
+            </div>
+        </div>
+
+        <div class="p-4 max-h-60 overflow-y-auto bg-white">
+            <table class="w-full text-right border-collapse text-xs">
+                <thead>
+                    <tr class="bg-gray-50 sticky top-0 z-10 shadow-[0_1px_0_0_rgba(229,231,235,1)]">
+                        <th class="p-2 text-left font-bold text-gray-600 bg-gray-50">退休第N年</th>
+                        <th class="p-2 font-bold text-gray-600 bg-gray-50">當年可月領額</th>
+                        <th class="p-2 font-bold text-gray-600 bg-gray-50">年度總提領</th>
+                        <th class="p-2 font-bold text-gray-600 bg-gray-50">年底剩餘總市值</th>
+                    </tr>
+                </thead>
+                <tbody id="retire-body" class="divide-y divide-gray-100"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 獨立作用域包覆，避免與主程式變數名稱衝突
+    (function() {
+        const inputsAcc = ['pmt', 'rate', 'years'];
+        const inputsRet = ['retireRate', 'withdrawRate', 'retireYears'];
+        
+        function initCalculator() {
+            [...inputsAcc, ...inputsRet].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.addEventListener('input', calculateAll);
+            });
+            calculateAll();
+        }
+
+        function calculateAll() {
+            const pmtEl = document.getElementById('pmt');
+            if (!pmtEl) return;
+            
+            const pmt = parseFloat(pmtEl.value) || 0;
+            const rate = parseFloat(document.getElementById('rate').value) || 0;
+            const years = parseInt(document.getElementById('years').value) || 0;
+            const tbodyAcc = document.getElementById('result-body');
+            
+            if (tbodyAcc) tbodyAcc.innerHTML = '';
+            let totalValue = 0;
+            const monthlyRate = rate / 100 / 12;
+
+            if (years > 0 && tbodyAcc) {
+                for (let y = 1; y <= years; y++) {
+                    for (let m = 1; m <= 12; m++) {
+                        totalValue = (totalValue + pmt) * (1 + monthlyRate);
+                    }
+                    const principal = pmt * 12 * y;
+                    const earned = totalValue - principal;
+
+                    const tr = document.createElement('tr');
+                    tr.className = "hover:bg-gray-50 transition-colors";
+                    tr.innerHTML = `
+                        <td class="p-2 text-left font-semibold text-gray-700">第 ${y} 年</td>
+                        <td class="p-2 text-gray-600">${Math.round(principal).toLocaleString()}</td>
+                        <td class="p-2 text-gray-600">${Math.round(earned).toLocaleString()}</td>
+                        <td class="p-2 text-blue-600 font-bold">${Math.round(totalValue).toLocaleString()}</td>
+                    `;
+                    tbodyAcc.appendChild(tr);
+                }
+            }
+            
+            const finalCapEl = document.getElementById('final-capital');
+            if (finalCapEl) finalCapEl.innerText = Math.round(totalValue).toLocaleString();
+
+            const retireRate = parseFloat(document.getElementById('retireRate').value) || 0;
+            const withdrawRate = parseFloat(document.getElementById('withdrawRate').value) || 0;
+            const retireYears = parseInt(document.getElementById('retireYears').value) || 0;
+            const tbodyRet = document.getElementById('retire-body');
+            
+            if (tbodyRet) tbodyRet.innerHTML = '';
+            let currentCapital = totalValue; 
+            const retireMonthlyRate = retireRate / 100 / 12;
+
+            if (retireYears > 0 && currentCapital > 0 && tbodyRet) {
+                for (let y = 1; y <= retireYears; y++) {
+                    const yearlyWithdrawTotal = currentCapital * (withdrawRate / 100);
+                    const currentMonthlyWithdraw = yearlyWithdrawTotal / 12;
+
+                    for (let m = 1; m <= 12; m++) {
+                        if (currentCapital <= 0) break;
+                        currentCapital -= currentMonthlyWithdraw;
+                        if (currentCapital > 0) {
+                            currentCapital = currentCapital * (1 + retireMonthlyRate);
+                        }
+                    }
+
+                    const tr = document.createElement('tr');
+                    tr.className = "hover:bg-gray-50 transition-colors";
+                    tr.innerHTML = `
+                        <td class="p-2 text-left font-semibold text-gray-700">第 ${y} 年</td>
+                        <td class="p-2 text-gray-600">${Math.round(currentMonthlyWithdraw).toLocaleString()}</td>
+                        <td class="p-2 text-gray-600">${Math.round(yearlyWithdrawTotal).toLocaleString()}</td>
+                        <td class="p-2 text-green-600 font-bold">${Math.round(currentCapital).toLocaleString()}</td>
+                    `;
+                    tbodyRet.appendChild(tr);
+                }
+            }
+        }
+
+        // 確保 DOM 載入後正確初始化
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initCalculator);
+        } else {
+            initCalculator();
+        }
+    })();
+</script>
+
+
 <div x-show="currentView === 'detail' && activeTab === 'settings'" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-2" x-transition:enter-end="opacity-100 translate-y-0" x-cloak>
 <div class="bg-white rounded-3xl shadow-sm border border-slate-200 p-6 md:p-8 max-w-2xl mx-auto mb-10 relative overflow-hidden">
 <div class="absolute -right-10 -top-10 text-9xl text-slate-50 opacity-50 pointer-events-none"><i class="fa-solid fa-gear"></i></div>
