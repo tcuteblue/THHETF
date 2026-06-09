@@ -674,6 +674,184 @@
                         }
                     },
 
+// =========================================================
+                    // 📈 個人平均成本 vs 歷史市價曲線圖 (新增區塊)
+                    // =========================================================
+
+                    showCostChart: false,       // 狀態變數：控制成本圖表是否展開顯示
+                    isCostChartLoading: false,  // 狀態變數：控制圖表運算時的載入轉圈圈動畫
+                    costChartInstance: null,    // 儲存圖表實體，以便切換時銷毀舊圖表釋放記憶體
+
+                    /**
+                     * 處理展開或收合圖表的按鈕點擊事件
+                     */
+                    toggleCostChart() {
+                        // 防呆機制：如果歷史 K 線資料還沒抓完，就不允許展開
+                        if (!this.historicalDataLoaded) return;
+                        
+                        // 反轉目前的顯示狀態 (開變關、關變開)
+                        this.showCostChart = !this.showCostChart;
+                        
+                        // 如果狀態是「展開」
+                        if (this.showCostChart) {
+                            this.isCostChartLoading = true;
+                            
+                            // 延遲 100 毫秒，給予 HTML DOM 展開的時間，確保能抓到正確的寬度
+                            setTimeout(() => {
+                                let attempts = 0; 
+                                let checkContainer = setInterval(() => { 
+                                    const container = document.getElementById('cost-lwc-chart'); 
+                                    
+                                    // 確認容器存在且寬度大於 0 時，才開始畫圖
+                                    if (container && container.clientWidth > 0) { 
+                                        clearInterval(checkContainer); 
+                                        this.renderCostChart(); 
+                                    } 
+                                    
+                                    // 最多嘗試 20 次 (約 1 秒)，避免無窮迴圈
+                                    if (++attempts > 20) { 
+                                        clearInterval(checkContainer); 
+                                        this.renderCostChart(); 
+                                    } 
+                                }, 50);
+                            }, 100);
+                        } 
+                        // 如果狀態是「收合」，並且圖表實體存在
+                        else if (this.costChartInstance) {
+                            this.costChartInstance.remove(); // 銷毀圖表
+                            this.costChartInstance = null;   // 清空記憶體
+                        }
+                    },
+
+                    /**
+                     * 實際執行資料結算與 Lightweight Charts 繪圖邏輯
+                     */
+                    renderCostChart() {
+                        this.isCostChartLoading = false;
+                        const container = document.getElementById('cost-lwc-chart');
+                        if (!container) return;
+                        
+                        // 確保畫新圖之前，把舊的畫布清乾淨
+                        if (this.costChartInstance) this.costChartInstance.remove();
+                        container.innerHTML = '';
+                        
+                        // 取得目前螢幕或容器的寬度，做為畫布寬度
+                        let chartWidth = container.clientWidth || (container.parentElement ? container.parentElement.clientWidth : window.innerWidth - 40);
+                        
+                        // ---------- 階段 1：資料準備與排序 ----------
+                        
+                        // 複製一份交易明細，並確保按照時間先後順序排序
+                        let sortedTxns = [...this.transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
+                        
+                        // 載入期初設定的初始股數與初始平均成本
+                        let runningShares = parseFloat(this.baseShares) || 0;
+                        let runningAvgCost = parseFloat(this.baseAvgCost) || 0;
+                        let txnIndex = 0; // 用來追蹤目前處理到第幾筆交易
+                        
+                        // 宣告兩個陣列，準備餵給 Lightweight Charts
+                        let priceData = []; // 紀錄每天的市價
+                        let costData = [];  // 紀錄每天的平均成本
+                        
+                        // 如果完全沒有歷史 K 線資料，就直接結束函式
+                        if (!this.cachedHistoricalData || this.cachedHistoricalData.length === 0) return;
+
+                        // ---------- 階段 2：時間軸推進與結算 ----------
+                        
+                        // 迴圈遍歷歷史資料的「每一天」
+                        for (let d of this.cachedHistoricalData) {
+                            let currentDayTime = d.time;
+                            
+                            // 將「這一天（含）以前」發生的所有交易紀錄，結算進成本中
+                            while (txnIndex < sortedTxns.length) {
+                                let t = sortedTxns[txnIndex];
+                                let tTime = new Date(t.date).getTime();
+                                
+                                // 如果交易發生的時間 <= 當前迴圈的這天，就進行處理
+                                if (tTime <= currentDayTime) {
+                                    let s = parseFloat(t.shares) || 0;
+                                    let amt = parseFloat(t.amount) || 0;
+                                    
+                                    // 情況 A：遇到買入(buy)或調額(sync)，需要重新計算「加權平均成本」
+                                    if (t.action === 'buy' || t.action === 'sync') {
+                                        let totalCost = runningShares * runningAvgCost + amt;
+                                        runningShares += s;
+                                        runningAvgCost = runningShares > 0 ? totalCost / runningShares : 0;
+                                    } 
+                                    // 情況 B：遇到賣出(sell)或提領(withdraw)，持有股數減少，但不改變先前的平均成本
+                                    else if (t.action === 'sell' || t.action === 'withdraw') {
+                                        runningShares = Math.max(0, runningShares - s);
+                                    }
+                                    
+                                    // 註：配息(dividend)不影響股數與平均成本，所以不做動作
+                                    
+                                    txnIndex++; // 處理完畢，前往下一筆交易
+                                } else {
+                                    // 如果這筆交易是在「未來」發生的，就先跳出 while 迴圈，等時間推進到那一天再算
+                                    break;
+                                }
+                            }
+                            
+                            // 關鍵過濾：只有在「手上有持股 (股數 > 0)」的日子，才把資料推入陣列畫線
+                            // 這樣如果您中間全部賣光空手，圖表上就不會出現奇怪的歸零線條
+                            if (runningShares > 0) {
+                                let dateStr = this.getLocalYMD(new Date(currentDayTime));
+                                
+                                // 寫入當日市價
+                                priceData.push({ time: dateStr, value: parseFloat(Number(d.close).toFixed(2)) });
+                                // 寫入當日平均成本
+                                costData.push({ time: dateStr, value: parseFloat(Number(runningAvgCost).toFixed(2)) });
+                            }
+                        }
+
+                        // ---------- 階段 3：呼叫套件繪製圖表 ----------
+                        
+                        try {
+                            // 初始化畫布設定
+                            const chart = LightweightCharts.createChart(container, { 
+                                width: Math.max(280, chartWidth), 
+                                height: 350, 
+                                layout: { background: { color: '#ffffff' }, textColor: '#475569' }, 
+                                grid: { vertLines: { color: '#f8fafc' }, horzLines: { color: '#f8fafc' } }, 
+                                crosshair: { mode: 1 } // 十字線模式
+                            });
+                            
+                            this.costChartInstance = chart;
+                            
+                            // 新增市價線 (設計為灰色虛線)
+                            const priceSeries = chart.addLineSeries({ 
+                                color: '#94a3b8', 
+                                lineWidth: 2, 
+                                title: '當日市價', 
+                                lineStyle: LightweightCharts.LineStyle.Dashed 
+                            });
+                            
+                            // 新增平均成本線 (設計為藍色實線，比較顯眼)
+                            const costSeries = chart.addLineSeries({ 
+                                color: '#3b82f6', 
+                                lineWidth: 3, 
+                                title: '平均成本' 
+                            });
+                            
+                            // 將我們剛剛結算好的陣列餵給圖表，並讓圖表自動縮放視野
+                            if (priceData.length > 0 && costData.length > 0) {
+                                priceSeries.setData(priceData);
+                                costSeries.setData(costData);
+                                chart.timeScale().fitContent();
+                            }
+                            
+                            // 加上視窗大小監聽器，讓圖表具備 RWD 響應式功能 (旋轉手機時不會破版)
+                            if (window.ResizeObserver) { 
+                                new ResizeObserver(entries => { 
+                                    if (entries[0].target === container && this.costChartInstance && entries[0].contentRect.width > 0) { 
+                                        this.costChartInstance.applyOptions({ width: Math.floor(entries[0].contentRect.width) }); 
+                                    } 
+                                }).observe(container); 
+                            }
+                        } catch (err) { 
+                            console.error('成本圖表繪製發生錯誤:', err); 
+                        }
+                    },
+
                     changeDetailChartRange(range) { this.detailChartRange = range; this.renderDetailNetWorthChart(); },
                     
                     renderDetailNetWorthChart() {
@@ -2036,6 +2214,42 @@
         <div class="text-slate-400 font-bold flex flex-col items-center gap-3"><i class="fa-solid fa-spinner fa-spin text-3xl"></i> 正在為您精算歷史軌跡...</div>
       </div>
       <div x-show="!isDetailChartLoading" id="detail-lwc-chart" style="width: 100%; min-height: 350px;" class="rounded-xl border border-slate-100 overflow-hidden shadow-inner"></div>
+    </div>
+  </div>
+
+<div class="mb-6 w-full" x-show="activeTab === 'dashboard'">
+    
+    <button 
+        @click="toggleCostChart()" 
+        :disabled="!historicalDataLoaded || (transactions.length === 0 && baseShares === 0)" 
+        class="w-full py-4 bg-white border border-slate-200 text-indigo-700 text-lg font-black rounded-2xl shadow-sm hover:shadow-md transition-all flex justify-center items-center gap-3 group disabled:opacity-50 disabled:cursor-not-allowed hover:-translate-y-1"
+    >
+      <div class="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 shadow-inner group-hover:scale-110 transition-all text-lg">
+        <i class="fa-solid fa-money-bill-trend-up" :class="{'fa-bounce': isCostChartLoading}"></i>
+      </div>
+      <span x-text="showCostChart ? '收合平均成本對比圖' : (!historicalDataLoaded ? '圖表快取處理中...' : (isCostChartLoading ? '資料運算中...' : '📉 展開平均成本 vs 市價走勢圖'))"></span>
+    </button>
+
+    <div x-show="showCostChart" class="mt-4 bg-white p-4 sm:p-6 rounded-3xl border border-slate-100 shadow-lg relative" x-cloak x-transition>
+      
+      <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+        <h3 class="text-xl font-black text-slate-800 flex items-center gap-2">
+            <i class="fa-solid fa-money-bill-trend-up text-indigo-500"></i> 個人持股平均成本軌跡
+        </h3>
+      </div>
+
+      <div class="bg-indigo-50/50 border border-indigo-100 rounded-xl p-3 mb-4 text-sm text-slate-600 leading-relaxed">
+        💡 <strong>提示：</strong>本圖表展示您的「每股平均成本」與「歷史市價」的對比。實線（藍色）為您的<strong class="text-indigo-600">持股平均成本</strong>，虛線（灰色）為<strong class="text-slate-500">當下市價</strong>。當藍線低於灰線時，代表您的部位處於獲利狀態！
+      </div>
+
+      <div x-show="isCostChartLoading" class="w-full h-[350px] flex items-center justify-center bg-slate-50 rounded-xl border border-slate-100 shadow-inner">
+        <div class="text-slate-400 font-bold flex flex-col items-center gap-3">
+            <i class="fa-solid fa-spinner fa-spin text-3xl"></i> 正在為您精算成本軌跡...
+        </div>
+      </div>
+      
+      <div x-show="!isCostChartLoading" id="cost-lwc-chart" style="width: 100%; min-height: 350px;" class="rounded-xl border border-slate-100 overflow-hidden shadow-inner"></div>
+    
     </div>
   </div>
 
