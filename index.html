@@ -684,23 +684,35 @@ get activeETFName() { return this.activeETF ? ((ETF_CONFIG[this.activeETF] || ET
 isIndicatorSupported(key) { return (ETF_CONFIG[this.activeETF] || ETF_CONFIG['DEFAULT']).indicators.includes(key); },
 
 async _fetchWithProxy(url) {
-    const proxies = [
-    'https://myetfproxy.tcuteblue.workers.dev/?url=',  // 第一防線：私有通道
-    'https://corsproxy.io/?url='                       // 第二防線：備用通道
-];
+        // 🚀 方案 B：加上時間戳記，強迫破解伺服器快取 (Cache-Busting)
+        const separator = url.includes('?') ? '&' : '?';
+        const finalUrl = url + separator + '_t=' + new Date().getTime();
+
+        const proxies = [
+            'https://myetfproxy.tcuteblue.workers.dev/?url=',  // 第一防線：私有通道
+            'https://corsproxy.io/?url='                       // 第二防線：備用通道
+        ];
 
         for (let proxy of proxies) {
             try {
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 6000);
-                const res = await fetch(proxy, { signal: controller.signal, cache: 'no-store' });
+                
+                // ⚠️ 重大修正：將 finalUrl 編碼後接在 proxy 屁股後面！
+                const targetEndpoint = proxy + encodeURIComponent(finalUrl);
+                
+                const res = await fetch(targetEndpoint, { signal: controller.signal, cache: 'no-store' });
                 clearTimeout(timeoutId);
-                if (res.ok) { const data = await res.json(); if (data) return data; }
-            } catch (e) { console.warn('Proxy 嘗試失敗:', proxy); }
+                if (res.ok) { 
+                    const data = await res.json(); 
+                    if (data) return data; 
+                }
+            } catch (e) { 
+                console.warn('Proxy 嘗試失敗:', proxy); 
+            }
         }
         return null;
     },
-
     async runDiagnostics() {
         if (this.isRunningDiagnostics || this.diagCooldown > 0) return;
         this.isRunningDiagnostics = true;
