@@ -2187,45 +2187,6 @@
     </div>
   </div>
 
- <div class="mb-6 w-full" x-show="activeTab === 'dashboard'">
-    <button @click="toggleChart()" :disabled="!historicalDataLoaded" class="w-full py-4 bg-white border border-slate-200 text-slate-700 text-lg font-black rounded-2xl shadow-sm hover:shadow-md transition-all flex justify-center items-center gap-3 group disabled:opacity-50 disabled:cursor-not-allowed hover:-translate-y-1">
-      <div class="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-blue-500 shadow-inner group-hover:bg-blue-50 group-hover:scale-110 transition-all text-lg"><i class="fa-solid fa-chart-line"></i></div>
-      <span x-show="!historicalDataLoaded">圖表快取處理中...</span>
-      <span x-show="historicalDataLoaded" x-text="showChart ? '收合長期技術與均線圖' : '📊 展開長期技術與均線圖'"></span>
-    </button>
-
-    <div x-show="showChart" class="mt-4 bg-white p-2 sm:p-5 rounded-3xl border border-slate-100 shadow-lg w-full relative" x-cloak x-transition>
-      <div class="text-base font-bold text-slate-500 mb-3 pl-3 bg-slate-50 py-2.5 rounded-lg shadow-inner inline-block px-4">💡 提示：支援滑鼠滾輪縮放，點擊拖曳平移。</div>
-      <div id="lwc-chart" style="width: 100%; min-height: 400px;" class="rounded-xl border border-slate-100 overflow-hidden shadow-inner"></div>
-    </div>
-  </div>
-
-  <div class="mb-6 w-full" x-show="activeTab === 'dashboard'">
-    <button @click="toggleCostChart()" :disabled="!historicalDataLoaded || (transactions.length === 0 && baseShares === 0)" class="w-full py-4 bg-white border border-slate-200 text-indigo-700 text-lg font-black rounded-2xl shadow-sm hover:shadow-md transition-all flex justify-center items-center gap-3 group disabled:opacity-50 disabled:cursor-not-allowed hover:-translate-y-1">
-      <div class="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 shadow-inner group-hover:scale-110 transition-all text-lg">
-        <i class="fa-solid fa-money-bill-trend-up" :class="{'fa-bounce': isCostChartLoading}"></i>
-      </div>
-      <span x-text="showCostChart ? '收合平均成本對比圖' : (!historicalDataLoaded ? '圖表快取處理中...' : (isCostChartLoading ? '資料運算中...' : '📉 展開平均成本 vs 市價走勢圖'))"></span>
-    </button>
-
-    <div x-show="showCostChart" class="mt-4 bg-white p-4 sm:p-6 rounded-3xl border border-slate-100 shadow-lg relative" x-cloak x-transition>
-      <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
-        <h3 class="text-xl font-black text-slate-800 flex items-center gap-2">
-            <i class="fa-solid fa-money-bill-trend-up text-indigo-500"></i> 個人持股平均成本軌跡
-        </h3>
-      </div>
-      <div class="bg-indigo-50/50 border border-indigo-100 rounded-xl p-3 mb-4 text-sm text-slate-600 leading-relaxed">
-        💡 <strong>提示：</strong>本圖表展示您的「每股平均成本」與「歷史市價」的對比。實線（藍色）為您的<strong class="text-indigo-600">持股平均成本</strong>，虛線（灰色）為<strong class="text-slate-500">當下市價</strong>。當藍線低於灰線時，代表您的部位處於獲利狀態！
-      </div>
-      <div x-show="isCostChartLoading" class="w-full h-[350px] flex items-center justify-center bg-slate-50 rounded-xl border border-slate-100 shadow-inner">
-        <div class="text-slate-400 font-bold flex flex-col items-center gap-3">
-            <i class="fa-solid fa-spinner fa-spin text-3xl"></i> 正在為您精算成本軌跡...
-        </div>
-      </div>
-      <div x-show="!isCostChartLoading" id="cost-lwc-chart" style="width: 100%; min-height: 350px;" class="rounded-xl border border-slate-100 overflow-hidden shadow-inner"></div>
-    </div>
-  </div>
-
   <div class="mb-6 w-full" x-show="activeTab === 'dashboard'">
     <button @click="toggleDetailNetWorthChart()" :disabled="!historicalDataLoaded || (transactions.length === 0 && baseShares === 0)" class="w-full py-4 bg-white border border-slate-200 text-blue-700 text-lg font-black rounded-2xl shadow-sm hover:shadow-md transition-all flex justify-center items-center gap-3 group disabled:opacity-50 disabled:cursor-not-allowed hover:-translate-y-1">
       <div class="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 shadow-inner group-hover:scale-110 transition-all text-lg">
@@ -2238,18 +2199,57 @@
       <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
         <h3 class="text-xl font-black text-slate-800 flex items-center gap-2"><i class="fa-solid fa-chart-pie text-blue-500"></i> 單檔真實帳戶淨值曲線</h3>
       </div>
+
       <div class="bg-blue-50/50 border border-blue-100 rounded-xl p-3 mb-4 text-sm text-slate-600 leading-relaxed">
         💡 <strong>提示：</strong>本圖表依據您填寫的「歷史明細」與即時回測的「歷史股價」疊加精算。實線為<strong class="text-blue-600">當下市值</strong>，虛線為<strong class="text-amber-500">累積投入本金</strong>。
       </div>
+
       <div class="flex flex-wrap gap-1.5 mb-4">
         <template x-for="r in ['1M', '3M', '6M', '1Y', 'YTD', 'MAX']" :key="r">
           <button @click="changeDetailChartRange(r)" class="px-3 py-1 text-xs font-bold rounded-full border transition" :class="detailChartRange === r ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'" x-text="r === 'YTD' ? '今年以來' : (r === 'MAX' ? '全部' : r)"></button>
         </template>
       </div>
+
       <div x-show="isDetailChartLoading" class="w-full h-[350px] flex items-center justify-center bg-slate-50 rounded-xl border border-slate-100 shadow-inner">
         <div class="text-slate-400 font-bold flex flex-col items-center gap-3"><i class="fa-solid fa-spinner fa-spin text-3xl"></i> 正在為您精算歷史軌跡...</div>
       </div>
       <div x-show="!isDetailChartLoading" id="detail-lwc-chart" style="width: 100%; min-height: 350px;" class="rounded-xl border border-slate-100 overflow-hidden shadow-inner"></div>
+    </div>
+  </div>
+
+<div class="mb-6 w-full" x-show="activeTab === 'dashboard'">
+    
+    <button 
+        @click="toggleCostChart()" 
+        :disabled="!historicalDataLoaded || (transactions.length === 0 && baseShares === 0)" 
+        class="w-full py-4 bg-white border border-slate-200 text-indigo-700 text-lg font-black rounded-2xl shadow-sm hover:shadow-md transition-all flex justify-center items-center gap-3 group disabled:opacity-50 disabled:cursor-not-allowed hover:-translate-y-1"
+    >
+      <div class="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 shadow-inner group-hover:scale-110 transition-all text-lg">
+        <i class="fa-solid fa-money-bill-trend-up" :class="{'fa-bounce': isCostChartLoading}"></i>
+      </div>
+      <span x-text="showCostChart ? '收合平均成本對比圖' : (!historicalDataLoaded ? '圖表快取處理中...' : (isCostChartLoading ? '資料運算中...' : '📉 展開平均成本 vs 市價走勢圖'))"></span>
+    </button>
+
+    <div x-show="showCostChart" class="mt-4 bg-white p-4 sm:p-6 rounded-3xl border border-slate-100 shadow-lg relative" x-cloak x-transition>
+      
+      <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+        <h3 class="text-xl font-black text-slate-800 flex items-center gap-2">
+            <i class="fa-solid fa-money-bill-trend-up text-indigo-500"></i> 個人持股平均成本軌跡
+        </h3>
+      </div>
+
+      <div class="bg-indigo-50/50 border border-indigo-100 rounded-xl p-3 mb-4 text-sm text-slate-600 leading-relaxed">
+        💡 <strong>提示：</strong>本圖表展示您的「每股平均成本」與「歷史市價」的對比。實線（藍色）為您的<strong class="text-indigo-600">持股平均成本</strong>，虛線（灰色）為<strong class="text-slate-500">當下市價</strong>。當藍線低於灰線時，代表您的部位處於獲利狀態！
+      </div>
+
+      <div x-show="isCostChartLoading" class="w-full h-[350px] flex items-center justify-center bg-slate-50 rounded-xl border border-slate-100 shadow-inner">
+        <div class="text-slate-400 font-bold flex flex-col items-center gap-3">
+            <i class="fa-solid fa-spinner fa-spin text-3xl"></i> 正在為您精算成本軌跡...
+        </div>
+      </div>
+      
+      <div x-show="!isCostChartLoading" id="cost-lwc-chart" style="width: 100%; min-height: 350px;" class="rounded-xl border border-slate-100 overflow-hidden shadow-inner"></div>
+    
     </div>
   </div>
 
@@ -2311,7 +2311,17 @@
     </div>
   </div>
 
- 
+  <button @click="toggleChart()" :disabled="!historicalDataLoaded" x-show="activeTab === 'dashboard'" class="w-full mb-8 py-5 bg-white border border-slate-200 text-slate-700 text-lg font-bold rounded-2xl shadow-sm hover:shadow-md transition-all flex justify-center items-center gap-3 group disabled:opacity-50 disabled:cursor-not-allowed hover:-translate-y-1">
+    <div class="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center text-blue-500 shadow-inner group-hover:bg-blue-50 group-hover:scale-110 transition-all text-xl"><i class="fa-solid fa-chart-line"></i></div>
+    <span x-show="!historicalDataLoaded">圖表快取處理中...</span>
+    <span x-show="historicalDataLoaded" x-text="showChart ? '收合長期技術與均線圖' : '展開長期技術與均線圖'"></span>
+  </button>
+  <div x-show="showChart && activeTab === 'dashboard'" class="bg-white p-2 sm:p-5 rounded-3xl border border-slate-100 shadow-lg mb-8 w-full relative" x-cloak>
+    <div class="text-base font-bold text-slate-500 mb-3 pl-3 bg-slate-50 py-2.5 rounded-lg shadow-inner inline-block px-4">💡 提示：支援滑鼠滾輪縮放，點擊拖曳平移。</div>
+    <div id="lwc-chart" style="width: 100%; min-height: 400px;" class="rounded-xl border border-slate-100 overflow-hidden shadow-inner"></div>
+  </div>
+</div>
+
 <div x-show="activeTab === 'report'" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-2" x-transition:enter-end="opacity-100 translate-y-0" x-cloak>
   <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden mb-10">
     <div class="bg-slate-50/80 border-b border-slate-100 p-6 md:p-8 backdrop-blur-sm">
