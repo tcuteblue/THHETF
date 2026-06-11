@@ -31,6 +31,32 @@
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 
     <style>
+
+/* ==========================================
+   全域字型大小自適應設定 (Fluid Typography)
+   ========================================== */
+html {
+    /* 預設：在一般螢幕上鎖定為標準大小 16px (1rem) */
+    font-size: 16px; 
+}
+
+@media (max-width: 640px) {
+    html {
+        /* 手機螢幕 (640px 以下) 啟動自適應縮放：
+           最小不會小於 13px，最大不會超過 16px，
+           中間值會隨著螢幕寬度 (4vw) 平滑縮放。
+           這會讓所有 Tailwind 的 text-*, p-*, m-* 同步完美縮放！*/
+        font-size: clamp(13px, 4vw, 16px);
+    }
+}
+
+@media (max-width: 380px) {
+    html {
+        /* 針對 iPhone SE 等極小螢幕進一步微調 */
+        font-size: clamp(11px, 3.5vw, 14px);
+    }
+}
+
         /* 網頁基礎設定與背景色 */
         html {
             font-size: clamp(15px, 2vw + 8px, 20px);
