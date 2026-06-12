@@ -2435,53 +2435,51 @@ html {
           </ul>
         </div>
       </div>
-       <div class="flex flex-col gap-2.5 text-sm font-bold text-slate-600 bg-white px-4 py-2.5 rounded-md border border-slate-200 shadow-sm">
-            
-            <div class="flex flex-wrap items-center gap-4">
-                <span class="text-slate-400"><i class="fa-solid fa-chart-line"></i> 價格均線:</span>
-                <label class="flex items-center gap-1.5 cursor-pointer hover:text-pink-600 transition">
-                    <input type="checkbox" x-model="priceMA5" @change="renderChart()" class="w-4 h-4 text-pink-500 rounded border-slate-300 focus:ring-pink-500"> 週線
-                </label>
-                <label class="flex items-center gap-1.5 cursor-pointer hover:text-blue-600 transition">
-                    <input type="checkbox" x-model="priceMA20" @change="renderChart()" class="w-4 h-4 text-blue-500 rounded border-slate-300 focus:ring-blue-500"> 月線
-                </label>
-                <label class="flex items-center gap-1.5 cursor-pointer hover:text-emerald-600 transition">
-                    <input type="checkbox" x-model="priceMA60" @change="renderChart()" class="w-4 h-4 text-emerald-500 rounded border-slate-300 focus:ring-emerald-500"> 季線
-                </label>
-            </div>
-
-            <div class="flex flex-wrap items-center gap-4">
-                <span class="text-slate-400"><i class="fa-solid fa-chart-bar"></i> 量能均線:</span>
-                <label class="flex items-center gap-1.5 cursor-pointer hover:text-amber-600 transition">
-                    <input type="checkbox" x-model="volMA5" @change="renderChart()" class="w-4 h-4 text-amber-500 rounded border-slate-300 focus:ring-amber-500"> 週線
-                </label>
-                <label class="flex items-center gap-1.5 cursor-pointer hover:text-purple-600 transition">
-                    <input type="checkbox" x-model="volMA20" @change="renderChart()" class="w-4 h-4 text-purple-500 rounded border-slate-300 focus:ring-purple-500"> 月線
-                </label>
-                <label class="flex items-center gap-1.5 cursor-pointer hover:text-teal-600 transition">
-                    <input type="checkbox" x-model="volMA60" @change="renderChart()" class="w-4 h-4 text-teal-500 rounded border-slate-300 focus:ring-teal-500"> 季線
-                </label>
-            </div>
-
-           <div class="flex flex-wrap items-center gap-4">
-                <span class="text-slate-400"><i class="fa-solid fa-compass"></i> 長線指標:</span>
-                <label class="flex items-center gap-1.5 cursor-pointer hover:text-orange-600 transition">
-                    <input type="checkbox" x-model="priceMA240" @change="renderChart()" class="w-4 h-4 text-orange-500 rounded border-slate-300 focus:ring-orange-500"> 年線
-                </label>
-                <label class="flex items-center gap-1.5 cursor-pointer hover:text-indigo-600 transition">
-                    <input type="checkbox" x-model="priceMA2400" @change="renderChart()" class="w-4 h-4 text-indigo-500 rounded border-slate-300 focus:ring-indigo-500"> 十年線
-                </label>
-                <label class="flex items-center gap-1.5 cursor-pointer hover:text-rose-600 transition">
-                    <input type="checkbox" x-model="showKD" @change="renderChart()" class="w-4 h-4 text-rose-500 rounded border-slate-300 focus:ring-rose-500"> KD線
-                </label>
-
-                <label x-show="showKD" x-transition class="flex items-center gap-1.5 cursor-pointer text-slate-500 hover:text-rose-600 transition ml-2 border-l border-slate-200 pl-3">
-                  <input type="checkbox" x-model="expandKD" @change="renderChart()" class="w-4 h-4 text-rose-500 rounded border-slate-300 focus:ring-rose-500"> 🔍 KD放大
+      <div class="w-fit inline-flex flex-col gap-3.5 text-sm font-bold text-slate-600 bg-white px-3 sm:px-4 py-3.5 rounded-xl border border-slate-200 shadow-sm mb-4">
+          
+          <div class="flex items-center gap-2 sm:gap-4">
+              <span class="text-slate-500 shrink-0 whitespace-nowrap"><i class="fa-solid fa-chart-line"></i> 價格均線:</span>
+              <label class="flex items-center gap-1 cursor-pointer hover:text-pink-600 transition whitespace-nowrap">
+                  <input type="checkbox" x-model="priceMA5" @change="renderChart()" class="w-[18px] h-[18px] text-pink-500 rounded border-slate-300 focus:ring-pink-500"> 週線
               </label>
+              <label class="flex items-center gap-1 cursor-pointer hover:text-blue-600 transition whitespace-nowrap">
+                  <input type="checkbox" x-model="priceMA20" @change="renderChart()" class="w-[18px] h-[18px] text-blue-500 rounded border-slate-300 focus:ring-blue-500"> 月線
+              </label>
+              <label class="flex items-center gap-1 cursor-pointer hover:text-emerald-600 transition whitespace-nowrap">
+                  <input type="checkbox" x-model="priceMA60" @change="renderChart()" class="w-[18px] h-[18px] text-emerald-500 rounded border-slate-300 focus:ring-emerald-500"> 季線
+              </label>
+          </div>
 
-            </div>
+          <div class="flex items-center gap-2 sm:gap-4">
+              <span class="text-slate-500 shrink-0 whitespace-nowrap"><i class="fa-solid fa-chart-bar"></i> 量能均線:</span>
+              <label class="flex items-center gap-1 cursor-pointer hover:text-amber-600 transition whitespace-nowrap">
+                  <input type="checkbox" x-model="volMA5" @change="renderChart()" class="w-[18px] h-[18px] text-amber-500 rounded border-slate-300 focus:ring-amber-500"> 週線
+              </label>
+              <label class="flex items-center gap-1 cursor-pointer hover:text-purple-600 transition whitespace-nowrap">
+                  <input type="checkbox" x-model="volMA20" @change="renderChart()" class="w-[18px] h-[18px] text-purple-500 rounded border-slate-300 focus:ring-purple-500"> 月線
+              </label>
+              <label class="flex items-center gap-1 cursor-pointer hover:text-teal-600 transition whitespace-nowrap">
+                  <input type="checkbox" x-model="volMA60" @change="renderChart()" class="w-[18px] h-[18px] text-teal-500 rounded border-slate-300 focus:ring-teal-500"> 季線
+              </label>
+          </div>
 
-        </div>
+          <div class="flex items-center gap-2 sm:gap-4">
+              <span class="text-slate-500 shrink-0 whitespace-nowrap"><i class="fa-solid fa-compass"></i> 長線指標:</span>
+              <label class="flex items-center gap-1 cursor-pointer hover:text-orange-600 transition whitespace-nowrap">
+                  <input type="checkbox" x-model="priceMA240" @change="renderChart()" class="w-[18px] h-[18px] text-orange-500 rounded border-slate-300 focus:ring-orange-500"> 年線
+              </label>
+              <label class="flex items-center gap-1 cursor-pointer hover:text-indigo-600 transition whitespace-nowrap">
+                  <input type="checkbox" x-model="priceMA2400" @change="renderChart()" class="w-[18px] h-[18px] text-indigo-500 rounded border-slate-300 focus:ring-indigo-500"> 十年線
+              </label>
+              <label class="flex items-center gap-1 cursor-pointer hover:text-rose-600 transition whitespace-nowrap">
+                  <input type="checkbox" x-model="showKD" @change="renderChart()" class="w-[18px] h-[18px] text-rose-500 rounded border-slate-300 focus:ring-rose-500"> KD線
+              </label>
+              
+              <label x-show="showKD" x-transition class="flex items-center gap-1 cursor-pointer text-slate-500 hover:text-rose-600 transition border-l border-slate-200 pl-1.5 whitespace-nowrap">
+                  <input type="checkbox" x-model="expandKD" @change="renderChart()" class="w-[18px] h-[18px] text-rose-500 rounded border-slate-300 focus:ring-rose-500"> 放大
+              </label>
+          </div>
+      </div>
     </div>
     
     <div id="lwc-chart" style="width: 100%; min-height: 400px;" class="rounded-xl border border-slate-100 overflow-hidden shadow-inner"></div>
