@@ -285,13 +285,9 @@ html {
                     
                     /* === 雲端備份控制狀態與網址 === */
                     gasUrl: 'https://script.google.com/macros/s/AKfycbw0wAnCPZkw3nlyx0Eg08Ejk49oG_itD82PqH9IP4X7S4oR5br1NTCmlUJsNfME2kbZ/exec',
-                    isCloudSyncing: false,
+                    isCloudSyncing: '',
                     cloudBackupTimer: null,
-
-                    /* === 雲端備份控制狀態 === */
-                    isCloudSyncing: false,
-                    cloudBackupTimer: null,       
-
+                
                     /* === 彈出視窗控制變數 === */
                     showMsgBox: false, msgBoxText: '', reloadOnClose: false,
                     showConfirmBox: false, confirmBoxText: '', pendingDeleteId: null, pendingDeleteType: '',
@@ -451,13 +447,13 @@ html {
                         }
                     },
 
-                    // 🌟 新增：雲端手動/自動備份函式
+                    // 雲端手動/自動備份函式
                     async cloudBackup(isAuto = false) {
-                        if (!isAuto) this.isCloudSyncing = true;
+                        if (!isAuto) this.isCloudSyncing = 'backup'; // 🎯 標記為正在備份
                         try {
                             const payload = {
                                 action: "auto_backup",
-                                fileName: "ETF存股管家_雲端備份.json", // 這裡指定 ETF 管家的專屬檔名
+                                fileName: "ETF存股管家_雲端備份.json", 
                                 backupData: { etfs: this.etfs, global: this.globalSettings, homePrices: this.homePrices }
                             };
                             const response = await fetch(this.gasUrl, {
@@ -478,15 +474,15 @@ html {
                             if (!isAuto) this.showMsg("❌ 雲端備份失敗：" + e.message);
                             console.error("雲端備份失敗", e);
                         } finally {
-                            if (!isAuto) this.isCloudSyncing = false;
+                            if (!isAuto) this.isCloudSyncing = ''; // 🎯 恢復空值
                         }
                     },
 
-                    // 🌟 新增：雲端還原函式
+                    // 雲端還原函式
                     async cloudRestore() {
                         if (!confirm("⚠️ 警告：雲端還原將會覆蓋您目前的本機資料！\n\n確定要進行還原嗎？")) return;
                         
-                        this.isCloudSyncing = true;
+                        this.isCloudSyncing = 'restore'; // 🎯 標記為正在還原
                         try {
                             const payload = { action: "restore_from_cloud", fileName: "ETF存股管家_雲端備份.json" };
                             const response = await fetch(this.gasUrl, {
@@ -510,7 +506,7 @@ html {
                         } catch (e) {
                             this.showMsg("❌ 還原失敗：" + e.message);
                         } finally {
-                            this.isCloudSyncing = false;
+                            this.isCloudSyncing = ''; // 🎯 恢復空值
                         }
                     },
 
@@ -2322,17 +2318,21 @@ html {
 
             <!-- 🎯 全新 GAS 雲端與本機備份中心 (套用實體按壓回饋樣式) -->
             <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 mt-8 mb-8">
+                <!-- 🎯 修改為：全系統備份還原 -->
                 <label style="display:block; font-size:18px; font-weight:900; text-align:center; color:#7f8fa6; margin-bottom: 10px;">
                     全系統備份還原
                 </label>
                 
                 <div class="backup-grid">
-                    <button class="btn-grid btn-c-bak" @click="cloudBackup()" :disabled="isCloudSyncing">
-                        <i class="fa-solid" :class="isCloudSyncing ? 'fa-spinner fa-spin' : 'fa-cloud-arrow-up'"></i> 雲端備份
+                    <!-- 🎯 只有當值為 'backup' 時才轉圈圈 -->
+                    <button class="btn-grid btn-c-bak" @click="cloudBackup()" :disabled="isCloudSyncing !== ''">
+                        <i class="fa-solid" :class="isCloudSyncing === 'backup' ? 'fa-spinner fa-spin' : 'fa-cloud-arrow-up'"></i> 雲端備份
                     </button>
-                    <button class="btn-grid btn-c-res" @click="cloudRestore()" :disabled="isCloudSyncing">
-                        <i class="fa-solid" :class="isCloudSyncing ? 'fa-spinner fa-spin' : 'fa-cloud-arrow-down'"></i> 雲端還原
+                    <!-- 🎯 只有當值為 'restore' 時才轉圈圈 -->
+                    <button class="btn-grid btn-c-res" @click="cloudRestore()" :disabled="isCloudSyncing !== ''">
+                        <i class="fa-solid" :class="isCloudSyncing === 'restore' ? 'fa-spinner fa-spin' : 'fa-cloud-arrow-down'"></i> 雲端還原
                     </button>
+                    <!-- 無論雲端在做什麼，本機備份仍可點擊（或您想全部停用也可以加上 :disabled="isCloudSyncing !== ''"） -->
                     <button class="btn-grid btn-l-bak" @click="exportSystemBackup(true)">
                         <i class="fa-solid fa-download"></i> 本機備份
                     </button>
@@ -2344,7 +2344,6 @@ html {
                 <!-- 隱藏的檔案上傳元件 (供本機還原使用) -->
                 <input type="file" id="file-input-home" accept=".json" style="display:none;" @change="importSystemBackup($event)">
             </div>
-
             <div class="text-center pb-8 pt-4">
                 <p class="text-sm font-bold text-slate-400/80 flex items-center justify-center gap-2">
                     蔡宏和製作 20260501
