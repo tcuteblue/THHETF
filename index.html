@@ -443,7 +443,7 @@ html {
                         // 🌟 新增：GAS 雲端自動備份機制 (修改資料後 1.5 秒自動背景推送到 Google Drive)
                         if (this.gasUrl) {
                             if(this.cloudBackupTimer) clearTimeout(this.cloudBackupTimer);
-                            this.cloudBackupTimer = setTimeout(() => { this.cloudBackup(true); }, 1500);
+                            this.cloudBackupTimer = setTimeout(() => { this.cloudBackup(true); }, 3000);
                         }
                     },
 
