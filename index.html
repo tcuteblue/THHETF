@@ -579,7 +579,9 @@ html {
                             }));
                             
                             this.homePrices = newPrices; 
-                            this.saveData(false); 
+                            
+                            // 【修改點】：阻斷連動！只寫入本機快取，絕對不呼叫 this.saveData() 以免觸發雲端備份
+                            try { localStorage.setItem('THH_ETF_Data_V1', JSON.stringify({ etfs: this.etfs, global: this.globalSettings, homePrices: this.homePrices })); } catch (e) {}
                             
                             if(this.currentView === 'home' && !this.isHomeChartReady && !this.isHomeChartLoading) {
                                 setTimeout(() => this.prepareHomeChartData(), 1000);
@@ -590,7 +592,6 @@ html {
                             this.isFetchingHome = false;
                         }
                     },
-
                     /* =========================================================
                        📈 圖表繪製與歷史資料計算區塊
                        ========================================================= */
@@ -1279,7 +1280,9 @@ html {
                             this.realTimeFetched = true;
                             // 同步更新首頁的股價字典
                             this.homePrices[this.activeETF] = { price: this.currentPrice, prev: this.prevClose }; 
-                            this.saveData(false);
+                            
+                            // 【修改點】：阻斷連動！只寫入本機快取，不呼叫 this.saveData()
+                            try { localStorage.setItem('THH_ETF_Data_V1', JSON.stringify({ etfs: this.etfs, global: this.globalSettings, homePrices: this.homePrices })); } catch (e) {}
                         } else { 
                             this.priceUpdateTime = '即時連線失敗(顯示昨收)'; 
                             this.realTimeFetched = false; 
@@ -2090,21 +2093,22 @@ html {
                     },
 
                     exportSystemBackup(showMsg = true) {
-                        let saved = null; 
-                        try { saved = localStorage.getItem('THH_ETF_Data_V1'); } catch(e) {}
-                        if (!saved) return showMsg ? this.showMsg('目前沒有資料可以備份！') : null;
+                        // 【修改點】：不再從 localStorage 抓整包資料，而是手動組裝乾淨的 Payload (剔除 homePrices)
+                        let backupPayload = { etfs: this.etfs, global: this.globalSettings };
+                        
+                        if (Object.keys(this.etfs).length === 0) return showMsg ? this.showMsg('目前沒有資料可以備份！') : null;
                         
                         const now = new Date(); const pad = n => String(n).padStart(2, '0');
-                        let timestamp = `now.getFullYear(){pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}pad(now.getMinutes()){pad(now.getSeconds())}`;
+                        let timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
                         
-                        const blob = new Blob([saved], { type: 'application/json' });
+                        const blob = new Blob([JSON.stringify(backupPayload)], { type: 'application/json' });
                         const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `ETF存股管家手動備份_${timestamp}.json`;
                         document.body.appendChild(link); link.click(); 
                         setTimeout(() => { document.body.removeChild(link); URL.revokeObjectURL(link.href); }, 100);
                         
-                        if(showMsg) this.showMsg('✅ 備份檔已下載！\n建議存入雲端硬碟以利未來還原。');
+                        if(showMsg) this.showMsg('✅ 備份檔已下載！\n（檔案已自動剔除快取股價，體積更小且純粹）');
                     },
-
+                    
                     importSystemBackup(event) {
                         const file = event.target.files[0]; if (!file) return; const reader = new FileReader();
                         reader.onload = (e) => {
