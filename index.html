@@ -428,19 +428,14 @@ html {
                         if(this.currentView === 'home' && Object.keys(this.etfs).length > 0) this.fetchHomePrices();
                     },
 
-                    saveData(triggerDownload = false) {
+                    saveData() {
                         if (this.currentView === 'detail' && this.activeETF) {
                             this.etfs[this.activeETF] = { baseShares: this.baseShares, baseAvgCost: this.baseAvgCost, startDate: this.startDate, lastCheckDate: this.lastCheckDate, investmentPlans: this.investmentPlans, transactions: this.transactions, isBlueLight: this.isBlueLight, isPanic: this.isPanic, baseRetirementMV: this.baseRetirementMV, baseRetirementDate: this.baseRetirementDate, swrRate: this.swrRate };
                         }
+                        // 本機依然完整寫入 (保留 homePrices 供畫面顯示)
                         try { localStorage.setItem('THH_ETF_Data_V1', JSON.stringify({ etfs: this.etfs, global: this.globalSettings, homePrices: this.homePrices })); } catch (e) {}
 
-                        // 原本的本機自動下載機制
-                        if (triggerDownload) {
-                            if(this.downloadDebounceTimer) clearTimeout(this.downloadDebounceTimer);
-                            this.downloadDebounceTimer = setTimeout(() => { this.triggerAutoDownloadBackup(); }, 1500);
-                        }
-
-                        // 🌟 新增：GAS 雲端自動備份機制 (修改資料後 1.5 秒自動背景推送到 Google Drive)
+                        // 🌟 GAS 雲端自動備份機制 (修改資料後 3 秒推送到 Google Drive)
                         if (this.gasUrl) {
                             if(this.cloudBackupTimer) clearTimeout(this.cloudBackupTimer);
                             this.cloudBackupTimer = setTimeout(() => { this.cloudBackup(true); }, 3000);
@@ -449,12 +444,13 @@ html {
 
                     // 雲端手動/自動備份函式
                     async cloudBackup(isAuto = false) {
-                        if (!isAuto) this.isCloudSyncing = 'backup'; // 🎯 標記為正在備份
+                        if (!isAuto) this.isCloudSyncing = 'backup'; 
                         try {
                             const payload = {
                                 action: "auto_backup",
                                 fileName: "ETF存股管家_雲端備份.json", 
-                                backupData: { etfs: this.etfs, global: this.globalSettings, homePrices: this.homePrices }
+                                // 【核心修改】：強制剔除 homePrices，確保上傳 GAS 的檔案體積最小、最純粹
+                                backupData: { etfs: this.etfs, global: this.globalSettings }
                             };
                             const response = await fetch(this.gasUrl, {
                                 method: 'POST',
@@ -474,7 +470,7 @@ html {
                             if (!isAuto) this.showMsg("❌ 雲端備份失敗：" + e.message);
                             console.error("雲端備份失敗", e);
                         } finally {
-                            if (!isAuto) this.isCloudSyncing = ''; // 🎯 恢復空值
+                            if (!isAuto) this.isCloudSyncing = ''; 
                         }
                     },
 
@@ -482,7 +478,7 @@ html {
                     async cloudRestore() {
                         if (!confirm("⚠️ 警告：雲端還原將會覆蓋您目前的本機資料！\n\n確定要進行還原嗎？")) return;
                         
-                        this.isCloudSyncing = 'restore'; // 🎯 標記為正在還原
+                        this.isCloudSyncing = 'restore'; 
                         try {
                             const payload = { action: "restore_from_cloud", fileName: "ETF存股管家_雲端備份.json" };
                             const response = await fetch(this.gasUrl, {
@@ -506,27 +502,8 @@ html {
                         } catch (e) {
                             this.showMsg("❌ 還原失敗：" + e.message);
                         } finally {
-                            this.isCloudSyncing = ''; // 🎯 恢復空值
+                            this.isCloudSyncing = ''; 
                         }
-                    },
-
-                    triggerAutoDownloadBackup() {
-                        let saved = null; 
-                        try { saved = localStorage.getItem('THH_ETF_Data_V1'); } catch(e) {}
-                        if (!saved) return;
-                        
-                        const now = new Date(); const pad = n => String(n).padStart(2, '0');
-                        let displayTime = `now.getFullYear()/{pad(now.getMonth() + 1)}/${pad(now.getDate())} pad(now.getHours()):{pad(now.getMinutes())}`;
-                        let fileTimestamp = `now.getFullYear(){pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}pad(now.getMinutes()){pad(now.getSeconds())}`;
-                        
-                        const blob = new Blob([saved], { type: 'application/json' });
-                        const link = document.createElement('a'); 
-                        link.href = URL.createObjectURL(blob); 
-                        link.download = `ETF自動備份_${fileTimestamp}.json`;
-                        document.body.appendChild(link); link.click(); document.body.removeChild(link);
-                        
-                        this.globalSettings.lastBackupTime = displayTime;
-                        try { localStorage.setItem('THH_ETF_Data_V1', JSON.stringify({ etfs: this.etfs, global: this.globalSettings, homePrices: this.homePrices })); } catch(e) {}
                     },
 
                     /* =========================================================
