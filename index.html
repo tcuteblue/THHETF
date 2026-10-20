@@ -331,7 +331,7 @@ html {
                         // 處理手機按上一頁的行為
                         window.addEventListener('popstate', (e) => {
                             if (this.currentView === 'detail') {
-                                this.currentView = 'home'; this.activeETF = null; this.fetchHomePrices();
+                                this.saveData(false); this.currentView = 'home'; this.activeETF = null; this.fetchHomePrices();
                             }
                         });
 
@@ -516,12 +516,14 @@ html {
                         const timestamp = Date.now();
                         
                         try {
-                            const data = await this._fetchWithProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${code}.TW?range=1d&interval=1m&t=${timestamp}`);
+                            // 1️⃣ 第一防線：透過多重 Proxy 向 Yahoo 抓取即時報價
+                            const data = await this._fetchWithProxy(`https://query1.finance.yahoo.com/v8/finance/chart/code.TW?range=1d&interval=1m&t={timestamp}`);
                             if (data?.chart?.result?.[0]) {
                                 const res = data.chart.result[0]; 
                                 price = res.meta?.regularMarketPrice; 
                                 prev = res.meta?.chartPreviousClose || res.meta?.previousClose || price;
                                 
+                                // 從陣列抓取精準的最後收盤時間
                                 let targetTimestamp = res.meta?.regularMarketTime || (timestamp / 1000);
                                 if (res.indicators?.quote?.[0]?.close) { 
                                     const closes = res.indicators.quote[0].close; 
@@ -537,17 +539,18 @@ html {
                                 vol = res.meta?.regularMarketVolume;
                                 
                                 const d = new Date(targetTimestamp * 1000);
-                                timeStr = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+                                timeStr = `d.getFullYear()/{String(d.getMonth() + 1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} String(d.getHours()).padStart(2,'0'):{String(d.getMinutes()).padStart(2,'0')}`;
                             }
                             
+                            // 2️⃣ 最終防線：如果 Yahoo 失敗，啟動台灣證交所備援
                             if (!price) {
-                                const twseData = await this._fetchWithProxy(`https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${code}.tw&t=${timestamp}`);
+                                const twseData = await this._fetchWithProxy(`https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_code.tw&t={timestamp}`);
                                 if (twseData?.msgArray?.[0]) {
                                     let res = twseData.msgArray[0];
                                     if (res.z && res.z !== '-') price = parseFloat(res.z);
                                     if (res.y && res.y !== '-') prev = parseFloat(res.y);
                                     if (res.v && res.v !== '-') vol = parseFloat(res.v) * 1000;
-                                    timeStr = `證交所備援 ${res.d.substring(4,6)}/${res.d.substring(6,8)} ${res.t}`;
+                                    timeStr = `證交所備援 res.d.substring(4,6)/{res.d.substring(6,8)} ${res.t}`;
                                 }
                             }
                         } catch (error) {
@@ -1106,7 +1109,7 @@ html {
                     },
 
                     goHome() { 
-                        this.currentView = 'home'; this.activeETF = null; 
+                        this.saveData(false); this.currentView = 'home'; this.activeETF = null; 
                         window.scrollTo({ top: 0, behavior: 'smooth' }); this.fetchHomePrices(); 
                     },
                     
@@ -1331,6 +1334,170 @@ html {
                        📊 歷史資料深度抓取與處理區塊
                        ========================================================= */
                     async fetchDataAndProcess() {
+                        if (this.isFetching) return; 
+                        this.isFetching = true; 
+                        
+                        // 🌟 為初始化與歷史資料載入，裝上絕對安全防護網
+                        try {
+                            let requestETF = this.activeETF; 
+                            await this.fetchRealTimePrice();
+                            if (this.activeETF !== requestETF) return; 
+
+                            // 計算需要抓取多久的歷史資料
+                            let startStr = '', yfRange = 'max';
+                            if (this.cachedHistoricalData?.length > 0) {
+                                let lastDate = new Date(this.cachedHistoricalData[this.cachedHistoricalData.length - 1].time); 
+                                lastDate.setDate(lastDate.getDate() - 2); 
+                                startStr = this.getLocalYMD(lastDate);
+                                let diff = (Date.now() - lastDate.getTime()) / 86400000; 
+                                yfRange = diff <= 5 ? '5d' : diff <= 30 ? '1mo' : diff <= 90 ? '3mo' : diff <= 365 ? '1y' : 'max';
+                            } else { 
+                                const d = new Date(); 
+                                d.setFullYear(d.getFullYear() - 12); 
+                                startStr = this.getLocalYMD(d); 
+                            }
+
+                            let fetched = [];
+                            
+                            // 優先嘗試使用 FinMind 抓取台灣 50 資料
+                            const fmData = this.activeETF === '0050' ? await this._fetchSimpleJson(`https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=this.activeETF&startdate={startStr}`) : null;
+                            if (this.activeETF !== requestETF) return;
+
+                            if (fmData?.msg === 'success' && fmData.data?.length > 0) { 
+                                fetched = fmData.data.map(i => ({ 
+                                    time: new Date(i.date).getTime(), open: i.open, close: i.close, high: i.max, low: i.min, volume: i.Trading_Volume 
+                                })); 
+                            } else {
+                                // 備案：使用 Yahoo Finance 抓取
+                                const yfData = await this._fetchWithProxy(`https://query1.finance.yahoo.com/v8/finance/chart/this.activeETF.TW?range={yfRange}&interval=1d`);
+                                if (this.activeETF !== requestETF) return;
+
+                                if (yfData?.chart?.result?.[0]) { 
+                                    const res = yfData.chart.result[0], t = res.timestamp, q = res.indicators.quote[0]; 
+                                    if (t && q) {
+                                        for(let i=0; i<t.length; i++) {
+                                            if(q.close[i] != null) {
+                                                fetched.push({ time: t[i]*1000, open: q.open[i]||q.close[i], close: q.close[i], high: q.high[i], low: q.low[i], volume: q.volume[i]||0 }); 
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // 針對 0050 進行股票分割的價格調整 (2025-06-18)
+                            if (this.activeETF === '0050') { 
+                                const splitTime = new Date('2025-06-18T00:00:00+08:00').getTime(); 
+                                fetched = fetched.map(i => i.time < splitTime ? { ...i, open: i.open/4, close: i.close/4, high: i.high/4, low: i.low/4 } : i); 
+                            }
+                            
+                            // 合併新舊資料並去重
+                            let map = new Map();
+                            if (this.cachedHistoricalData) {
+                                this.cachedHistoricalData.forEach(i => map.set(this.getLocalYMD(new Date(i.time)), i));
+                            }
+                            fetched.forEach(i => map.set(this.getLocalYMD(new Date(i.time)), i));
+                            let finalData = Array.from(map.values()).sort((a, b) => a.time - b.time);
+                            
+                            if (finalData.length > 0) { 
+                                this.cachedHistoricalData = finalData; 
+                                try { localStorage.setItem(`THH_History_V2_${this.activeETF}`, JSON.stringify(finalData)); } catch(e){} 
+                                this.historicalDataLoaded = true; 
+                                this.calculateIndicators(finalData); 
+                            }
+                            
+                            // 抓取淨值比 (PB Ratio)
+                            if (this.isIndicatorSupported('pb') || this.isIndicatorSupported('discount')) { 
+                                const pbData = await this._fetchSimpleJson('https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_ALL'); 
+                                this.pbRatio = (pbData && pbData.find(s => s.Code === this.activeETF)?.PBratio !== '-') ? parseFloat(pbData.find(s => s.Code === this.activeETF).PBratio).toFixed(2) : '無資料'; 
+                            }
+                            
+                            await this.fetchDynamicDiscount(); 
+                            this.autoCheckIndicators(); 
+                            
+                        } catch (error) {
+                            console.warn('[安全攔截] 載入個股歷史資料時發生錯誤:', error);
+                        } finally {
+                            // 🌟 絕對安全氣囊：不管發生什麼錯誤，圈圈都會被強制關閉！
+                            this.isFetching = false;
+                        }
+                    },
+
+                    /* =========================================================
+                       🧮 技術面指標計算大腦 (KD、均線、成交量)
+                       ========================================================= */
+                    calculateIndicators(data) {
+                        if (this.currentPrice <= 0) { this.currentPrice = data[data.length - 1].close; }
+                        if (this.currentVolume <= 0) { this.currentVolume = data[data.length - 1].volume || 0; }
+                        if (!this.realTimeFetched && data.length > 0) { 
+                            let d = new Date(data[data.length - 1].time); 
+                            this.priceUpdateTime = `收盤 d.getMonth()+1/{d.getDate()} 13:30`; 
+                        }
+
+                        let cleanData = [], seen = new Set();
+                        // 整理成畫圖表需要的乾淨格式
+                        for (let d of data) { 
+                            let dStr = this.getLocalYMD(new Date(d.time)); 
+                            if (!seen.has(dStr) && d.close > 0) { 
+                                seen.add(dStr); 
+                                cleanData.push({ 
+                                    time: dStr, open: d.open || d.close, 
+                                    high: Math.max(d.open, d.close, d.high, d.low), 
+                                    low: Math.min(d.open, d.close, d.high, d.low), 
+                                    close: d.close, volume: Math.max(0, d.volume || 0) 
+                                }); 
+                            } 
+                        }
+                        this.chartData = cleanData; 
+                        
+                        // 計算昨收
+                        if (cleanData.length >= 2 && (!this.realTimeFetched || !this.prevClose)) {
+                            this.prevClose = cleanData[cleanData.length - 2].close;
+                        }
+                        
+                        // 計算年線 (240MA) 與十年線 (2400MA)
+                        let ma240Arr = [], ma2400Arr = [], sum240 = 0, sum2400 = 0;
+                        for (let i = 0; i < cleanData.length; i++) {
+                            sum240 += cleanData[i].close; 
+                            sum2400 += cleanData[i].close;
+                            if (i >= 240) sum240 -= cleanData[i - 240].close; 
+                            if (i >= 2400) sum2400 -= cleanData[i - 2400].close;
+                            
+                            if (i >= 239) ma240Arr.push({ time: cleanData[i].time, value: sum240 / 240 }); 
+                            if (i >= 2399) ma2400Arr.push({ time: cleanData[i].time, value: sum2400 / 2400 });
+                        }
+                        this.ma240Data = ma240Arr; 
+                        this.ma2400Data = ma2400Arr; 
+                        this.calc_ma240 = ma240Arr.length > 0 ? ma240Arr[ma240Arr.length - 1].value : 0; 
+                        this.calc_ma2400 = ma2400Arr.length > 0 ? ma2400Arr[ma2400Arr.length - 1].value : null;
+                        
+                        // 計算月線 (20MA) 與成交量狀態
+                        if (cleanData.length >= 20) {
+                            let sumVol = 0, sumPrice = 0; 
+                            for(let i = cleanData.length - 20; i < cleanData.length; i++) { 
+                                sumVol += cleanData[i].volume; sumPrice += cleanData[i].close; 
+                            }
+                            this.calc_ma20 = sumPrice / 20; 
+                            let avgVol = sumVol / 20, targetVol = this.currentVolume > 0 ? this.currentVolume : cleanData[cleanData.length-1].volume;
+                            
+                            // 判斷量能狀態
+                            this.volumeStatus = avgVol > 0 ? (targetVol > avgVol * 1.5 ? '🔥' : (targetVol < avgVol * 0.6 ? '🧊' : '🌊')) : '🌊'; 
+                            // 判斷短線乖離狀態
+                            this.priceStatus = this.currentPrice > this.calc_ma20 * 1.05 ? '🚀' : (this.currentPrice < this.calc_ma20 * 0.95 ? '📉' : '⚖️');
+                        }
+                        
+                        // 計算 K 值 (KD 指標)
+                        let k = 50;
+                        for (let i = 8; i < cleanData.length; i++) {
+                            let h = -Infinity, l = Infinity; 
+                            for (let j = Math.max(0, i - 8); j <= i; j++) { 
+                                if (cleanData[j].high > h) h = cleanData[j].high; 
+                                if (cleanData[j].low < l) l = cleanData[j].low; 
+                            }
+                            let rsv = h === l ? 50 : ((cleanData[i].close - l) / (h - l)) * 100; 
+                            k = (2/3) * k + (1/3) * rsv;
+                        }
+                        this.calc_k = k;
+                    },
 
                     // 自動觸發診斷指標的布林值設定
                     autoCheckIndicators() {
@@ -1453,10 +1620,10 @@ html {
                         let successBadge = `<span class="inline-block text-base font-bold px-2 py-0.5 mx-1 rounded-lg shadow-sm border text-emerald-700 bg-emerald-100 border-emerald-300">實質提領 ${currentRateStr}%</span>`;
                         let normalBadge = `<span class="inline-block text-base font-bold px-2 py-0.5 mx-1 rounded-lg shadow-sm border text-blue-700 bg-blue-100 border-blue-300">實質提領 ${currentRateStr}%</span>`;
                         
-                        if (r > upperLimit) return { state: 'danger', title: '🚨 熊市警戒！觸發保本護欄', desc: `目前${dangerBadge}已飆升超越安全護欄範圍${rangeText}！建議縮減 10% 開支共體時艱。`, color: 'text-red-700', bg: 'bg-red-50', border: 'border-red-300', recommendedMonthly: Math.round(targetMonthly - diff), bonus: -diff };
-                        if (r < lowerLimit) return { state: 'success', title: '🎉 牛市紅利！觸發加薪護欄', desc: `目前${successBadge}已低於安全護欄範圍${rangeText}！符合通膨加薪條件，犒賞自己吧！`, color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-300', recommendedMonthly: Math.round(targetMonthly + diff), bonus: diff };
+                        if (r > upperLimit) return { state: 'danger', title: '🚨 熊市警戒！觸發保本護欄', desc: `目前dangerBadge已飆升超越安全護欄範圍{rangeText}！建議縮減 10% 開支共體時艱。`, color: 'text-red-700', bg: 'bg-red-50', border: 'border-red-300', recommendedMonthly: Math.round(targetMonthly - diff), bonus: -diff };
+                        if (r < lowerLimit) return { state: 'success', title: '🎉 牛市紅利！觸發加薪護欄', desc: `目前successBadge已低於安全護欄範圍{rangeText}！符合通膨加薪條件，犒賞自己吧！`, color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-300', recommendedMonthly: Math.round(targetMonthly + diff), bonus: diff };
                         
-                        return { state: 'normal', title: '✅ 穩健區間 (維持現狀)', desc: `目前${normalBadge}落在安全護欄範圍${rangeText}內。維持原本的預算計畫即可。`, color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-300', recommendedMonthly: Math.round(targetMonthly), bonus: 0 };
+                        return { state: 'normal', title: '✅ 穩健區間 (維持現狀)', desc: `目前normalBadge落在安全護欄範圍{rangeText}內。維持原本的預算計畫即可。`, color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-300', recommendedMonthly: Math.round(targetMonthly), bonus: 0 };
                     },
 
                     lockRetirementBase(customDate) {
@@ -1468,7 +1635,7 @@ html {
                             this.baseRetirementDate = customDate.replace(/-/g, '/');
                         } else {
                             const pad = n => String(n).padStart(2, '0'); const d = new Date();
-                            this.baseRetirementDate = `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())}`; 
+                            this.baseRetirementDate = `d.getFullYear()/{pad(d.getMonth()+1)}/${pad(d.getDate())}`; 
                         }
                         
                         this.saveData(true);
@@ -1479,7 +1646,7 @@ html {
                        🗓️ 自動扣款與計畫排程區塊
                        ========================================================= */
                     checkGlobalReminders() {
-                        let today = new Date(), key = `${today.getFullYear()}-${today.getMonth()}`; 
+                        let today = new Date(), key = `today.getFullYear()-{today.getMonth()}`; 
                         let needsReminder = false;
                         for(let code in this.etfs) { 
                             let etf = this.etfs[code], days = (etf.investmentPlans || []).map(p => parseInt(p.day)).filter(d => !isNaN(d)); 
@@ -1491,7 +1658,7 @@ html {
                     },
 
                     dismissReminder() { 
-                        this.globalSettings.lastRemindedMonth = `${new Date().getFullYear()}-${new Date().getMonth()}`; 
+                        this.globalSettings.lastRemindedMonth = `newDate().getFullYear()-{new Date().getMonth()}`; 
                         this.showUpdateReminder = false; 
                         this.saveData(false); 
                     },
@@ -1523,15 +1690,10 @@ html {
                             currDate.setDate(currDate.getDate() + 1);
                         }
                         
-                        if (logs.length > 0) { 
-                            this.newLogs = logs; this.showLogs = true; 
-                            this.lastCheckDate = new Date().getTime(); 
-                            this.saveData(false); // 真的有新增扣款才備份上雲端
-                        } else {
-                            this.lastCheckDate = new Date().getTime(); 
-                            // 沒事只更新日期，只存本機，【絕對不觸發】雲端備份
-                            try { localStorage.setItem('THH_ETF_Data_V1', JSON.stringify({ etfs: this.etfs, global: this.globalSettings, homePrices: this.homePrices })); } catch (e) {}
-                        }
+                        if (logs.length > 0) { this.newLogs = logs; this.showLogs = true; }
+                        this.lastCheckDate = new Date().getTime(); 
+                        this.saveData(false);
+                    },
 
                     /* =========================================================
                        📉 詳細頁 K 線圖表繪製區塊
@@ -1778,7 +1940,7 @@ html {
                         let sortedTxns = [...this.transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
                         
                         sortedTxns.forEach(t => { 
-                            csvContent += `${t.date},${typeMap[t.action] || t.action},${t.price||0},${t.shares||0},${t.amount||0}\n`; 
+                            csvContent += `t.date,{typeMap[t.action] || t.action},t.price||0,{t.shares||0},${t.amount||0}\n`; 
                         });
                         
                         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -1821,7 +1983,7 @@ html {
                                     if (dateParts.length === 3) { 
                                         let y = dateParts[0]; 
                                         if (y.length <= 3 && parseInt(y) > 0) y = (parseInt(y) + 1911).toString(); 
-                                        rawDate = `${y}-${dateParts[1].padStart(2, '0')}-${dateParts[2].padStart(2, '0')}`; 
+                                        rawDate = `y-{dateParts[1].padStart(2, '0')}-${dateParts[2].padStart(2, '0')}`; 
                                     }
                                     parsed.push({ id: Date.now() + i, date: rawDate, action: action, price: price, shares: shares, amount: amount });
                                 }
