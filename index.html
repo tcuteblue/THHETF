@@ -1453,10 +1453,10 @@ html {
                         let successBadge = `<span class="inline-block text-base font-bold px-2 py-0.5 mx-1 rounded-lg shadow-sm border text-emerald-700 bg-emerald-100 border-emerald-300">實質提領 ${currentRateStr}%</span>`;
                         let normalBadge = `<span class="inline-block text-base font-bold px-2 py-0.5 mx-1 rounded-lg shadow-sm border text-blue-700 bg-blue-100 border-blue-300">實質提領 ${currentRateStr}%</span>`;
                         
-                        if (r > upperLimit) return { state: 'danger', title: '🚨 熊市警戒！觸發保本護欄', desc: `目前dangerBadge已飆升超越安全護欄範圍{rangeText}！建議縮減 10% 開支共體時艱。`, color: 'text-red-700', bg: 'bg-red-50', border: 'border-red-300', recommendedMonthly: Math.round(targetMonthly - diff), bonus: -diff };
-                        if (r < lowerLimit) return { state: 'success', title: '🎉 牛市紅利！觸發加薪護欄', desc: `目前successBadge已低於安全護欄範圍{rangeText}！符合通膨加薪條件，犒賞自己吧！`, color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-300', recommendedMonthly: Math.round(targetMonthly + diff), bonus: diff };
+                        if (r > upperLimit) return { state: 'danger', title: '🚨 熊市警戒！觸發保本護欄', desc: `目前${dangerBadge}已飆升超越安全護欄範圍${rangeText}！建議縮減 10% 開支共體時艱。`, color: 'text-red-700', bg: 'bg-red-50', border: 'border-red-300', recommendedMonthly: Math.round(targetMonthly - diff), bonus: -diff };
+                        if (r < lowerLimit) return { state: 'success', title: '🎉 牛市紅利！觸發加薪護欄', desc: `目前${successBadge}已低於安全護欄範圍${rangeText}！符合通膨加薪條件，犒賞自己吧！`, color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-300', recommendedMonthly: Math.round(targetMonthly + diff), bonus: diff };
                         
-                        return { state: 'normal', title: '✅ 穩健區間 (維持現狀)', desc: `目前normalBadge落在安全護欄範圍{rangeText}內。維持原本的預算計畫即可。`, color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-300', recommendedMonthly: Math.round(targetMonthly), bonus: 0 };
+                        return { state: 'normal', title: '✅ 穩健區間 (維持現狀)', desc: `目前${normalBadge}落在安全護欄範圍${rangeText}內。維持原本的預算計畫即可。`, color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-300', recommendedMonthly: Math.round(targetMonthly), bonus: 0 };
                     },
 
                     lockRetirementBase(customDate) {
@@ -1468,7 +1468,7 @@ html {
                             this.baseRetirementDate = customDate.replace(/-/g, '/');
                         } else {
                             const pad = n => String(n).padStart(2, '0'); const d = new Date();
-                            this.baseRetirementDate = `d.getFullYear()/{pad(d.getMonth()+1)}/${pad(d.getDate())}`; 
+                            this.baseRetirementDate = `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())}`; 
                         }
                         
                         this.saveData(true);
@@ -1479,7 +1479,7 @@ html {
                        🗓️ 自動扣款與計畫排程區塊
                        ========================================================= */
                     checkGlobalReminders() {
-                        let today = new Date(), key = `today.getFullYear()-{today.getMonth()}`; 
+                        let today = new Date(), key = `${today.getFullYear()}-${today.getMonth()}`; 
                         let needsReminder = false;
                         for(let code in this.etfs) { 
                             let etf = this.etfs[code], days = (etf.investmentPlans || []).map(p => parseInt(p.day)).filter(d => !isNaN(d)); 
@@ -1491,7 +1491,7 @@ html {
                     },
 
                     dismissReminder() { 
-                        this.globalSettings.lastRemindedMonth = `newDate().getFullYear()-{new Date().getMonth()}`; 
+                        this.globalSettings.lastRemindedMonth = `${new Date().getFullYear()}-${new Date().getMonth()}`; 
                         this.showUpdateReminder = false; 
                         this.saveData(false); 
                     },
@@ -1523,10 +1523,15 @@ html {
                             currDate.setDate(currDate.getDate() + 1);
                         }
                         
-                        if (logs.length > 0) { this.newLogs = logs; this.showLogs = true; }
-                        this.lastCheckDate = new Date().getTime(); 
-                        this.saveData(false);
-                    },
+                        if (logs.length > 0) { 
+                            this.newLogs = logs; this.showLogs = true; 
+                            this.lastCheckDate = new Date().getTime(); 
+                            this.saveData(false); // 真的有新增扣款才備份上雲端
+                        } else {
+                            this.lastCheckDate = new Date().getTime(); 
+                            // 沒事只更新日期，只存本機，【絕對不觸發】雲端備份
+                            try { localStorage.setItem('THH_ETF_Data_V1', JSON.stringify({ etfs: this.etfs, global: this.globalSettings, homePrices: this.homePrices })); } catch (e) {}
+                        }
 
                     /* =========================================================
                        📉 詳細頁 K 線圖表繪製區塊
@@ -1773,7 +1778,7 @@ html {
                         let sortedTxns = [...this.transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
                         
                         sortedTxns.forEach(t => { 
-                            csvContent += `t.date,{typeMap[t.action] || t.action},t.price||0,{t.shares||0},${t.amount||0}\n`; 
+                            csvContent += `${t.date},${typeMap[t.action] || t.action},${t.price||0},${t.shares||0},${t.amount||0}\n`; 
                         });
                         
                         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -1816,7 +1821,7 @@ html {
                                     if (dateParts.length === 3) { 
                                         let y = dateParts[0]; 
                                         if (y.length <= 3 && parseInt(y) > 0) y = (parseInt(y) + 1911).toString(); 
-                                        rawDate = `y-{dateParts[1].padStart(2, '0')}-${dateParts[2].padStart(2, '0')}`; 
+                                        rawDate = `${y}-${dateParts[1].padStart(2, '0')}-${dateParts[2].padStart(2, '0')}`; 
                                     }
                                     parsed.push({ id: Date.now() + i, date: rawDate, action: action, price: price, shares: shares, amount: amount });
                                 }
