@@ -428,17 +428,20 @@ html {
                         if(this.currentView === 'home' && Object.keys(this.etfs).length > 0) this.fetchHomePrices();
                     },
 
-                    saveData() {
+                    saveData(shouldAutoBackup = false) {
                         if (this.currentView === 'detail' && this.activeETF) {
                             this.etfs[this.activeETF] = { baseShares: this.baseShares, baseAvgCost: this.baseAvgCost, startDate: this.startDate, lastCheckDate: this.lastCheckDate, investmentPlans: this.investmentPlans, transactions: this.transactions, isBlueLight: this.isBlueLight, isPanic: this.isPanic, baseRetirementMV: this.baseRetirementMV, baseRetirementDate: this.baseRetirementDate, swrRate: this.swrRate };
                         }
                         // 本機依然完整寫入 (保留 homePrices 供畫面顯示)
                         try { localStorage.setItem('THH_ETF_Data_V1', JSON.stringify({ etfs: this.etfs, global: this.globalSettings, homePrices: this.homePrices })); } catch (e) {}
 
-                        // 🌟 GAS 雲端自動備份機制 (修改資料後 3 秒推送到 Google Drive)
-                        if (this.gasUrl) {
-                            if(this.cloudBackupTimer) clearTimeout(this.cloudBackupTimer);
-                            this.cloudBackupTimer = setTimeout(() => { this.cloudBackup(true); }, 3000);
+                        // 只有明確指定的重大資料變更才觸發雲端自動備份。
+                        // 瀏覽頁面、載入資料、更新股價、切換頁籤或自動檢查扣款日期都不應觸發。
+                        if (shouldAutoBackup && this.gasUrl) {
+                            if (this.cloudBackupTimer) clearTimeout(this.cloudBackupTimer);
+                            this.cloudBackupTimer = setTimeout(() => {
+                                this.cloudBackup(true);
+                            }, 3000);
                         }
                     },
 
@@ -539,7 +542,7 @@ html {
                                 vol = res.meta?.regularMarketVolume;
                                 
                                 const d = new Date(targetTimestamp * 1000);
-                                timeStr = `d.getFullYear()/{String(d.getMonth() + 1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} String(d.getHours()).padStart(2,'0'):{String(d.getMinutes()).padStart(2,'0')}`;
+                                timeStr = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
                             }
                             
                             // 2️⃣ 最終防線：如果 Yahoo 失敗，啟動台灣證交所備援
@@ -550,7 +553,7 @@ html {
                                     if (res.z && res.z !== '-') price = parseFloat(res.z);
                                     if (res.y && res.y !== '-') prev = parseFloat(res.y);
                                     if (res.v && res.v !== '-') vol = parseFloat(res.v) * 1000;
-                                    timeStr = `證交所備援 res.d.substring(4,6)/{res.d.substring(6,8)} ${res.t}`;
+                                    timeStr = `證交所備援 ${res.d.substring(4,6)}/${res.d.substring(6,8)} ${res.t}`;
                                 }
                             }
                         } catch (error) {
@@ -1075,7 +1078,7 @@ html {
                         if(this.etfs[code]) return this.showMsg("此標的已經在您的追蹤清單中！");
                         
                         this.etfs[code] = this.getDefaultETFState(); 
-                        this.saveData(true); 
+                        this.saveData(false); 
                         this.newETFCode = ''; this.showAddETFModal = false; this.fetchHomePrices();
                         this.showMsg(`已成功新增 ${code} 至存股清單！`);
                     },
@@ -1623,7 +1626,7 @@ html {
                         if (r > upperLimit) return { state: 'danger', title: '🚨 熊市警戒！觸發保本護欄', desc: `目前dangerBadge已飆升超越安全護欄範圍{rangeText}！建議縮減 10% 開支共體時艱。`, color: 'text-red-700', bg: 'bg-red-50', border: 'border-red-300', recommendedMonthly: Math.round(targetMonthly - diff), bonus: -diff };
                         if (r < lowerLimit) return { state: 'success', title: '🎉 牛市紅利！觸發加薪護欄', desc: `目前successBadge已低於安全護欄範圍{rangeText}！符合通膨加薪條件，犒賞自己吧！`, color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-300', recommendedMonthly: Math.round(targetMonthly + diff), bonus: diff };
                         
-                        return { state: 'normal', title: '✅ 穩健區間 (維持現狀)', desc: `目前normalBadge落在安全護欄範圍{rangeText}內。維持原本的預算計畫即可。`, color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-300', recommendedMonthly: Math.round(targetMonthly), bonus: 0 };
+                        return { state: 'normal', title: '✅ 穩健區間 (維持現狀)', desc: `目前 ${normalBadge} 落在安全護欄範圍 ${rangeText} 內。維持原本的預算計畫即可。`, color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-300', recommendedMonthly: Math.round(targetMonthly), bonus: 0 };
                     },
 
                     lockRetirementBase(customDate) {
@@ -1635,7 +1638,7 @@ html {
                             this.baseRetirementDate = customDate.replace(/-/g, '/');
                         } else {
                             const pad = n => String(n).padStart(2, '0'); const d = new Date();
-                            this.baseRetirementDate = `d.getFullYear()/{pad(d.getMonth()+1)}/${pad(d.getDate())}`; 
+                            this.baseRetirementDate = `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())}`; 
                         }
                         
                         this.saveData(true);
@@ -1646,7 +1649,7 @@ html {
                        🗓️ 自動扣款與計畫排程區塊
                        ========================================================= */
                     checkGlobalReminders() {
-                        let today = new Date(), key = `today.getFullYear()-{today.getMonth()}`; 
+                        let today = new Date(), key = `${today.getFullYear()}-${today.getMonth()}`; 
                         let needsReminder = false;
                         for(let code in this.etfs) { 
                             let etf = this.etfs[code], days = (etf.investmentPlans || []).map(p => parseInt(p.day)).filter(d => !isNaN(d)); 
@@ -1658,7 +1661,7 @@ html {
                     },
 
                     dismissReminder() { 
-                        this.globalSettings.lastRemindedMonth = `newDate().getFullYear()-{new Date().getMonth()}`; 
+                        this.globalSettings.lastRemindedMonth = `${new Date().getFullYear()}-${new Date().getMonth()}`; 
                         this.showUpdateReminder = false; 
                         this.saveData(false); 
                     },
@@ -1674,7 +1677,7 @@ html {
 
                         while (currDate <= today) {
                             if (currDate.getTime() >= planStart) {
-                                let plans = this.investmentPlans.filter(p => p.day === currDate.getDate() && p.amount > 0);
+                                let plans = this.investmentPlans.filter(p => Number(p.day) === currDate.getDate() && Number(p.amount) > 0);
                                 for (let p of plans) {
                                     let execPrice = this.currentPrice, t = currDate.getTime();
                                     for (let d of this.cachedHistoricalData) {
@@ -1690,9 +1693,13 @@ html {
                             currDate.setDate(currDate.getDate() + 1);
                         }
                         
-                        if (logs.length > 0) { this.newLogs = logs; this.showLogs = true; }
-                        this.lastCheckDate = new Date().getTime(); 
-                        this.saveData(false);
+                        if (logs.length > 0) {
+                            this.newLogs = logs;
+                            this.showLogs = true;
+                        }
+                        this.lastCheckDate = new Date().getTime();
+                        // 日期檢查本身只存本機；真的產生扣款明細才安排雲端備份。
+                        this.saveData(logs.length > 0);
                     },
 
                     /* =========================================================
@@ -2007,7 +2014,7 @@ html {
                        ✍️ 投資計畫與明細手動編輯區塊
                        ========================================================= */
                     addPlan() { this.investmentPlans.push({ id: Date.now(), day: 15, amount: 10000 }); },
-                    removePlan(id) { this.investmentPlans = this.investmentPlans.filter(p => p.id !== id); this.saveData(true); },
+                    removePlan(id) { this.investmentPlans = this.investmentPlans.filter(p => p.id !== id); this.saveData(false); },
 
                     executeManualAdd() {
                         if (this.manualAction === 'dividend') {
@@ -2161,7 +2168,7 @@ html {
                         <button @click="installApp()" class="w-full sm:w-auto px-4 py-2 h-10 bg-white border border-slate-200 rounded-xl shadow-sm text-blue-500 font-bold text-base hover:text-blue-700 hover:bg-blue-50 hover:-translate-y-1 transition-all flex justify-center items-center">
                             <i class="fa-solid fa-download mr-2"></i> 安裝 APP
                         </button>
-                        <button @click="globalSettings.hideInstallBtn = true; saveData(false);" class="w-10 h-10 bg-slate-100 text-slate-400 hover:bg-slate-200 hover:text-slate-600 rounded-xl flex items-center justify-center transition-all shadow-sm shrink-0">
+                        <button @click="globalSettings.hideInstallBtn = true; saveData(true);" class="w-10 h-10 bg-slate-100 text-slate-400 hover:bg-slate-200 hover:text-slate-600 rounded-xl flex items-center justify-center transition-all shadow-sm shrink-0">
                             <i class="fa-solid fa-xmark"></i>
                         </button>
                     </div>
@@ -3245,11 +3252,11 @@ html {
         <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div class="bg-slate-50 p-4 rounded-xl shadow-inner border border-slate-100">
             <label class="block text-sm font-bold text-slate-500 mb-2">期初庫存量 (股)</label>
-            <input type="number" step="1" x-model.number="baseShares" @change="saveData(true)" class="w-full px-4 py-3 bg-white border border-slate-200 rounded-lg font-bold text-slate-700 text-lg">
+            <input type="number" step="1" x-model.number="baseShares" @change="saveData(false)" class="w-full px-4 py-3 bg-white border border-slate-200 rounded-lg font-bold text-slate-700 text-lg">
           </div>
           <div class="bg-slate-50 p-4 rounded-xl shadow-inner border border-slate-100">
             <label class="block text-sm font-bold text-slate-500 mb-2">期初買入均價 (元)</label>
-            <input type="number" step="0.01" x-model.number="baseAvgCost" @change="saveData(true)" class="w-full px-4 py-3 bg-white border border-slate-200 rounded-lg font-bold text-slate-700 text-lg">
+            <input type="number" step="0.01" x-model.number="baseAvgCost" @change="saveData(false)" class="w-full px-4 py-3 bg-white border border-slate-200 rounded-lg font-bold text-slate-700 text-lg">
           </div>
         </div>
       </div>
@@ -3260,7 +3267,7 @@ html {
         <div class="space-y-5">
           <div class="bg-slate-50 p-4 rounded-xl shadow-inner border border-slate-100">
             <label class="block text-sm font-bold text-slate-500 mb-2">自動記帳起始日</label>
-            <input type="date" x-model="startDate" @change="saveData(true)" class="w-full px-4 py-3 bg-white border border-slate-200 rounded-lg font-medium text-lg">
+            <input type="date" x-model="startDate" @change="saveData(false)" class="w-full px-4 py-3 bg-white border border-slate-200 rounded-lg font-medium text-lg">
           </div>
           <div>
             <label class="block text-base font-bold text-slate-600 mb-3">扣款日與金額</label>
@@ -3270,12 +3277,12 @@ html {
                   <div class="flex flex-wrap items-center gap-y-3 gap-x-3">
                     <div class="flex items-center gap-2 whitespace-nowrap bg-white px-3 py-2 rounded-lg border shadow-inner">
                       <span class="text-sm font-bold text-slate-500">每月</span>
-                      <input type="number" min="1" max="31" step="1" x-model.number="plan.day" @change="saveData(true)" class="w-14 px-1 py-1 text-center font-bold text-indigo-600 text-lg bg-transparent border-none focus:ring-0">
+                      <input type="number" min="1" max="31" step="1" x-model.number="plan.day" @change="saveData(false)" class="w-14 px-1 py-1 text-center font-bold text-indigo-600 text-lg bg-transparent border-none focus:ring-0">
                       <span class="text-sm font-bold text-slate-500">日</span>
                     </div>
                     <div class="flex items-center gap-2 whitespace-nowrap bg-white px-3 py-2 rounded-lg border shadow-inner">
                       <span class="text-sm font-bold text-slate-500">扣款</span>
-                      <input type="number" min="0" step="1" x-model.number="plan.amount" @change="saveData(true)" class="w-24 sm:w-28 px-1 py-1 text-right font-bold text-slate-700 text-lg bg-transparent border-none focus:ring-0">
+                      <input type="number" min="0" step="1" x-model.number="plan.amount" @change="saveData(false)" class="w-24 sm:w-28 px-1 py-1 text-right font-bold text-slate-700 text-lg bg-transparent border-none focus:ring-0">
                       <span class="text-sm font-bold text-slate-500">元</span>
                     </div>
                   </div>
