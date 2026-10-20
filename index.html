@@ -280,7 +280,8 @@ html {
                     /* === 個股詳細資料存儲區 === */
                     baseShares: 0, baseAvgCost: 0, startDate: '', lastCheckDate: null, 
                     investmentPlans: [], transactions: [], 
-                    baseRetirementMV: 0, baseRetirementDate: '', swrRate: 4.0,
+                    baseRetirementMV: 0, baseRetirementDate: '', swrRate: 4.0, customLockDate: '',
+                    manualAction: 'buy', manualAmount: null, manualDate: '', manualPrice: null, manualShares: null,
                     isFullscreenHistory: false, expandedYears: [new Date().getFullYear().toString()],
                     
                     /* === 雲端備份控制狀態與網址 === */
@@ -315,7 +316,7 @@ html {
                     isFetching: false, isFetchingPrice: false, realTimeFetched: false, priceUpdateTime: '',   
                     historicalDataLoaded: false, calc_k: 0, calc_ma20: 0, calc_ma2400: null, calc_ma240: 0,
                     pbRatio: null, marginBalance: '自動抓取失敗 (網路連線或API阻擋)，請手動確認。', etfDiscount: null, isEstimateDiscount: false,
-                    showLogs: false, newLogs: [], showUpdateReminder: false, showChart: false, priceMA5: false, priceMA20: false, priceMA60: false, chartRendered: false, chartData: [], ma240Data: [], ma2400Data: [],
+                    showLogs: false, newLogs: [], showUpdateReminder: false, showChart: false, priceMA5: false, priceMA20: false, priceMA60: false, volMA5: false, volMA20: false, volMA60: false, priceMA240: false, priceMA2400: false, showKD: false, expandKD: false, chartRendered: false, chartData: [], ma240Data: [], ma2400Data: [],
                     cachedHistoricalData: null, downloadDebounceTimer: null,
 
                     /* =========================================================
@@ -443,6 +444,22 @@ html {
                                 this.cloudBackup(true);
                             }, 3000);
                         }
+                    },
+
+                    // 只有交易明細已具備有效日期與必要數值時，才將編輯動作列為自動備份觸發點。
+                    isValidTransactionForBackup(txn) {
+                        if (!txn || !txn.date || !Number.isFinite(new Date(txn.date).getTime())) return false;
+                        const action = txn.action || 'buy';
+                        const amount = Number(txn.amount);
+                        const shares = Number(txn.shares);
+                        const price = Number(txn.price);
+                        if (action === 'dividend') return Number.isFinite(amount) && amount > 0;
+                        if (action === 'sync') return Number.isFinite(shares) && Number.isFinite(amount) && (shares !== 0 || amount !== 0);
+                        return Number.isFinite(price) && price > 0 && Number.isFinite(shares) && shares > 0 && Number.isFinite(amount) && amount > 0;
+                    },
+
+                    saveTransactionData(txn) {
+                        this.saveData(this.isValidTransactionForBackup(txn));
                     },
 
                     // 雲端手動/自動備份函式
@@ -599,20 +616,35 @@ html {
                        📈 圖表繪製與歷史資料計算區塊
                        ========================================================= */
                     async silentFetchMissingHistory() {
+                        // 首頁資產走勢也要修補「快取存在、但早期資料不完整」的情況；不能只在快取少於 10 筆時才抓取。
                         for (let code in this.etfs) {
-                            let cached = null;
-                            try { cached = JSON.parse(localStorage.getItem(`THH_History_V2_${code}`)); } catch(e){}
-                            if (!cached || cached.length < 10) {
-                                try {
-                                    const yfData = await this._fetchWithProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${code}.TW?range=max&interval=1d`);
-                                    if (yfData?.chart?.result?.[0]) {
-                                        let res = yfData.chart.result[0], t = res.timestamp, q = res.indicators.quote[0];
-                                        let fetched = [];
-                                        if (t && q) for(let i=0; i<t.length; i++) if(q.close[i] != null) fetched.push({ time: t[i]*1000, close: q.close[i] });
-                                        if (code === '0050') { const splitTime = new Date('2025-06-18T00:00:00+08:00').getTime(); fetched = fetched.map(i => i.time < splitTime ? { ...i, close: i.close/4 } : i); }
-                                        try { localStorage.setItem(`THH_History_V2_${code}`, JSON.stringify(fetched)); } catch(e){}
-                                    }
-                                } catch(e){}
+                            let cached = [];
+                            try {
+                                const raw = localStorage.getItem(`THH_History_V2_${code}`);
+                                cached = raw ? JSON.parse(raw) : [];
+                                if (!Array.isArray(cached)) cached = [];
+                            } catch (e) { cached = []; }
+                            try {
+                                const yfData = await this._fetchWithProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${code}.TW?range=max&interval=1d`);
+                                const res = yfData?.chart?.result?.[0];
+                                const timestamps = res?.timestamp;
+                                const quote = res?.indicators?.quote?.[0];
+                                if (!timestamps || !quote) continue;
+                                const byDate = new Map();
+                                cached.forEach(item => {
+                                    if (item && item.time != null && Number(item.close) > 0) byDate.set(this.getLocalYMD(new Date(item.time)), item);
+                                });
+                                for (let i = 0; i < timestamps.length; i++) {
+                                    const close = quote.close?.[i];
+                                    if (close == null || !Number.isFinite(Number(close)) || Number(close) <= 0) continue;
+                                    const item = { time: Number(timestamps[i]) * 1000, open: Number(quote.open?.[i]) || Number(close), close: Number(close), high: Number(quote.high?.[i]) || Number(close), low: Number(quote.low?.[i]) || Number(close), volume: Number(quote.volume?.[i]) || 0 };
+                                    byDate.set(this.getLocalYMD(new Date(item.time)), item);
+                                }
+                                const merged = Array.from(byDate.values()).sort((a, b) => Number(a.time) - Number(b.time));
+                                if (merged.length > 0) { try { localStorage.setItem(`THH_History_V2_${code}`, JSON.stringify(merged)); } catch (e) {} }
+                            } catch (e) {
+                                // 來源暫時失敗時保留既有快取，不清空歷史資料。
+                                console.warn(`[歷史快取] ${code} 補齊失敗，保留既有資料。`, e);
                             }
                         }
                     },
@@ -1346,53 +1378,40 @@ html {
                             await this.fetchRealTimePrice();
                             if (this.activeETF !== requestETF) return; 
 
-                            // 計算需要抓取多久的歷史資料
-                            let startStr = '', yfRange = 'max';
-                            if (this.cachedHistoricalData?.length > 0) {
-                                let lastDate = new Date(this.cachedHistoricalData[this.cachedHistoricalData.length - 1].time); 
-                                lastDate.setDate(lastDate.getDate() - 2); 
-                                startStr = this.getLocalYMD(lastDate);
-                                let diff = (Date.now() - lastDate.getTime()) / 86400000; 
-                                yfRange = diff <= 5 ? '5d' : diff <= 30 ? '1mo' : diff <= 90 ? '3mo' : diff <= 365 ? '1y' : 'max';
-                            } else { 
-                                const d = new Date(); 
-                                d.setFullYear(d.getFullYear() - 12); 
-                                startStr = this.getLocalYMD(d); 
-                            }
-
                             let fetched = [];
-                            
-                            // 優先嘗試使用 FinMind 抓取台灣 50 資料
+                            const byFetchedDate = new Map();
+                            // 先嘗試 FinMind（目前只對 0050 啟用），即使有回傳資料，也再用 Yahoo 補齊缺漏日期。
                             const fmData = this.activeETF === '0050' ? await this._fetchSimpleJson(`https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${this.activeETF}&startdate=2000-01-01`) : null;
                             if (this.activeETF !== requestETF) return;
-
-                            if (fmData?.msg === 'success' && fmData.data?.length > 0) { 
-                                fetched = fmData.data.map(i => ({ 
-                                    time: new Date(i.date).getTime(), open: i.open, close: i.close, high: i.max, low: i.min, volume: i.Trading_Volume 
-                                })); 
-                            } else {
-                                // 備案：使用 Yahoo Finance 抓取
-                                const yfData = await this._fetchWithProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${this.activeETF}.TW?range=max&interval=1d`);
-                                if (this.activeETF !== requestETF) return;
-
-                                if (yfData?.chart?.result?.[0]) { 
-                                    const res = yfData.chart.result[0], t = res.timestamp, q = res.indicators.quote[0]; 
-                                    if (t && q) {
-                                        for(let i=0; i<t.length; i++) {
-                                            if(q.close[i] != null) {
-                                                fetched.push({ time: t[i]*1000, open: q.open[i]||q.close[i], close: q.close[i], high: q.high[i], low: q.low[i], volume: q.volume[i]||0 }); 
-                                            }
-                                        }
-                                    }
+                            if (fmData?.msg === 'success' && Array.isArray(fmData.data)) {
+                                const splitTime = new Date('2025-06-18T00:00:00+08:00').getTime();
+                                for (const i of fmData.data) {
+                                    const time = new Date(i.date).getTime(), close = Number(i.close);
+                                    if (!Number.isFinite(time) || !Number.isFinite(close) || close <= 0) continue;
+                                    const factor = this.activeETF === '0050' && time < splitTime ? 4 : 1;
+                                    const item = { time, open: (Number(i.open) || close) / factor, close: close / factor, high: (Number(i.max) || close) / factor, low: (Number(i.min) || close) / factor, volume: Number(i.Trading_Volume) || 0 };
+                                    byFetchedDate.set(this.getLocalYMD(new Date(time)), item);
                                 }
                             }
-                            
-                            // 針對 0050 進行股票分割的價格調整 (2025-06-18)
-                            if (this.activeETF === '0050') { 
-                                const splitTime = new Date('2025-06-18T00:00:00+08:00').getTime(); 
-                                fetched = fetched.map(i => i.time < splitTime ? { ...i, open: i.open/4, close: i.close/4, high: i.high/4, low: i.low/4 } : i); 
+                            // Yahoo 的 max 日線資料用來補齊 FinMind 或舊快取缺少的日期。
+                            try {
+                                const yfData = await this._fetchWithProxy(`https://query1.finance.yahoo.com/v8/finance/chart/${requestETF}.TW?range=max&interval=1d`);
+                                if (this.activeETF !== requestETF) return;
+                                const res = yfData?.chart?.result?.[0], timestamps = res?.timestamp, quote = res?.indicators?.quote?.[0];
+                                if (timestamps && quote) {
+                                    for (let i = 0; i < timestamps.length; i++) {
+                                        const close = quote.close?.[i];
+                                        if (close == null || !Number.isFinite(Number(close)) || Number(close) <= 0) continue;
+                                        const item = { time: Number(timestamps[i]) * 1000, open: Number(quote.open?.[i]) || Number(close), close: Number(close), high: Number(quote.high?.[i]) || Number(close), low: Number(quote.low?.[i]) || Number(close), volume: Number(quote.volume?.[i]) || 0 };
+                                        // 同一天以 Yahoo 資料優先；只在 FinMind 出現的日期仍保留。
+                                        byFetchedDate.set(this.getLocalYMD(new Date(item.time)), item);
+                                    }
+                                }
+                            } catch (e) {
+                                console.warn(`[歷史資料] ${requestETF} 的 Yahoo 補齊來源暫時失敗。`, e);
                             }
-                            
+                            fetched = Array.from(byFetchedDate.values()).sort((a, b) => Number(a.time) - Number(b.time));
+
                             // 合併新舊資料並去重
                             let map = new Map();
                             if (this.cachedHistoricalData) {
@@ -1671,7 +1690,7 @@ html {
                         let today = new Date().setHours(0,0,0,0), lastCheck = new Date(this.lastCheckDate).setHours(0,0,0,0);
                         if (lastCheck >= today) return;
                         
-                        let logs = [], currDate = new Date(lastCheck); 
+                        let logs = [], newTransactionsCount = 0, currDate = new Date(lastCheck);
                         currDate.setDate(currDate.getDate() + 1);
                         let planStart = this.startDate ? new Date(this.startDate).setHours(0,0,0,0) : 0;
 
@@ -1683,10 +1702,20 @@ html {
                                     for (let d of this.cachedHistoricalData) {
                                         if (d.time >= t) { execPrice = d.close; break; }
                                     }
-                                    execPrice = parseFloat(Number(execPrice).toFixed(2));
-                                    let shares = Math.floor(p.amount / execPrice), cost = Math.round(shares * execPrice);
-                                    
+                                    execPrice = Number(execPrice);
+                                    if (!Number.isFinite(execPrice) || execPrice <= 0) {
+                                        logs.push(`⚠️ ${currDate.toLocaleDateString()}：未取得有效股價，略過本次自動扣款。`);
+                                        continue;
+                                    }
+                                    execPrice = Number(execPrice.toFixed(2));
+                                    let shares = Math.floor(Number(p.amount) / execPrice);
+                                    let cost = Math.round(shares * execPrice);
+                                    if (!Number.isFinite(shares) || shares <= 0 || !Number.isFinite(cost) || cost <= 0) {
+                                        logs.push(`⚠️ ${currDate.toLocaleDateString()}：扣款金額不足以買進 1 股，未新增交易明細。`);
+                                        continue;
+                                    }
                                     this.transactions.push({ id: Date.now() + Math.random(), date: this.getLocalYMD(currDate), amount: cost, shares, price: execPrice, type: 'auto', action: 'buy' });
+                                    newTransactionsCount++;
                                     logs.push(`📅 ${currDate.toLocaleDateString()}：買入 ${shares} 股 (扣 ${cost} 元)`);
                                 }
                             }
@@ -1699,7 +1728,7 @@ html {
                         }
                         this.lastCheckDate = new Date().getTime();
                         // 日期檢查本身只存本機；真的產生扣款明細才安排雲端備份。
-                        this.saveData(logs.length > 0);
+                        this.saveData(newTransactionsCount > 0);
                     },
 
                     /* =========================================================
@@ -1947,7 +1976,7 @@ html {
                         let sortedTxns = [...this.transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
                         
                         sortedTxns.forEach(t => { 
-                            csvContent += `t.date,{typeMap[t.action] || t.action},t.price||0,{t.shares||0},${t.amount||0}\n`; 
+                            csvContent += `"${t.date || ''}","${typeMap[t.action] || t.action || ''}",${Number(t.price) || 0},${Number(t.shares) || 0},${Number(t.amount) || 0}\n`; 
                         });
                         
                         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -1990,7 +2019,7 @@ html {
                                     if (dateParts.length === 3) { 
                                         let y = dateParts[0]; 
                                         if (y.length <= 3 && parseInt(y) > 0) y = (parseInt(y) + 1911).toString(); 
-                                        rawDate = `y-{dateParts[1].padStart(2, '0')}-${dateParts[2].padStart(2, '0')}`; 
+                                        rawDate = `${y}-${dateParts[1].padStart(2, '0')}-${dateParts[2].padStart(2, '0')}`; 
                                     }
                                     parsed.push({ id: Date.now() + i, date: rawDate, action: action, price: price, shares: shares, amount: amount });
                                 }
@@ -2002,39 +2031,47 @@ html {
                         reader.readAsText(file);
                     },
 
-                    confirmCSVImport() { 
-                        this.transactions = [...this.transactions, ...this.csvPreviewData]; 
-                        this.showCSVModal = false; 
-                        this.csvPreviewData = []; 
-                        this.saveData(true); 
-                        this.showMsg("✅ CSV 歷史明細匯入成功！"); 
+                    confirmCSVImport() {
+                        if (!Array.isArray(this.csvPreviewData) || this.csvPreviewData.length === 0) {
+                            this.showCSVModal = false;
+                            this.csvPreviewData = [];
+                            return this.showMsg('⚠️ 沒有可匯入的有效明細，未新增資料。');
+                        }
+                        const imported = this.csvPreviewData.slice();
+                        this.transactions = [...this.transactions, ...imported];
+                        this.showCSVModal = false;
+                        this.csvPreviewData = [];
+                        this.saveData(true);
+                        this.showMsg(`✅ 已匯入 ${imported.length} 筆歷史明細！`);
                     },
 
                     /* =========================================================
                        ✍️ 投資計畫與明細手動編輯區塊
                        ========================================================= */
-                    addPlan() { this.investmentPlans.push({ id: Date.now(), day: 15, amount: 10000 }); },
+                    addPlan() { this.investmentPlans.push({ id: Date.now(), day: 15, amount: 10000 }); this.saveData(false); },
                     removePlan(id) { this.investmentPlans = this.investmentPlans.filter(p => p.id !== id); this.saveData(false); },
 
                     executeManualAdd() {
-                        if (this.manualAction === 'dividend') {
-                            if (!this.manualAmount || !this.manualDate) return this.showMsg('請輸入完整的配息日期與總金額！');
+                        const submittedAction = this.manualAction;
+                        if (submittedAction === 'dividend') {
+                            if (!this.manualAmount || !this.manualDate || !Number.isFinite(Number(this.manualAmount)) || Number(this.manualAmount) <= 0) return this.showMsg('請輸入有效的配息日期與正數總金額！');
                             this.transactions.push({ id: Date.now(), date: this.manualDate, shares: 0, price: 0, amount: Math.round(this.manualAmount), action: 'dividend' });
-                        } else if (this.manualAction === 'sync') {
-                            if (this.manualShares == null || this.manualPrice == null || !this.manualDate) return this.showMsg('請輸入校正日期的實際總股數與均價！');
+                        } else if (submittedAction === 'sync') {
+                            if (this.manualShares == null || this.manualPrice == null || !this.manualDate || Number(this.manualShares) < 0 || !Number.isFinite(Number(this.manualPrice)) || Number(this.manualPrice) < 0) return this.showMsg('請輸入有效的校正日期、實際總股數與均價！');
                             let curr = this.inventoryState, targetShares = Math.floor(this.manualShares), targetTotalCost = Math.round(targetShares * parseFloat(this.manualPrice)); 
                             this.transactions.push({ id: Date.now(), date: this.manualDate, shares: targetShares - curr.shares, price: 0, amount: targetTotalCost - curr.totalCost, action: 'sync' });
                             this.showMsg(`✅ 庫存校正已完成！\n自動補足差額股數：${targetShares - curr.shares} 股\n微調成本差額：${targetTotalCost - curr.totalCost} 元`);
                         } else {
-                            if (!this.manualShares || !this.manualPrice || !this.manualDate) return this.showMsg('請輸入完整的日期、單價與股數！');
-                            let finalAmount = this.manualAmount !== null ? Math.round(this.manualAmount) : Math.round(this.manualShares * this.manualPrice); 
-                            this.transactions.push({ id: Date.now(), date: this.manualDate, shares: Math.floor(this.manualShares), price: this.manualPrice, amount: finalAmount, action: this.manualAction });
+                            if (!this.manualShares || !this.manualPrice || !this.manualDate || Number(this.manualShares) <= 0 || Number(this.manualPrice) <= 0) return this.showMsg('請輸入有效的日期、正數單價與正數股數！');
+                            let finalAmount = this.manualAmount !== null ? Math.round(this.manualAmount) : Math.round(this.manualShares * this.manualPrice);
+                            if (!Number.isFinite(finalAmount) || finalAmount < 0) return this.showMsg('總金額不正確，請重新確認！');
+                            this.transactions.push({ id: Date.now(), date: this.manualDate, shares: Math.floor(this.manualShares), price: Number(this.manualPrice), amount: finalAmount, action: submittedAction });
                         }
                         
-                        this.manualShares = this.manualPrice = this.manualAmount = null; 
-                        this.manualAction = 'buy'; 
+                        this.manualShares = this.manualPrice = this.manualAmount = null;
+                        this.manualAction = 'buy';
                         this.saveData(true);
-                        if (this.manualAction !== 'sync') this.showMsg('✅ 交易已存入歷史明細！\n年化報酬率已重新精算。');
+                        if (submittedAction !== 'sync') this.showMsg('✅ 交易已存入歷史明細！\n年化報酬率已重新精算。');
                     },
 
                     toggleYear(year) { 
@@ -3387,10 +3424,10 @@ html {
                     <template x-for="txn in group.txns" :key="txn.id">
                       <div class="flex flex-col gap-3 w-full bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
                         <div class="w-full">
-                          <input type="date" x-model="txn.date" @change="saveData(true)" class="w-full px-3 py-2 text-base font-bold text-slate-600 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-blue-400">
+                          <input type="date" x-model="txn.date" @change="saveTransactionData(txn)" class="w-full px-3 py-2 text-base font-bold text-slate-600 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-blue-400">
                         </div>
                         <div class="flex flex-col md:flex-row gap-2 items-center w-full">
-                          <select x-model="txn.action" @change="if(txn.action!=='dividend'&&txn.action!=='sync') txn.amount=Math.round((txn.price||0)*(txn.shares||0)); saveData(true)" class="w-full md:w-[110px] shrink-0 px-2 py-2 text-base font-bold border rounded-lg outline-none transition-colors" :class="{'text-red-600 bg-red-50 border-red-100':txn.action==='buy', 'text-green-600 bg-green-50 border-green-100':txn.action==='sell', 'text-teal-600 bg-teal-50 border-teal-100':txn.action==='withdraw', 'text-amber-600 bg-amber-50 border-amber-100':txn.action==='dividend', 'text-purple-600 bg-purple-50 border-purple-100':txn.action==='sync'}">
+                          <select x-model="txn.action" @change="if(txn.action!=='dividend'&&txn.action!=='sync') txn.amount=Math.round((txn.price||0)*(txn.shares||0)); saveTransactionData(txn)" class="w-full md:w-[110px] shrink-0 px-2 py-2 text-base font-bold border rounded-lg outline-none transition-colors" :class="{'text-red-600 bg-red-50 border-red-100':txn.action==='buy', 'text-green-600 bg-green-50 border-green-100':txn.action==='sell', 'text-teal-600 bg-teal-50 border-teal-100':txn.action==='withdraw', 'text-amber-600 bg-amber-50 border-amber-100':txn.action==='dividend', 'text-purple-600 bg-purple-50 border-purple-100':txn.action==='sync'}">
                             <option value="buy">📥 買入</option>
                             <option value="sell">➖ 賣出</option>
                             <option value="withdraw">🛍️ 提領</option>
@@ -3400,17 +3437,17 @@ html {
                           <div class="flex flex-1 gap-2 w-full" x-show="txn.action !== 'dividend' && txn.action !== 'sync'">
                             <div class="flex-[3] flex items-center bg-slate-50 border border-slate-200 rounded-lg px-2 overflow-hidden">
                               <span class="text-sm font-bold text-slate-500 mr-2 whitespace-nowrap shrink-0">單價</span>
-                              <input type="number" step="0.01" x-model.number="txn.price" @input="txn.amount=Math.round((txn.price||0)*(txn.shares||0)); saveData(true)" class="w-full py-1.5 text-base font-bold bg-transparent text-right outline-none min-w-0">
+                              <input type="number" step="0.01" x-model.number="txn.price" @input="txn.amount=Math.round((txn.price||0)*(txn.shares||0)); saveTransactionData(txn)" class="w-full py-1.5 text-base font-bold bg-transparent text-right outline-none min-w-0">
                             </div>
                             <div class="flex-[2] flex items-center bg-slate-50 border border-slate-200 rounded-lg px-2 overflow-hidden">
                               <span class="text-sm font-bold text-slate-500 mr-2 whitespace-nowrap shrink-0" x-text="txn.action === 'sync' ? '總股數' : '股數'"></span>
-                              <input type="number" step="1" x-model.number="txn.shares" @input="if(txn.action!=='dividend'&&txn.action!=='sync') txn.amount=Math.round((txn.price||0)*(txn.shares||0)); saveData(true)" class="w-full py-1.5 text-base font-bold bg-transparent text-right outline-none min-w-0">
+                              <input type="number" step="1" x-model.number="txn.shares" @input="if(txn.action!=='dividend'&&txn.action!=='sync') txn.amount=Math.round((txn.price||0)*(txn.shares||0)); saveTransactionData(txn)" class="w-full py-1.5 text-base font-bold bg-transparent text-right outline-none min-w-0">
                             </div>
                           </div>
                           <div class="flex w-full md:w-auto gap-2 items-center mt-0">
                             <div class="flex-1 md:w-[140px] flex items-center bg-slate-50 border border-slate-200 rounded-lg px-2 overflow-hidden" x-show="txn.action !== 'sync'">
                               <span class="text-sm font-bold text-slate-500 mr-2 whitespace-nowrap shrink-0">總額</span>
-                              <input type="number" step="1" x-model.number="txn.amount" @change="saveData(true)" class="w-full py-1.5 text-base font-black text-slate-800 bg-transparent text-right outline-none min-w-0">
+                              <input type="number" step="1" x-model.number="txn.amount" @change="saveTransactionData(txn)" class="w-full py-1.5 text-base font-black text-slate-800 bg-transparent text-right outline-none min-w-0">
                             </div>
                             <div class="flex-1 md:w-[140px] flex items-center bg-slate-50 border border-slate-200 rounded-lg px-2 opacity-50 overflow-hidden" x-show="txn.action === 'sync'">
                               <span class="text-sm font-bold text-slate-500 mr-2 whitespace-nowrap shrink-0">差額</span>
