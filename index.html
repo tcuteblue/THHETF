@@ -197,11 +197,12 @@ html {
                 <h3 class="text-xl font-black text-slate-800 mb-2 flex items-center gap-2 border-b border-slate-200 pb-3">
                     <i class="fa-solid fa-file-csv text-blue-600"></i> CSV 匯入預覽校正
                 </h3>
-                <p class="text-sm font-bold text-red-500 mb-3 bg-red-50 p-2 rounded-lg border border-red-100">請確認系統模糊辨識的「類型」是否正確，可直接在此清單下拉修改，確認無誤後點擊最下方匯入。</p>
+                <p class="text-sm font-bold text-red-500 mb-3 bg-red-50 p-2 rounded-lg border border-red-100">請確認系統模糊辨識的「類型」是否正確，可直接在此清單下拉修改，確認無誤後點擊最下方匯入。無效資料會略過，完全重複的交易會自動防重複匯入。</p>
+                <p x-show="csvPreviewData.length > 0" class="text-sm font-bold text-amber-700 mb-3 bg-amber-50 p-2 rounded-lg border border-amber-200">目前與既有帳本比對，偵測到 <span x-text="getCSVDuplicateCount()"></span> 筆疑似重複資料（以日期、類型、單價、股數及金額比對），確認匯入時會自動略過。</p>
                 <div class="overflow-y-auto custom-scrollbar flex-1 border border-slate-200 rounded-xl bg-slate-50 p-2">
                     <div class="space-y-2">
                         <template x-for="(row, index) in csvPreviewData" :key="index">
-                            <div class="flex flex-wrap gap-2 items-center bg-white p-2 rounded-lg shadow-sm border border-slate-200">
+                            <div class="flex flex-wrap gap-2 items-center bg-white p-2 rounded-lg shadow-sm border border-slate-200" :class="{'!border-amber-400 !bg-amber-50': isCSVRowDuplicate(row, index)}">
                                 <div class="w-24 text-sm font-bold text-slate-600" x-text="row.date"></div>
                                 <select x-model="row.action" class="w-[90px] px-1 py-1 text-sm font-bold border rounded outline-none" :class="{'text-red-600 bg-red-50 border-red-100':row.action==='buy', 'text-green-600 bg-green-50 border-green-100':row.action==='sell', 'text-teal-600 bg-teal-50 border-teal-100':row.action==='withdraw', 'text-amber-600 bg-amber-50 border-amber-100':row.action==='dividend', 'text-purple-600 bg-purple-50 border-purple-100':row.action==='sync'}">
                                     <option value="buy">📥 買入</option>
@@ -214,6 +215,7 @@ html {
                                     <span x-show="row.action!=='dividend' && row.action!=='sync'">單 <span class="font-bold text-slate-800" x-text="row.price"></span></span>
                                     <span x-show="row.action!=='dividend'">股 <span class="font-bold text-slate-800" x-text="row.shares"></span></span>
                                     <span class="text-blue-600 font-bold ml-2">額 <span x-text="row.amount"></span></span>
+                                    <span x-show="isCSVRowDuplicate(row, index)" class="text-amber-700 font-black text-xs bg-amber-100 px-2 py-1 rounded">疑似重複</span>
                                 </div>
                             </div>
                         </template>
@@ -299,6 +301,12 @@ html {
                     gasUrl: 'https://script.google.com/macros/s/AKfycbw0wAnCPZkw3nlyx0Eg08Ejk49oG_itD82PqH9IP4X7S4oR5br1NTCmlUJsNfME2kbZ/exec',
                     isCloudSyncing: '',
                     cloudBackupTimer: null,
+                    cloudBackupRetryTimer: null,
+                    cloudBackupInProgress: false,
+                    cloudBackupPending: false,
+                    transactionSavedSnapshot: {},
+                    quoteStatusTick: Date.now(),
+                    quoteStatusTimer: null,
                 
                     /* === 彈出視窗控制變數 === */
                     showMsgBox: false, msgBoxText: '', reloadOnClose: false,
@@ -339,6 +347,9 @@ html {
 
                         window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); this.deferredPrompt = e; });
                         window.addEventListener('scroll', () => { this.isScrolled = window.scrollY > 80; });
+                        // 讓開啟很久的頁面也能自動更新股價過期狀態，不必等待其他操作觸發重繪。
+                        if (this.quoteStatusTimer) clearInterval(this.quoteStatusTimer);
+                        this.quoteStatusTimer = setInterval(() => { this.quoteStatusTick = Date.now(); }, 5 * 60 * 1000);
 
                         // 處理手機按上一頁的行為
                         window.addEventListener('popstate', (e) => {
@@ -486,8 +497,13 @@ html {
                         // 僅由明確的重大資料變更呼叫 saveData(true)；讀取、瀏覽、更新股價一律不觸發。
                         if (shouldAutoBackup && this.gasUrl) {
                             if (this.cloudBackupTimer) clearTimeout(this.cloudBackupTimer);
+                            if (this.cloudBackupRetryTimer) {
+                                clearTimeout(this.cloudBackupRetryTimer);
+                                this.cloudBackupRetryTimer = null;
+                            }
                             this.cloudBackupTimer = setTimeout(() => {
-                                this.cloudBackup(true);
+                                this.cloudBackupTimer = null;
+                                this.cloudBackup(true, 0);
                             }, 3000);
                         }
                     },
@@ -532,7 +548,7 @@ html {
                         if (!Object.prototype.hasOwnProperty.call(data, 'homePrices')) {
                             restored.homePrices = existing.homePrices || this.homePrices || {};
                         }
-                        restored.global = { ...(existing.global || {}), ...(data.global || {}) };
+                        restored.global = { ...(existing.global || {}), ...(data.global || {}), cloudBackupStatus: '' };
                         localStorage.setItem('THH_ETF_Data_V1', JSON.stringify(restored));
                     },
 
@@ -550,20 +566,131 @@ html {
                         return Number.isFinite(price) && price > 0 && Number.isFinite(shares) && shares > 0 && Number.isFinite(amount) && amount > 0;
                     },
 
-                    saveTransactionData(txn) {
-                        this.saveData(this.isValidTransactionForBackup(txn));
+                    // 日期必須是真實存在的 YYYY-MM-DD 日期；避免 2026-02-31 等自動進位日期。
+                    isValidDateString(dateStr) {
+                        if (typeof dateStr !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false;
+                        const d = new Date(`${dateStr}T00:00:00`);
+                        return Number.isFinite(d.getTime()) && this.getLocalYMD(d) === dateStr;
                     },
 
-                    // 雲端手動/自動備份函式
-                    async cloudBackup(isAuto = false) {
-                        if (!this.gasUrl) { if (!isAuto) this.showMsg('❌ 尚未設定雲端備份網址。'); return; }
-                        if (!isAuto) this.isCloudSyncing = 'backup'; 
+                    // 以交易日期及同日清單順序，計算該筆交易發生前可用的持股。
+                    getSharesBeforeTransaction(txn, transactionList = this.transactions) {
+                        const list = Array.isArray(transactionList) ? transactionList : [];
+                        const targetIndex = list.findIndex(item => item === txn || (item && txn && item.id != null && item.id === txn.id));
+                        const indexLimit = targetIndex < 0 ? list.length : targetIndex;
+                        const targetDate = String(txn?.date || '');
+                        let shares = Number(this.baseShares) || 0;
+                        const rows = list.map((item, index) => ({ item, index }))
+                            .filter(row => row.item && this.isValidDateString(row.item.date))
+                            .sort((a, b) => a.item.date.localeCompare(b.item.date) || a.index - b.index);
+                        for (const row of rows) {
+                            const item = row.item;
+                            if (item === txn || (txn?.id != null && item.id === txn.id)) continue;
+                            if (item.date > targetDate || (item.date === targetDate && row.index >= indexLimit)) continue;
+                            if (!this.isValidTransactionForBackup(item)) continue;
+                            const action = item.action || 'buy';
+                            const qty = Number(item.shares) || 0;
+                            if (action === 'buy' || action === 'sync') shares += qty;
+                            else if (action === 'sell' || action === 'withdraw') shares = Math.max(0, shares - qty);
+                        }
+                        return Math.max(0, shares);
+                    },
+
+                    // 編輯器允許未完成草稿暫存；完整交易則檢查日期、數字及賣出持股數。
+                    validateTransactionEntry(txn, transactionList = this.transactions) {
+                        if (!txn || typeof txn !== 'object') return { valid: false, complete: false, message: '交易資料格式不正確。' };
+                        if (!txn.date) return { valid: true, complete: false, message: '' };
+                        if (!this.isValidDateString(txn.date)) return { valid: false, complete: false, message: '日期無效，請重新選擇正確日期。' };
+                        const action = txn.action || 'buy';
+                        if (!['buy', 'sell', 'withdraw', 'dividend', 'sync'].includes(action)) return { valid: false, complete: false, message: '交易類型不正確。' };
+                        const hasValue = value => value !== null && value !== undefined && String(value).trim() !== '' && Number.isFinite(Number(value));
+                        if (action === 'dividend') {
+                            if (!hasValue(txn.amount)) return { valid: true, complete: false, message: '' };
+                            if (Number(txn.amount) <= 0) return { valid: false, complete: true, message: '配息金額必須大於 0。' };
+                            return { valid: true, complete: true, message: '' };
+                        }
+                        if (action === 'sync') {
+                            if (!hasValue(txn.shares) || !hasValue(txn.amount)) return { valid: true, complete: false, message: '' };
+                            if (Number(txn.shares) === 0 && Number(txn.amount) === 0) return { valid: false, complete: true, message: '調額的股數差額與成本差額不能同時為 0。' };
+                            return { valid: true, complete: true, message: '' };
+                        }
+                        if (!hasValue(txn.price) || !hasValue(txn.shares) || !hasValue(txn.amount)) return { valid: true, complete: false, message: '' };
+                        const price = Number(txn.price), shares = Number(txn.shares), amount = Number(txn.amount);
+                        if (price <= 0 || shares <= 0 || amount <= 0) return { valid: false, complete: true, message: '單價、股數與總金額都必須大於 0。' };
+                        if (!Number.isInteger(shares)) return { valid: false, complete: true, message: '股數請輸入整數。' };
+                        if (action === 'sell' || action === 'withdraw') {
+                            const available = this.getSharesBeforeTransaction(txn, transactionList);
+                            if (shares > available) return { valid: false, complete: true, message: `這筆交易前可用持股只有 ${available} 股，不能${action === 'sell' ? '賣出' : '提領'} ${shares} 股。請檢查交易日期或股數。` };
+                        }
+                        return { valid: true, complete: true, message: '' };
+                    },
+
+                    // 用交易欄位組合指紋，不依賴匯出檔列順序或流水號辨識重複資料。
+                    transactionFingerprint(txn) {
+                        if (!txn || !this.isValidTransactionForBackup(txn)) return '';
+                        const n = (value, digits) => (Number(value) || 0).toFixed(digits);
+                        return [txn.date, txn.action || 'buy', n(txn.price, 4), n(txn.shares, 4), n(txn.amount, 2)].join('|');
+                    },
+
+                    isCSVRowDuplicate(row, index) {
+                        // 只和既有交易比對；同一份 CSV 內的相同列可能是合法的兩筆相同交易。
+                        const fingerprint = this.transactionFingerprint(row);
+                        if (!fingerprint) return false;
+                        return this.transactions.some(t => this.transactionFingerprint(t) === fingerprint);
+                    },
+
+                    getCSVDuplicateCount() {
+                        return this.csvPreviewData.reduce((count, row, index) => count + (this.isCSVRowDuplicate(row, index) ? 1 : 0), 0);
+                    },
+
+                    saveTransactionData(txn) {
+                        const result = this.validateTransactionEntry(txn, this.transactions);
+                        const key = String(txn?.id ?? '');
+                        if (!result.valid) {
+                            const snapshot = this.transactionSavedSnapshot[key];
+                            if (snapshot) {
+                                Object.keys(txn).forEach(k => { if (!(k in snapshot)) delete txn[k]; });
+                                Object.assign(txn, JSON.parse(JSON.stringify(snapshot)));
+                            }
+                            this.showMsg(`⚠️ 交易紀錄未儲存：${result.message}\n已還原該筆欄位，請修正後再試。`);
+                            return false;
+                        }
+                        this.transactionSavedSnapshot[key] = JSON.parse(JSON.stringify(txn));
+                        // 草稿可存在本機；只有完整且通過防呆的交易才觸發雲端備份。
+                        this.saveData(result.complete && this.isValidTransactionForBackup(txn));
+                        return true;
+                    },
+
+                    // 雲端手動/自動備份：自動備份最多重試 2 次，狀態會保留在頁面上。
+                    async cloudBackup(isAuto = false, attempt = 0) {
+                        if (!this.gasUrl) {
+                            const message = '尚未設定雲端備份網址，請先設定後再試。';
+                            if (isAuto) { this.globalSettings.cloudBackupStatus = `⚠️ ${message}`; this.saveData(false); }
+                            else this.showMsg(`❌ ${message}`);
+                            return;
+                        }
+                        if (this.isCloudSyncing === 'restore') {
+                            if (isAuto) this.cloudBackupPending = true;
+                            return;
+                        }
+                        if (this.cloudBackupInProgress) {
+                            if (isAuto) this.cloudBackupPending = true;
+                            return;
+                        }
+                        if (this.cloudBackupTimer) { clearTimeout(this.cloudBackupTimer); this.cloudBackupTimer = null; }
+                        if (!isAuto && this.cloudBackupRetryTimer) { clearTimeout(this.cloudBackupRetryTimer); this.cloudBackupRetryTimer = null; }
+
+                        this.cloudBackupInProgress = true;
+                        this.isCloudSyncing = 'backup';
+                        let backupSucceeded = false;
                         try {
+                            const backupGlobal = { ...this.globalSettings };
+                            // 這是本機狀態提示，不應隨備份永久寫入另一台裝置。
+                            delete backupGlobal.cloudBackupStatus;
                             const payload = {
-                                action: "auto_backup",
-                                fileName: "ETF存股管家_雲端備份.json", 
-                                // 【核心修改】：強制剔除 homePrices，確保備份檔體積最小
-                                backupData: { etfs: this.etfs, global: this.globalSettings }
+                                action: 'auto_backup',
+                                fileName: 'ETF存股管家_雲端備份.json',
+                                backupData: { etfs: this.etfs, global: backupGlobal }
                             };
                             const response = await fetch(this.gasUrl, {
                                 method: 'POST',
@@ -572,19 +699,45 @@ html {
                             });
                             if (!response.ok) throw new Error(`HTTP ${response.status}`);
                             const result = await response.json();
-                            if (result.status === 'success') {
-                                const now = new Date(); const pad = n => String(n).padStart(2, '0');
-                                this.globalSettings.lastBackupTime = `${now.getFullYear()}/${pad(now.getMonth() + 1)}/${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())} (雲端)`;
-                                try { localStorage.setItem('THH_ETF_Data_V1', JSON.stringify({ etfs: this.etfs, global: this.globalSettings, homePrices: this.homePrices })); } catch (e) {}
-                                if (!isAuto) this.showMsg("✅ 雲端備份成功！資料已安全存入 Google Drive。");
-                            } else {
-                                throw new Error(result.message || '雲端服務回傳失敗');
-                            }
+                            if (result.status !== 'success') throw new Error(result.message || '雲端服務回傳失敗');
+
+                            backupSucceeded = true;
+                            const now = new Date(); const pad = n => String(n).padStart(2, '0');
+                            this.globalSettings.lastBackupTime = `${now.getFullYear()}/${pad(now.getMonth() + 1)}/${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())} (雲端)`;
+                            this.globalSettings.cloudBackupStatus = '';
+                            if (this.cloudBackupRetryTimer) { clearTimeout(this.cloudBackupRetryTimer); this.cloudBackupRetryTimer = null; }
+                            try { localStorage.setItem('THH_ETF_Data_V1', JSON.stringify({ etfs: this.etfs, global: this.globalSettings, homePrices: this.homePrices })); } catch (e) {}
+                            if (!isAuto) this.showMsg('✅ 雲端備份成功！資料已安全存入 Google Drive。');
                         } catch (e) {
-                            if (!isAuto) this.showMsg("❌ 雲端備份失敗：" + e.message);
-                            console.error("雲端備份失敗", e);
+                            console.error('雲端備份失敗', e);
+                            const detail = String(e?.message || e || '未知錯誤');
+                            this.cloudBackupPending = false;
+                            if (isAuto && attempt < 2) {
+                                const delay = (attempt + 1) * 5000;
+                                this.globalSettings.cloudBackupStatus = `⚠️ 雲端自動備份失敗（${detail}），${Math.round(delay / 1000)} 秒後自動重試（第 ${attempt + 1}/2 次）。`;
+                                this.saveData(false);
+                                if (this.cloudBackupRetryTimer) clearTimeout(this.cloudBackupRetryTimer);
+                                this.cloudBackupRetryTimer = setTimeout(() => {
+                                    this.cloudBackupRetryTimer = null;
+                                    this.cloudBackup(true, attempt + 1);
+                                }, delay);
+                            } else {
+                                this.globalSettings.cloudBackupStatus = isAuto
+                                    ? `⚠️ 雲端自動備份連續失敗：${detail}。請檢查網路，或按「雲端備份」手動重試。`
+                                    : `⚠️ 最近一次雲端備份失敗：${detail}。請檢查網路後重試。`;
+                                this.saveData(false);
+                                this.showMsg(isAuto
+                                    ? `⚠️ 雲端自動備份連續失敗。系統已重試 2 次仍未成功，請檢查網路或手動備份。
+原因：${detail}`
+                                    : `❌ 雲端備份失敗：${detail}`);
+                            }
                         } finally {
-                            if (!isAuto) this.isCloudSyncing = ''; 
+                            this.cloudBackupInProgress = false;
+                            this.isCloudSyncing = '';
+                            if (backupSucceeded && this.cloudBackupPending) {
+                                this.cloudBackupPending = false;
+                                setTimeout(() => this.cloudBackup(true, 0), 1000);
+                            }
                         }
                     },
 
@@ -617,7 +770,11 @@ html {
                         } catch (e) {
                             this.showMsg("❌ 還原失敗：" + e.message);
                         } finally {
-                            this.isCloudSyncing = ''; 
+                            this.isCloudSyncing = '';
+                            if (this.cloudBackupPending) {
+                                this.cloudBackupPending = false;
+                                setTimeout(() => this.cloudBackup(true, 0), 1000);
+                            }
                         }
                     },
 
@@ -687,8 +844,11 @@ html {
                             
                             await Promise.all(codes.map(async (code) => {
                                 const result = await this._getStandardizedPrice(code);
-                                if (result.price) {
-                                    newPrices[code] = { price: result.price, prev: result.prev };
+                                if (Number(result.price) > 0) {
+                                    newPrices[code] = { price: result.price, prev: result.prev, timeStr: result.timeStr || '', updatedAt: Date.now(), lastAttemptAt: Date.now(), lastAttemptFailed: false };
+                                } else {
+                                    const previous = newPrices[code] || { price: 0, prev: 0, updatedAt: 0, timeStr: '' };
+                                    newPrices[code] = { ...previous, lastAttemptAt: Date.now(), lastAttemptFailed: true };
                                 }
                             }));
                             
@@ -1336,13 +1496,16 @@ html {
                         this.activeETF = code; let data = this.etfs[code];
                         this.baseShares = data.baseShares || 0; this.baseAvgCost = data.baseAvgCost || 0; this.startDate = data.startDate || '';
                         this.lastCheckDate = data.lastCheckDate || new Date().getTime(); this.investmentPlans = data.investmentPlans || [];
-                        this.transactions = data.transactions || []; this.isBlueLight = data.isBlueLight || false; this.isPanic = data.isPanic || false;
+                        const loadedTxnTime = Date.now();
+                        this.transactions = (Array.isArray(data.transactions) ? data.transactions : []).map((t, index) => ({ ...t, id: (t && t.id != null) ? t.id : loadedTxnTime + index + Math.random() }));
+                        this.isBlueLight = data.isBlueLight || false; this.isPanic = data.isPanic || false;
                         this.baseRetirementMV = data.baseRetirementMV || 0; this.baseRetirementDate = data.baseRetirementDate || ''; this.swrRate = data.swrRate || 4.0;
 
                         if (this.homePrices[code]) { this.currentPrice = this.homePrices[code].price || 0; this.prevClose = this.homePrices[code].prev || 0; } 
                         else { this.currentPrice = 0; this.prevClose = 0; }
 
-                        this.currentVolume = 0; this.priceUpdateTime = ''; this.volumeStatus = ''; this.priceStatus = ''; this.cachedHistoricalData = null; 
+                        this.currentVolume = 0; this.priceUpdateTime = (this.homePrices[code] && this.homePrices[code].timeStr) ? this.homePrices[code].timeStr : ''; this.volumeStatus = ''; this.priceStatus = ''; this.cachedHistoricalData = null;
+                        this.transactionSavedSnapshot = Object.fromEntries((this.transactions || []).filter(t => t && t.id != null).map(t => [String(t.id), JSON.parse(JSON.stringify(t))]));
                         this.realTimeFetched = false; this.historicalDataLoaded = false; this.showChart = false;
                         if(window.lwcChartInstance) { window.lwcChartInstance.remove(); window.lwcChartInstance = null; this.chartRendered = false; }
 
@@ -1520,13 +1683,17 @@ html {
                             if (result.timeStr) this.priceUpdateTime = result.timeStr;
                             
                             this.realTimeFetched = true;
-                            this.homePrices[this.activeETF] = { price: this.currentPrice, prev: this.prevClose }; 
+                            const quoteFetchedAt = Date.now();
+                            this.homePrices[this.activeETF] = { price: this.currentPrice, prev: this.prevClose, timeStr: result.timeStr || '', updatedAt: quoteFetchedAt, lastAttemptAt: quoteFetchedAt, lastAttemptFailed: false };
                             
-                            // 【修改點】：阻斷連動！只寫入本機快取，不呼叫 this.saveData()
+                            // 只更新本機報價快取，不觸發雲端備份。
                             try { localStorage.setItem('THH_ETF_Data_V1', JSON.stringify({ etfs: this.etfs, global: this.globalSettings, homePrices: this.homePrices })); } catch (e) {}
                         } else { 
-                            this.priceUpdateTime = '即時連線失敗(顯示昨收)'; 
-                            this.realTimeFetched = false; 
+                            this.priceUpdateTime = '即時連線失敗（沿用舊價格）'; 
+                            this.realTimeFetched = false;
+                            const previous = this.homePrices[requestETF] || { price: 0, prev: 0, updatedAt: 0, timeStr: '' };
+                            this.homePrices[requestETF] = { ...previous, lastAttemptAt: Date.now(), lastAttemptFailed: true };
+                            try { localStorage.setItem('THH_ETF_Data_V1', JSON.stringify({ etfs: this.etfs, global: this.globalSettings, homePrices: this.homePrices })); } catch (e) {}
                         }
                     },
 
@@ -1929,6 +2096,7 @@ html {
                                         continue;
                                     }
                                     this.transactions.push(txn);
+                                    this.transactionSavedSnapshot[String(txn.id)] = JSON.parse(JSON.stringify(txn));
                                     newTransactionsCount++;
                                     logs.push(`📅 ${scheduledDate}：買入 ${shares} 股 (扣 ${cost} 元)`);
                                 }
@@ -2258,12 +2426,45 @@ html {
                             this.csvPreviewData = [];
                             return this.showMsg('⚠️ 沒有可匯入的有效明細，未新增資料。');
                         }
-                        const imported = this.csvPreviewData.slice();
-                        this.transactions = [...this.transactions, ...imported];
+                        const knownFingerprints = new Set(this.transactions.map(t => this.transactionFingerprint(t)).filter(Boolean));
+                        const combined = [...this.transactions];
+                        const imported = [];
+                        let skippedDuplicates = 0, skippedInvalid = 0;
+                        const firstErrors = [];
+                        for (const row of this.csvPreviewData) {
+                            if (!this.isValidTransactionForBackup(row)) { skippedInvalid++; continue; }
+                            const fingerprint = this.transactionFingerprint(row);
+                            if (!fingerprint || knownFingerprints.has(fingerprint)) { skippedDuplicates++; continue; }
+                            const txn = { ...row, id: Date.now() + Math.random() };
+                            const validation = this.validateTransactionEntry(txn, [...combined, txn]);
+                            if (!validation.valid || !validation.complete) {
+                                skippedInvalid++;
+                                if (validation.message && firstErrors.length < 2) firstErrors.push(validation.message);
+                                continue;
+                            }
+                            imported.push(txn);
+                            combined.push(txn);
+                        }
                         this.showCSVModal = false;
                         this.csvPreviewData = [];
-                        this.saveData(imported.some(txn => this.isValidTransactionForBackup(txn)));
-                        this.showMsg(`✅ 已匯入 ${imported.length} 筆歷史明細！`);
+                        if (imported.length > 0) {
+                            this.transactions = combined;
+                            imported.forEach(txn => { this.transactionSavedSnapshot[String(txn.id)] = JSON.parse(JSON.stringify(txn)); });
+                            this.saveData(true);
+                        }
+                        if (imported.length === 0) {
+                            const details = firstErrors.length ? `
+原因：${firstErrors.join('；')}` : '';
+                            return this.showMsg(`⚠️ 本次沒有新增資料。
+重複略過：${skippedDuplicates} 筆
+無效略過：${skippedInvalid} 筆${details}`);
+                        }
+                        const details = firstErrors.length ? `
+部分資料未匯入：${firstErrors.join('；')}` : '';
+                        this.showMsg(`✅ CSV 匯入完成！
+成功匯入：${imported.length} 筆
+重複略過：${skippedDuplicates} 筆
+無效略過：${skippedInvalid} 筆${details}`);
                     },
 
                     /* =========================================================
@@ -2274,19 +2475,27 @@ html {
 
                     executeManualAdd() {
                         const submittedAction = this.manualAction;
+                        if (!this.isValidDateString(this.manualDate)) return this.showMsg('請選擇有效的交易日期。');
+                        let newTxn = null;
                         if (submittedAction === 'dividend') {
-                            if (!this.manualAmount || !this.manualDate || !Number.isFinite(Number(this.manualAmount)) || Number(this.manualAmount) <= 0) return this.showMsg('請輸入有效的配息日期與正數總金額！');
-                            this.transactions.push({ id: Date.now(), date: this.manualDate, shares: 0, price: 0, amount: Math.round(this.manualAmount), action: 'dividend' });
+                            if (this.manualAmount == null || !Number.isFinite(Number(this.manualAmount)) || Number(this.manualAmount) <= 0) return this.showMsg('請輸入有效的配息日期與正數總金額！');
+                            newTxn = { id: Date.now() + Math.random(), date: this.manualDate, shares: 0, price: 0, amount: Math.round(this.manualAmount), action: 'dividend' };
                         } else if (submittedAction === 'sync') {
-                            if (this.manualShares == null || this.manualPrice == null || !this.manualDate || Number(this.manualShares) < 0 || !Number.isFinite(Number(this.manualPrice)) || Number(this.manualPrice) < 0) return this.showMsg('請輸入有效的校正日期、實際總股數與均價！');
-                            let curr = this.inventoryState, targetShares = Math.floor(this.manualShares), targetTotalCost = Math.round(targetShares * parseFloat(this.manualPrice)); 
-                            this.transactions.push({ id: Date.now(), date: this.manualDate, shares: targetShares - curr.shares, price: 0, amount: targetTotalCost - curr.totalCost, action: 'sync' });
-                            this.showMsg(`✅ 庫存校正已完成！\n自動補足差額股數：${targetShares - curr.shares} 股\n微調成本差額：${targetTotalCost - curr.totalCost} 元`);
+                            if (this.manualShares == null || this.manualPrice == null || Number(this.manualShares) < 0 || !Number.isFinite(Number(this.manualPrice)) || Number(this.manualPrice) < 0) return this.showMsg('請輸入有效的校正日期、實際總股數與均價！');
+                            let curr = this.inventoryState, targetShares = Math.floor(this.manualShares), targetTotalCost = Math.round(targetShares * parseFloat(this.manualPrice));
+                            newTxn = { id: Date.now() + Math.random(), date: this.manualDate, shares: targetShares - curr.shares, price: 0, amount: targetTotalCost - curr.totalCost, action: 'sync' };
                         } else {
-                            if (!this.manualShares || !this.manualPrice || !this.manualDate || Number(this.manualShares) <= 0 || Number(this.manualPrice) <= 0) return this.showMsg('請輸入有效的日期、正數單價與正數股數！');
-                            let finalAmount = this.manualAmount !== null ? Math.round(this.manualAmount) : Math.round(this.manualShares * this.manualPrice);
-                            if (!Number.isFinite(finalAmount) || finalAmount < 0) return this.showMsg('總金額不正確，請重新確認！');
-                            this.transactions.push({ id: Date.now(), date: this.manualDate, shares: Math.floor(this.manualShares), price: Number(this.manualPrice), amount: finalAmount, action: submittedAction });
+                            if (this.manualShares == null || this.manualPrice == null || Number(this.manualShares) <= 0 || Number(this.manualPrice) <= 0) return this.showMsg('請輸入有效的日期、正數單價與正數股數！');
+                            let finalAmount = this.manualAmount != null ? Math.round(this.manualAmount) : Math.round(this.manualShares * this.manualPrice);
+                            if (!Number.isFinite(finalAmount) || finalAmount <= 0) return this.showMsg('總金額必須大於 0，請重新確認！');
+                            newTxn = { id: Date.now() + Math.random(), date: this.manualDate, shares: Math.floor(this.manualShares), price: Number(this.manualPrice), amount: finalAmount, action: submittedAction };
+                        }
+                        const validation = this.validateTransactionEntry(newTxn, [...this.transactions, newTxn]);
+                        if (!validation.valid || !validation.complete) return this.showMsg(`⚠️ 交易未寫入：${validation.message || '資料尚未完整，請檢查輸入內容。'}`);
+                        this.transactions.push(newTxn);
+                        this.transactionSavedSnapshot[String(newTxn.id)] = JSON.parse(JSON.stringify(newTxn));
+                        if (submittedAction === 'sync') {
+                            this.showMsg(`✅ 庫存校正已完成！\n自動補足差額股數：${newTxn.shares} 股\n微調成本差額：${newTxn.amount} 元`);
                         }
                         
                         this.manualShares = this.manualPrice = this.manualAmount = null;
@@ -2318,7 +2527,9 @@ html {
 
                     addTransaction() {
                         let date = this.getLocalYMD(), year = date.substring(0, 4);
-                        this.transactions.push({ id: Date.now(), date: date, action: 'buy', amount: null, shares: null, price: null });
+                        const txn = { id: Date.now() + Math.random(), date: date, action: 'buy', amount: null, shares: null, price: null };
+                        this.transactions.push(txn);
+                        this.transactionSavedSnapshot[String(txn.id)] = JSON.parse(JSON.stringify(txn));
                         this.saveData(false); // 空白列僅保存本機，不觸發雲端備份。
                         if (!this.expandedYears.includes(year)) this.expandedYears.push(year);
                         this.$nextTick(() => { const list = document.getElementById('txnList'); if (list) list.scrollTop = list.scrollHeight; });
@@ -2333,13 +2544,15 @@ html {
                     executeConfirmAction() {
                         if (this.pendingDeleteType === 'single') { 
                             const priorCount = this.transactions.length;
-                            this.transactions = this.transactions.filter(t => t.id !== this.pendingDeleteId); 
-                            this.saveData(this.transactions.length !== priorCount); 
+                            this.transactions = this.transactions.filter(t => t.id !== this.pendingDeleteId);
+                            delete this.transactionSavedSnapshot[String(this.pendingDeleteId)];
+                            this.saveData(this.transactions.length !== priorCount);
                         } 
                         else if (this.pendingDeleteType === 'all') { 
                             const hadTransactions = this.transactions.length > 0;
-                            this.transactions = []; 
-                            this.showMsg('🗑️ 所有歷史明細已清空！'); 
+                            this.transactions = [];
+                            this.transactionSavedSnapshot = {};
+                            this.showMsg('🗑️ 所有歷史明細已清空！');
                             this.saveData(hadTransactions); 
                         } 
                         else if (this.pendingDeleteType === 'etf') {
@@ -2398,6 +2611,34 @@ html {
                     closeMsgBox() { this.showMsgBox = false; if (this.reloadOnClose) window.location.reload(); },
                     closeConfirmBox() { this.showConfirmBox = false; this.pendingDeleteId = null; },
                     formatMoney(num) { return isNaN(num) || num == null ? '0' : Number(num).toLocaleString('zh-TW', { maximumFractionDigits: 0 }); },
+                    formatPriceTimestamp(timestamp) {
+                        const d = new Date(Number(timestamp));
+                        if (!Number.isFinite(d.getTime())) return '時間不明';
+                        const pad = n => String(n).padStart(2, '0');
+                        return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                    },
+                    getQuoteUpdateLabel(quote) {
+                        if (!quote || !(Number(quote.price) > 0)) return '尚無成功取得的股價';
+                        if (!Number.isFinite(Number(quote.updatedAt)) || Number(quote.updatedAt) <= 0) return '更新時間不明（舊版快取），請重新更新';
+                        const fetched = `最後成功更新：${this.formatPriceTimestamp(quote.updatedAt)}`;
+                        const marketTime = quote.timeStr ? `｜行情時間：${String(quote.timeStr).replace(/^證交所備援\s*/, '')}` : '';
+                        return `${fetched}${marketTime}`;
+                    },
+                    isQuoteStale(quote) {
+                        if (!quote || !(Number(quote.price) > 0)) return true;
+                        if (quote.lastAttemptFailed) return true;
+                        const updatedAt = Number(quote.updatedAt);
+                        if (!Number.isFinite(updatedAt) || updatedAt <= 0) return true;
+                        return ((Number(this.quoteStatusTick) || Date.now()) - updatedAt) >= 72 * 60 * 60 * 1000;
+                    },
+                    getQuoteStaleMessage(quote) {
+                        if (!quote || !(Number(quote.price) > 0)) return '⚠️ 目前沒有可用股價，請重新更新。';
+                        if (quote.lastAttemptFailed) return '⚠️ 最近一次更新失敗，目前沿用舊價格。';
+                        const updatedAt = Number(quote.updatedAt);
+                        if (!Number.isFinite(updatedAt) || updatedAt <= 0) return '⚠️ 此價格來自舊版快取，沒有更新時間，請重新更新。';
+                        if (((Number(this.quoteStatusTick) || Date.now()) - updatedAt) >= 72 * 60 * 60 * 1000) return '⚠️ 已超過 72 小時未成功更新，股價資料可能過期。';
+                        return '';
+                    },
 
                     /* =========================================================
                        📱 安裝 PWA 為手機原生 APP
@@ -2438,9 +2679,13 @@ html {
                     </div>
                 </div>
             </header>
+            <div x-show="globalSettings.cloudBackupStatus" x-cloak class="mb-6 p-4 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 text-sm font-bold shadow-sm">
+                <div class="flex items-start gap-2"><i class="fa-solid fa-triangle-exclamation mt-0.5"></i><span class="flex-1" x-text="globalSettings.cloudBackupStatus"></span></div>
+                <button @click="cloudBackup(false)" :disabled="isCloudSyncing !== ''" class="mt-2 px-3 py-1.5 rounded-lg bg-white border border-amber-300 text-amber-800 hover:bg-amber-100 disabled:opacity-50">立即重試雲端備份</button>
+            </div>
 
             <div class="bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-600 rounded-3xl shadow-[0_20px_50px_-12px_rgba(59,130,246,0.5)] border border-white/20 p-8 mb-8 text-white relative overflow-hidden group transition-transform hover:-translate-y-1 duration-300">
-                <button @click="fetchHomePrices()" class="absolute top-5 right-5 z-20 px-3 py-1.5 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg shadow-sm text-white font-bold text-sm transition-all flex items-center gap-1.5 backdrop-blur-md hover:scale-105">
+                <button @click="fetchHomePrices()" :disabled="isFetchingHome" class="absolute top-5 right-5 z-20 px-3 py-1.5 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg shadow-sm text-white font-bold text-sm transition-all flex items-center gap-1.5 backdrop-blur-md hover:scale-105 disabled:opacity-60">
                     <i class="fa-solid fa-rotate-right" :class="{'animate-spin': isFetchingHome}"></i> 更新股價
                 </button>
 
@@ -2536,8 +2781,10 @@ html {
                                 <div class="font-black text-2xl text-slate-800" x-text="ETF_CONFIG[code] ? ETF_CONFIG[code].name : '自訂 ETF'"></div>
                                 <div class="text-lg font-bold mt-1 flex items-baseline gap-1.5">
                                     <span class="text-slate-500 text-base">現價</span>
-                                    <span class="font-black tracking-tight text-3xl" :class="homePrices[code] && homePrices[code].prev && homePrices[code].price !== homePrices[code].prev ? (homePrices[code].price > homePrices[code].prev ? 'text-red-600' : 'text-green-600') : 'text-slate-800'" x-text="homePrices[code] ? Number(homePrices[code].price).toFixed(2) : '---'"></span>
+                                    <span class="font-black tracking-tight text-3xl" :class="homePrices[code] && homePrices[code].prev && homePrices[code].price !== homePrices[code].prev ? (homePrices[code].price > homePrices[code].prev ? 'text-red-600' : 'text-green-600') : 'text-slate-800'" x-text="homePrices[code] && Number(homePrices[code].price) > 0 ? Number(homePrices[code].price).toFixed(2) : '---'"></span>
                                 </div>
+                                <div class="mt-2 text-xs sm:text-sm font-semibold text-slate-500" x-text="getQuoteUpdateLabel(homePrices[code])"></div>
+                                <div x-show="!isFetchingHome && isQuoteStale(homePrices[code])" class="mt-2 text-xs sm:text-sm font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5" x-text="getQuoteStaleMessage(homePrices[code])"></div>
                             </div>
                         </div>
 
@@ -2568,6 +2815,10 @@ html {
                 <label style="display:block; font-size:18px; font-weight:900; text-align:center; color:#7f8fa6; margin-bottom: 10px;">
                     全系統備份還原
                 </label>
+                <div x-show="globalSettings.cloudBackupStatus" x-cloak class="mb-3 p-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 text-sm font-bold">
+                    <div class="flex items-start gap-2"><i class="fa-solid fa-triangle-exclamation mt-0.5"></i><span class="flex-1" x-text="globalSettings.cloudBackupStatus"></span></div>
+                    <button @click="cloudBackup(false)" :disabled="isCloudSyncing !== ''" class="mt-2 px-3 py-1.5 rounded-lg bg-white border border-amber-300 text-amber-800 hover:bg-amber-100 disabled:opacity-50">立即重試雲端備份</button>
+                </div>
                 
                 <div class="backup-grid">
                     <!-- 🎯 只有當值為 'backup' 時才轉圈圈 -->
@@ -2619,8 +2870,12 @@ html {
             </div>
 
             <header class="mb-6 pt-2">
-                <div x-show="globalSettings.lastBackupTime" class="w-full mb-6 text-base sm:text-lg font-bold text-slate-500 bg-white px-4 py-3 rounded-xl border border-slate-200 shadow-sm flex items-center justify-start gap-2">
+                <div x-show="globalSettings.lastBackupTime" class="w-full mb-3 text-base sm:text-lg font-bold text-slate-500 bg-white px-4 py-3 rounded-xl border border-slate-200 shadow-sm flex items-center justify-start gap-2">
                     <i class="fa-solid fa-cloud-check text-emerald-500"></i>最後備份：<span x-text="globalSettings.lastBackupTime"></span>
+                </div>
+                <div x-show="globalSettings.cloudBackupStatus" x-cloak class="w-full mb-6 p-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 text-sm font-bold">
+                    <div class="flex items-start gap-2"><i class="fa-solid fa-triangle-exclamation mt-0.5"></i><span class="flex-1" x-text="globalSettings.cloudBackupStatus"></span></div>
+                    <button @click="cloudBackup(false)" :disabled="isCloudSyncing !== ''" class="mt-2 px-3 py-1.5 rounded-lg bg-white border border-amber-300 text-amber-800 hover:bg-amber-100 disabled:opacity-50">立即重試雲端備份</button>
                 </div>
 
                 <div class="flex justify-between items-center mb-4">
@@ -2638,6 +2893,8 @@ html {
                             <span x-show="priceUpdateTime" class="text-sm sm:text-base bg-white border border-slate-200 text-slate-600 px-2.5 py-1 rounded-md font-mono tracking-tight shadow-sm shrink-0" x-text="priceUpdateTime.includes('失敗') ? priceUpdateTime : '取得時間 ' + priceUpdateTime" :class="{'text-red-500 border-red-200': priceUpdateTime.includes('失敗')}"></span>
                             <button @click="refreshPrice()" class="px-3 py-1.5 bg-white border border-slate-200 rounded-md shadow-sm transition text-blue-600 font-bold text-sm sm:text-base hover:text-blue-700 hover:bg-blue-50 flex items-center gap-1.5 shrink-0"><i class="fa-solid fa-arrows-rotate" :class="{'animate-spin': isFetchingPrice}"></i>更新股價</button>
                         </div>
+                        <div class="text-xs sm:text-sm font-semibold text-slate-500 lg:text-right" x-text="getQuoteUpdateLabel(homePrices[activeETF])"></div>
+                        <div x-show="!isFetchingPrice && isQuoteStale(homePrices[activeETF])" class="text-sm font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 lg:text-right" x-text="getQuoteStaleMessage(homePrices[activeETF])"></div>
 <div class="flex items-center lg:justify-end gap-3 w-full">
   <div class="flex-1 lg:flex-none flex flex-col items-end gap-2 bg-slate-50 lg:bg-white/50 px-4 py-3 rounded-xl border border-slate-200 shadow-sm">
     <div class="w-full flex justify-between items-center gap-4">
@@ -3661,11 +3918,11 @@ html {
                           <div class="flex flex-1 gap-2 w-full" x-show="txn.action !== 'dividend' && txn.action !== 'sync'">
                             <div class="flex-[3] flex items-center bg-slate-50 border border-slate-200 rounded-lg px-2 overflow-hidden">
                               <span class="text-sm font-bold text-slate-500 mr-2 whitespace-nowrap shrink-0">單價</span>
-                              <input type="number" step="0.01" x-model.number="txn.price" @input="txn.amount=Math.round((txn.price||0)*(txn.shares||0)); saveTransactionData(txn)" class="w-full py-1.5 text-base font-bold bg-transparent text-right outline-none min-w-0">
+                              <input type="number" step="0.01" x-model.number="txn.price" @input="if(txn.action!=='dividend'&&txn.action!=='sync') txn.amount=Math.round((txn.price||0)*(txn.shares||0))" @change="saveTransactionData(txn)" class="w-full py-1.5 text-base font-bold bg-transparent text-right outline-none min-w-0">
                             </div>
                             <div class="flex-[2] flex items-center bg-slate-50 border border-slate-200 rounded-lg px-2 overflow-hidden">
                               <span class="text-sm font-bold text-slate-500 mr-2 whitespace-nowrap shrink-0" x-text="txn.action === 'sync' ? '總股數' : '股數'"></span>
-                              <input type="number" step="1" x-model.number="txn.shares" @input="if(txn.action!=='dividend'&&txn.action!=='sync') txn.amount=Math.round((txn.price||0)*(txn.shares||0)); saveTransactionData(txn)" class="w-full py-1.5 text-base font-bold bg-transparent text-right outline-none min-w-0">
+                              <input type="number" step="1" x-model.number="txn.shares" @input="if(txn.action!=='dividend'&&txn.action!=='sync') txn.amount=Math.round((txn.price||0)*(txn.shares||0))" @change="saveTransactionData(txn)" class="w-full py-1.5 text-base font-bold bg-transparent text-right outline-none min-w-0">
                             </div>
                           </div>
                           <div class="flex w-full md:w-auto gap-2 items-center mt-0">
