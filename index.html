@@ -95,6 +95,17 @@ html {
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; border: 2px solid #f1f5f9; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
+        /* 圖表日期／數值資訊框：滑鼠移動或手機點選時顯示，離開圖表後保留最後選取值 */
+        .chart-info-tooltip {
+            position: absolute; top: 8px; left: 8px; z-index: 50;
+            max-width: calc(100% - 16px); max-height: 46%; overflow: hidden;
+            padding: 8px 11px; border: 1px solid rgba(203, 213, 225, 0.95);
+            border-radius: 10px; background: rgba(255, 255, 255, 0.96);
+            box-shadow: 0 3px 12px rgba(15, 23, 42, 0.12);
+            color: #334155; font-size: 12px; font-weight: 700; line-height: 1.55;
+            white-space: pre-line; overflow-wrap: anywhere; pointer-events: none;
+        }
+
         /* 玻璃透視質感卡片 (用於彈出視窗) */
         .glass-card {
             background: rgba(255, 255, 255, 0.95);
@@ -394,6 +405,42 @@ html {
                         return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split('T')[0]; 
                     },
                     scrollToTop() { window.scrollTo({ top: 0, behavior: 'smooth' }); },
+
+                    // 將 Lightweight Charts 的時間格式統一轉成 YYYY-MM-DD。
+                    formatChartDate(time) {
+                        if (typeof time === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(time)) return time;
+                        if (typeof time === 'number' && Number.isFinite(time)) return this.getLocalYMD(new Date(time * 1000));
+                        if (time && typeof time === 'object' && Number.isFinite(Number(time.year)) && Number.isFinite(Number(time.month)) && Number.isFinite(Number(time.day))) {
+                            return `${time.year}-${String(time.month).padStart(2, '0')}-${String(time.day).padStart(2, '0')}`;
+                        }
+                        return String(time ?? '');
+                    },
+                    formatChartNumber(value, decimals = 0) {
+                        const number = Number(value);
+                        if (!Number.isFinite(number)) return '—';
+                        return number.toLocaleString('zh-TW', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+                    },
+                    // 所有圖表共用：點選或移動到某一天時顯示日期與對應數值；手機點選後會保留最後選取的資料。
+                    attachChartInfoTooltip(chart, container, formatter) {
+                        const tooltip = document.createElement('div');
+                        tooltip.className = 'chart-info-tooltip';
+                        tooltip.textContent = '移動或點選圖表，查看當日數值';
+                        container.style.position = 'relative';
+                        container.appendChild(tooltip);
+                        const updateTooltip = (param) => {
+                            if (!param || !param.time || !param.point) return;
+                            if (param.point.x < 0 || param.point.y < 0 || param.point.x > container.clientWidth || param.point.y > container.clientHeight) return;
+                            try {
+                                const content = formatter(param);
+                                if (typeof content === 'string' && content.trim()) tooltip.textContent = content;
+                            } catch (error) {
+                                console.debug('圖表日期／數值提示更新失敗：', error);
+                            }
+                        };
+                        chart.subscribeCrosshairMove(updateTooltip);
+                        chart.subscribeClick(updateTooltip);
+                        return tooltip;
+                    },
                     
                     // 取得新增 ETF 時的預設空白狀態
                     getDefaultETFState() { 
@@ -874,7 +921,7 @@ html {
 
                             if (this.homeChartMode === 'total') {
                                 const areaSeries = chart.addAreaSeries({ lineColor: '#3b82f6', topColor: 'rgba(59, 130, 246, 0.4)', bottomColor: 'rgba(59, 130, 246, 0.0)', lineWidth: 2, title: '總市值' });
-                                const costSeries = chart.addLineSeries({ color: '#f59e0b', lineWidth: 2, lineStyle: 2, title: '累積本金' });
+                                const costSeries = chart.addLineSeries({ color: '#f59e0b', lineWidth: 2, lineStyle: 2, title: '持有部位成本' });
                                 areaSeries.setData(filteredData.map(d => ({ time: d.time, value: d.value })));
                                 costSeries.setData(filteredData.map(d => ({ time: d.time, value: d.cost })));
                             } else {
@@ -896,6 +943,18 @@ html {
                                     series.setData(s.data);
                                 }
                             }
+
+                            const homeDataByDate = new Map(filteredData.map(item => [item.time, item]));
+                            this.attachChartInfoTooltip(chart, container, (param) => {
+                                const date = this.formatChartDate(param.time);
+                                const item = homeDataByDate.get(date);
+                                if (!item) return '';
+                                if (this.homeChartMode === 'total') {
+                                    return `${date}\n總市值：${this.formatChartNumber(item.value)} 元\n持有部位成本：${this.formatChartNumber(item.cost)} 元`;
+                                }
+                                const holdingLines = Object.keys(this.etfs).map(code => `${code}：${this.formatChartNumber(item.etfValues?.[code] || 0)} 元`);
+                                return `${date}\n總市值：${this.formatChartNumber(item.value)} 元\n各 ETF 市值：\n${holdingLines.join('\n')}`;
+                            });
                             chart.timeScale().fitContent();
                             if (window.ResizeObserver) { new ResizeObserver(entries => { if (entries[0].target === container && this.homeChartInstance && entries[0].contentRect.width > 0) { this.homeChartInstance.applyOptions({ width: Math.floor(entries[0].contentRect.width) }); } }).observe(container); }
                         } catch(e){}
@@ -1043,10 +1102,12 @@ html {
                             // 將「這一天（含）以前」發生的所有交易紀錄，結算進成本中
                             while (txnIndex < sortedTxns.length) {
                                 let t = sortedTxns[txnIndex];
-                                let tTime = new Date(t.date).getTime();
+                                // 以日期字串比較，避免 YYYY-MM-DD 被 JavaScript 當成 UTC、歷史日線卻採台灣交易日時間而錯延一天。
+                                const txnDate = /^\d{4}-\d{2}-\d{2}$/.test(String(t.date || '')) ? String(t.date) : this.getLocalYMD(new Date(t.date));
+                                const historyDate = this.getLocalYMD(new Date(currentDayTime));
                                 
-                                // 如果交易發生的時間 <= 當前迴圈的這天，就進行處理
-                                if (tTime <= currentDayTime) {
+                                // 交易日期 <= 當前歷史交易日，就把該筆交易納入計算。
+                                if (txnDate <= historyDate) {
                                     let s = parseFloat(t.shares) || 0;
                                     let amt = parseFloat(t.amount) || 0;
                                     
@@ -1117,6 +1178,13 @@ html {
                                 costSeries.setData(costData);
                                 chart.timeScale().fitContent();
                             }
+                            const priceByDate = new Map(priceData.map(item => [item.time, item.value]));
+                            const costByDate = new Map(costData.map(item => [item.time, item.value]));
+                            this.attachChartInfoTooltip(chart, container, (param) => {
+                                const date = this.formatChartDate(param.time);
+                                if (!priceByDate.has(date) && !costByDate.has(date)) return '';
+                                return `${date}\n當日市價：${this.formatChartNumber(priceByDate.get(date), 2)} 元\n平均成本：${this.formatChartNumber(costByDate.get(date), 2)} 元`;
+                            });
                             
                             // 加上視窗大小監聽器，讓圖表具備 RWD 響應式功能 (旋轉手機時不會破版)
                             if (window.ResizeObserver) { 
@@ -1157,9 +1225,16 @@ html {
                             if(filteredData.length === 0) filteredData = this.detailTimelineData; 
 
                             const areaSeries = chart.addAreaSeries({ lineColor: '#3b82f6', topColor: 'rgba(59, 130, 246, 0.4)', bottomColor: 'rgba(59, 130, 246, 0.0)', lineWidth: 2, title: '當下市值' });
-                            const costSeries = chart.addLineSeries({ color: '#f59e0b', lineWidth: 2, lineStyle: 2, title: '累積本金' });
+                            const costSeries = chart.addLineSeries({ color: '#f59e0b', lineWidth: 2, lineStyle: 2, title: '持有部位成本' });
                             areaSeries.setData(filteredData.map(d => ({ time: d.time, value: d.value })));
                             costSeries.setData(filteredData.map(d => ({ time: d.time, value: d.cost })));
+                            const detailDataByDate = new Map(filteredData.map(item => [item.time, item]));
+                            this.attachChartInfoTooltip(chart, container, (param) => {
+                                const date = this.formatChartDate(param.time);
+                                const item = detailDataByDate.get(date);
+                                if (!item) return '';
+                                return `${date}\n持有市值：${this.formatChartNumber(item.value)} 元\n持有部位成本：${this.formatChartNumber(item.cost)} 元`;
+                            });
                             
                             chart.timeScale().fitContent();
                             if (window.ResizeObserver) { new ResizeObserver(entries => { if (entries[0].target === container && this.detailChartInstance && entries[0].contentRect.width > 0) { this.detailChartInstance.applyOptions({ width: Math.floor(entries[0].contentRect.width) }); } }).observe(container); }
@@ -2081,6 +2156,13 @@ html {
                                     }
                                 }
 
+                                this.attachChartInfoTooltip(chart, container, (param) => {
+                                    const candle = param.seriesData && param.seriesData.get(candleSeries);
+                                    if (!candle || !Number.isFinite(Number(candle.close))) return '';
+                                    const date = this.formatChartDate(param.time);
+                                    const volume = param.seriesData.get(volumeSeries);
+                                    return `${date}\n收盤價：${this.formatChartNumber(candle.close, 2)} 元\n開盤：${this.formatChartNumber(candle.open, 2)} 元　最高：${this.formatChartNumber(candle.high, 2)} 元\n最低：${this.formatChartNumber(candle.low, 2)} 元\n成交量：${this.formatChartNumber(volume?.value ?? 0)} 股`;
+                                });
                                 chart.timeScale().fitContent();
                             }
                             this.chartRendered = true;
@@ -2412,7 +2494,7 @@ html {
                     </div>
 
                     <div class="bg-blue-50/50 border border-blue-100 rounded-xl p-3 mb-4 text-sm text-slate-600 leading-relaxed">
-                        💡 <strong>提示：</strong>本圖表嚴格依據各檔 ETF 的「歷史明細」與「歷史股價」疊加精算。明細填寫越完整，曲線越能反映您的資產成長軌跡。實線為<strong class="text-blue-600">總市值</strong>，虛線為<strong class="text-amber-500">累積投入本金</strong>。
+                        💡 <strong>提示：</strong>本圖表嚴格依據各檔 ETF 的「歷史明細」與「歷史股價」疊加精算。明細填寫越完整，曲線越能反映您的資產成長軌跡。實線為<strong class="text-blue-600">總市值</strong>，虛線為<strong class="text-amber-500">持有部位成本</strong>。
                     </div>
 
                     <div class="flex flex-wrap gap-1.5 mb-4">
@@ -2828,7 +2910,7 @@ html {
                       <i class="fa-solid text-blue-500 transition-transform duration-300" :class="openNetWorthGuide ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
                   </button>
                   <div x-show="openNetWorthGuide" x-transition.opacity class="p-4 sm:p-5 border-t border-blue-100/50 text-sm text-slate-700 leading-relaxed bg-white/50 space-y-3">
-                      <p>本圖表嚴格依據您的歷史明細精算，實線為您的<strong class="text-blue-600">資產當下市值</strong>，虛線為<strong class="text-amber-600">累積投入本金</strong>。</p>
+                      <p>本圖表嚴格依據您的歷史明細精算，實線為您的<strong class="text-blue-600">資產當下市值</strong>，虛線為<strong class="text-amber-600">持有部位成本</strong>。</p>
                       <ul class="list-disc pl-5 space-y-2 text-slate-600">
                           <li><strong class="text-red-500">🐊 複利鱷魚嘴：</strong>隨持股時間拉長，大盤型 ETF 的實線（市值）與虛線（本金）會呈現「鱷魚嘴」般的開口向上。這代表「資本利得」與「股息再投入」產生的複利效應，時間越久，財富增長的速度會越快。</li>
                           <li><strong class="text-emerald-600">🛡️ 空頭擴張期：</strong>遇到大盤回檔時，市值實線勢必會向下修正，這是市場的正常健康波動。此時請專注看著「本金虛線」——只要扣款不停，本金虛線就會堅定地「由左下向右上」挺進，在低檔累積更多廉價的股數。</li>
