@@ -258,6 +258,35 @@ html {
             </div>
         </div>
 
+        <div x-show="showClearTransactionsModal" class="fixed inset-0 z-[155] flex items-center justify-center bg-slate-900/50 p-4" x-transition x-cloak>
+            <div class="glass-card rounded-3xl w-full max-w-md p-6 shadow-2xl text-left">
+                <h3 class="text-xl font-black text-red-700 mb-2"><i class="fa-solid fa-trash-can mr-2"></i>刪除交易明細</h3>
+                <p class="text-sm text-slate-600 mb-4">請選擇要刪除的範圍。按下下一步後，系統還會再詢問一次。</p>
+                <div class="space-y-3 mb-4">
+                    <label class="flex items-center gap-3 p-3 border rounded-xl cursor-pointer" :class="clearTransactionsMode === 'range' ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-white'">
+                        <input type="radio" name="clearMode" value="range" x-model="clearTransactionsMode" class="accent-red-600">
+                        <span class="font-bold text-slate-700">依日期區間刪除</span>
+                    </label>
+                    <div x-show="clearTransactionsMode === 'range'" class="grid grid-cols-1 sm:grid-cols-2 gap-3 pl-2">
+                        <label class="text-sm font-bold text-slate-600">起始日期<input type="date" x-model="clearDateFrom" class="mt-1 w-full px-3 py-2 rounded-lg border border-slate-300 bg-white"></label>
+                        <label class="text-sm font-bold text-slate-600">結束日期<input type="date" x-model="clearDateTo" class="mt-1 w-full px-3 py-2 rounded-lg border border-slate-300 bg-white"></label>
+                    </div>
+                    <label class="flex items-center gap-3 p-3 border rounded-xl cursor-pointer" :class="clearTransactionsMode === 'all' ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-white'">
+                        <input type="radio" name="clearMode" value="all" x-model="clearTransactionsMode" class="accent-red-600">
+                        <span class="font-bold text-red-700">刪除全部交易明細</span>
+                    </label>
+                </div>
+                <div class="rounded-xl bg-slate-100 p-3 text-sm font-bold text-slate-700 mb-5">
+                    <span x-text="clearTransactionsMode === 'all' ? '全部明細' : (clearDateFrom && clearDateTo ? clearDateFrom + ' 至 ' + clearDateTo : '尚未選擇完整日期區間')"></span>
+                    <span class="block text-lg mt-1" x-text="'預計刪除 ' + clearTransactionsPreviewCount + ' 筆' "></span>
+                </div>
+                <div class="flex gap-3">
+                    <button @click="showClearTransactionsModal = false" class="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl">取消</button>
+                    <button @click="requestClearTransactions()" class="flex-1 py-3 bg-red-600 text-white font-black rounded-xl hover:bg-red-700">下一步</button>
+                </div>
+            </div>
+        </div>
+
         <div x-show="showConfirmBox" class="fixed inset-0 z-[160] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" x-transition x-cloak>
             <div class="glass-card rounded-3xl w-full max-w-sm p-6 text-center shadow-2xl">
                 <div class="text-lg font-bold text-slate-800 mb-6 whitespace-pre-line" x-text="confirmBoxText"></div>
@@ -496,7 +525,11 @@ html {
 
                     /* === 個股詳細資料存儲區 === */
                     baseShares: 0, baseAvgCost: 0, startDate: '', lastCheckDate: null, 
-                    investmentPlans: [], transactions: [], 
+                    investmentPlans: [], transactions: [], skippedAutoOccurrences: [],
+                    // 設定頁使用草稿，只有按下儲存才會寫入正式資料。
+                    baseSharesDraft: '0', baseAvgCostDraft: '0', startDateDraft: '', investmentPlansDraft: [],
+                    showClearTransactionsModal: false, clearTransactionsMode: 'range', clearDateFrom: '', clearDateTo: '',
+                    pendingDeleteFrom: '', pendingDeleteTo: '', 
                     baseRetirementMV: 0, baseRetirementDate: '', swrRate: 4.0, customLockDate: '',
                     manualAction: 'buy', manualAmount: null, manualDate: '', manualPrice: null, manualShares: null,
                     isFullscreenHistory: false, expandedYears: [new Date().getFullYear().toString()],
@@ -643,8 +676,31 @@ html {
                         this.showInfo(title, content);
                     },
 
-                    getLocalYMD(d = new Date()) { 
-                        return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split('T')[0]; 
+                    // 全程以台灣時區（Asia/Taipei，UTC+8）取得日曆日期，不受手機時區設定影響。
+                    getLocalYMD(d = new Date()) {
+                        const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d);
+                        const part = type => (parts.find(p => p.type === type) || {}).value || '';
+                        return `${part('year')}-${part('month')}-${part('day')}`;
+                    },
+                    formatTaipeiDateTime(d, includeSeconds = false) {
+                        const options = { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' };
+                        if (includeSeconds) options.second = '2-digit';
+                        const parts = new Intl.DateTimeFormat('en-CA', options).formatToParts(d);
+                        const part = type => (parts.find(p => p.type === type) || {}).value || '';
+                        const date = `${part('year')}/${part('month')}/${part('day')}`;
+                        const time = `${part('hour')}:${part('minute')}${includeSeconds ? `:${part('second')}` : ''}`;
+                        return `${date} ${time}`;
+                    },
+                    taipeiDateKeyToUTCDate(key) {
+                        const m = String(key || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+                        if (!m) return null;
+                        return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+                    },
+                    addDaysToDateKey(key, days) {
+                        const date = this.taipeiDateKeyToUTCDate(key);
+                        if (!date) return '';
+                        date.setUTCDate(date.getUTCDate() + days);
+                        return date.toISOString().slice(0, 10);
                     },
                     scrollToTop() { window.scrollTo({ top: 0, behavior: 'smooth' }); },
 
@@ -686,7 +742,7 @@ html {
                     
                     // 取得新增 ETF 時的預設空白狀態
                     getDefaultETFState() { 
-                        return { baseShares: 0, baseAvgCost: 0, startDate: '', lastCheckDate: new Date().getTime(), investmentPlans: [], transactions: [], isBlueLight: false, isPanic: false, baseRetirementMV: 0, baseRetirementDate: '', swrRate: 4.0 }; 
+                        return { baseShares: 0, baseAvgCost: 0, startDate: '', lastCheckDate: new Date().getTime(), investmentPlans: [], transactions: [], skippedAutoOccurrences: [], isBlueLight: false, isPanic: false, baseRetirementMV: 0, baseRetirementDate: '', swrRate: 4.0 }; 
                     },
 
                     /* =========================================================
@@ -741,7 +797,7 @@ html {
                     },
                     serializeCurrentData(includeLocalCache = true) {
                         if (this.currentView === 'detail' && this.activeETF) {
-                            this.etfs[this.activeETF] = { baseShares: this.baseShares, baseAvgCost: this.baseAvgCost, startDate: this.startDate, lastCheckDate: this.lastCheckDate, investmentPlans: this.investmentPlans, transactions: this.transactions, isBlueLight: this.isBlueLight, isPanic: this.isPanic, baseRetirementMV: this.baseRetirementMV, baseRetirementDate: this.baseRetirementDate, swrRate: this.swrRate };
+                            this.etfs[this.activeETF] = { baseShares: this.baseShares, baseAvgCost: this.baseAvgCost, startDate: this.startDate, lastCheckDate: this.lastCheckDate, investmentPlans: this.investmentPlans, transactions: this.transactions, skippedAutoOccurrences: this.skippedAutoOccurrences || [], isBlueLight: this.isBlueLight, isPanic: this.isPanic, baseRetirementMV: this.baseRetirementMV, baseRetirementDate: this.baseRetirementDate, swrRate: this.swrRate };
                         }
                         const payload = { etfs: this.etfs, global: { ...this.globalSettings } };
                         delete payload.global.cloudBackupStatus;
@@ -805,8 +861,7 @@ html {
                         if (!value) return '時間不明';
                         const d = new Date(value);
                         if (!Number.isFinite(d.getTime())) return String(value);
-                        const pad = n => String(n).padStart(2, '0');
-                        return `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+                        return this.formatTaipeiDateTime(d, true);
                     },
                     accountDataSummary(data) {
                         if (!data || !data.etfs) return '沒有可辨識的帳本資料';
@@ -1060,7 +1115,7 @@ html {
                     },
                     saveData(shouldAutoBackup = false) {
                         if (this.currentView === 'detail' && this.activeETF) {
-                            this.etfs[this.activeETF] = { baseShares: this.baseShares, baseAvgCost: this.baseAvgCost, startDate: this.startDate, lastCheckDate: this.lastCheckDate, investmentPlans: this.investmentPlans, transactions: this.transactions, isBlueLight: this.isBlueLight, isPanic: this.isPanic, baseRetirementMV: this.baseRetirementMV, baseRetirementDate: this.baseRetirementDate, swrRate: this.swrRate };
+                            this.etfs[this.activeETF] = { baseShares: this.baseShares, baseAvgCost: this.baseAvgCost, startDate: this.startDate, lastCheckDate: this.lastCheckDate, investmentPlans: this.investmentPlans, transactions: this.transactions, skippedAutoOccurrences: this.skippedAutoOccurrences || [], isBlueLight: this.isBlueLight, isPanic: this.isPanic, baseRetirementMV: this.baseRetirementMV, baseRetirementDate: this.baseRetirementDate, swrRate: this.swrRate };
                         }
                         if (shouldAutoBackup && this.currentAccountId) this.globalSettings.cloudBackupStatus = '';
                         const localPayload = { etfs: this.etfs, global: this.globalSettings, homePrices: this.homePrices };
@@ -1086,6 +1141,66 @@ html {
                             // 尚未選擇帳號時只保存舊版本地資料，不會意外上傳到任何帳號。
                             try { localStorage.setItem('THH_ETF_Data_V1', JSON.stringify(localPayload)); } catch (e) {}
                         }
+                    },
+                    // 每次進入標的詳細頁時，重新建立尚未儲存的設定草稿。
+                    resetSettingsDrafts() {
+                        this.baseSharesDraft = String(this.baseShares ?? 0);
+                        this.baseAvgCostDraft = String(this.baseAvgCost ?? 0);
+                        this.startDateDraft = this.startDate || '';
+                        this.investmentPlansDraft = (Array.isArray(this.investmentPlans) ? this.investmentPlans : []).map((p, i) => ({
+                            id: p && p.id != null ? p.id : `plan-${i}-${Date.now()}`,
+                            day: p && p.day != null ? String(p.day) : '',
+                            amount: p && p.amount != null ? String(p.amount) : ''
+                        }));
+                    },
+                    cancelBaseInventorySettings() {
+                        this.baseSharesDraft = String(this.baseShares ?? 0);
+                        this.baseAvgCostDraft = String(this.baseAvgCost ?? 0);
+                    },
+                    saveBaseInventorySettings() {
+                        const sharesText = String(this.baseSharesDraft ?? '').trim();
+                        const costText = String(this.baseAvgCostDraft ?? '').trim();
+                        if (!sharesText || !costText) return this.showMsg('請完整填寫既有持有股數與既有持有均價；若沒有既有庫存，請填 0。');
+                        const shares = Number(sharesText), cost = Number(costText);
+                        if (!Number.isFinite(shares) || shares < 0 || !Number.isInteger(shares)) return this.showMsg('既有持有股數必須是大於或等於 0 的整數。');
+                        if (!Number.isFinite(cost) || cost < 0) return this.showMsg('既有持有均價必須是大於或等於 0 的數字。');
+                        const changed = shares !== (Number(this.baseShares) || 0) || cost !== (Number(this.baseAvgCost) || 0);
+                        this.baseShares = shares;
+                        this.baseAvgCost = cost;
+                        this.saveData(changed);
+                        this.cancelBaseInventorySettings();
+                        this.showMsg(changed ? '✅ 既有庫存設定已儲存。' : '資料沒有變更。');
+                    },
+                    cancelInvestmentPlanSettings() {
+                        this.startDateDraft = this.startDate || '';
+                        this.investmentPlansDraft = (Array.isArray(this.investmentPlans) ? this.investmentPlans : []).map((p, i) => ({
+                            id: p && p.id != null ? p.id : `plan-${i}-${Date.now()}`,
+                            day: p && p.day != null ? String(p.day) : '',
+                            amount: p && p.amount != null ? String(p.amount) : ''
+                        }));
+                    },
+                    saveInvestmentPlanSettings() {
+                        const plans = Array.isArray(this.investmentPlansDraft) ? this.investmentPlansDraft : [];
+                        const normalized = [];
+                        for (let i = 0; i < plans.length; i++) {
+                            const p = plans[i] || {};
+                            const dayText = String(p.day ?? '').trim();
+                            const amountText = String(p.amount ?? '').trim();
+                            if (!dayText || !amountText) return this.showMsg(`第 ${i + 1} 個扣款計畫尚未填完整，請填寫扣款日與金額，或刪除此計畫。`);
+                            const day = Number(dayText), amount = Number(amountText);
+                            if (!Number.isInteger(day) || day < 1 || day > 31) return this.showMsg(`第 ${i + 1} 個扣款計畫的日期必須是 1 至 31 日。`);
+                            if (!Number.isFinite(amount) || amount <= 0) return this.showMsg(`第 ${i + 1} 個扣款計畫的金額必須大於 0。`);
+                            normalized.push({ id: p.id != null ? p.id : Date.now() + i, day, amount: Math.round(amount) });
+                        }
+                        if (this.startDateDraft && !/^\d{4}-\d{2}-\d{2}$/.test(this.startDateDraft)) return this.showMsg('自動記帳起始日格式不正確。');
+                        const nextStartDate = this.startDateDraft || '';
+                        const changed = nextStartDate !== (this.startDate || '') || JSON.stringify(normalized) !== JSON.stringify((this.investmentPlans || []).map(p => ({ id: p.id, day: Number(p.day), amount: Number(p.amount) })));
+                        this.startDate = nextStartDate;
+                        this.investmentPlans = normalized;
+                        this.cancelInvestmentPlanSettings();
+                        this.saveData(changed);
+                        if (Array.isArray(this.cachedHistoricalData)) this.processAutoDeduct();
+                        this.showMsg(changed ? '✅ 每月定期定額設定已儲存。' : '資料沒有變更。');
                     },
                     // 對系統設定欄位比較修改前後的值；沒實際變更只存本機，不備份雲端。
                     saveSettingChange(event, numeric = false) {
@@ -1714,7 +1829,7 @@ html {
                                 vol = res.meta?.regularMarketVolume;
                                 
                                 const d = new Date(targetTimestamp * 1000);
-                                timeStr = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+                                timeStr = this.formatTaipeiDateTime(d, false);
                             }
                             
                             // 2️⃣ 最終防線：如果 Yahoo 失敗，啟動台灣證交所備援
@@ -2400,7 +2515,8 @@ html {
                         try { history.pushState({ view: 'detail', code: code }, '', ''); } catch (e) {}
                         this.activeETF = code; let data = this.etfs[code];
                         this.baseShares = data.baseShares || 0; this.baseAvgCost = data.baseAvgCost || 0; this.startDate = data.startDate || '';
-                        this.lastCheckDate = data.lastCheckDate || new Date().getTime(); this.investmentPlans = data.investmentPlans || [];
+                        this.lastCheckDate = data.lastCheckDate || new Date().getTime(); this.investmentPlans = data.investmentPlans || []; this.skippedAutoOccurrences = Array.isArray(data.skippedAutoOccurrences) ? data.skippedAutoOccurrences : [];
+                        this.resetSettingsDrafts();
                         const loadedTxnTime = Date.now();
                         this.transactions = (Array.isArray(data.transactions) ? data.transactions : []).map((t, index) => ({ ...t, id: (t && t.id != null) ? t.id : loadedTxnTime + index + Math.random() }));
                         this.isBlueLight = data.isBlueLight || false; this.isPanic = data.isPanic || false;
@@ -2905,8 +3021,8 @@ html {
                         if (customDate) {
                             this.baseRetirementDate = customDate.replace(/-/g, '/');
                         } else {
-                            const pad = n => String(n).padStart(2, '0'); const d = new Date();
-                            this.baseRetirementDate = `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())}`; 
+                            const pad = n => String(n).padStart(2, '0'); const key = this.getLocalYMD(new Date()); const [year, month, day] = key.split('-').map(Number);
+                            this.baseRetirementDate = `${year}/${pad(month)}/${pad(day)}`; 
                         }
                         
                         const changed = previousBase.mv !== (Number(this.baseRetirementMV) || 0)
@@ -2920,11 +3036,11 @@ html {
                        🗓️ 自動扣款與計畫排程區塊
                        ========================================================= */
                     checkGlobalReminders() {
-                        let today = new Date(), key = `${today.getFullYear()}-${today.getMonth()}`; 
+                        let today = new Date(), taipeiKey = this.getLocalYMD(today), key = taipeiKey.slice(0, 7); 
                         let needsReminder = false;
                         for(let code in this.etfs) { 
                             let etf = this.etfs[code], days = (etf.investmentPlans || []).map(p => parseInt(p.day)).filter(d => !isNaN(d)); 
-                            if (days.length && today.getDate() > Math.max(...days) && this.globalSettings.lastRemindedMonth !== key) { 
+                            if (days.length && Number(taipeiKey.slice(8, 10)) > Math.max(...days) && this.globalSettings.lastRemindedMonth !== key) { 
                                 needsReminder = true; break; 
                             } 
                         }
@@ -2932,92 +3048,108 @@ html {
                     },
 
                     dismissReminder() { 
-                        this.globalSettings.lastRemindedMonth = `${new Date().getFullYear()}-${new Date().getMonth()}`; 
+                        this.globalSettings.lastRemindedMonth = this.getLocalYMD(new Date()).slice(0, 7); 
                         this.showUpdateReminder = false; 
                         this.saveData(false); 
                     },
 
                     processAutoDeduct() {
-                        if (!Array.isArray(this.cachedHistoricalData) || !this.lastCheckDate || !Array.isArray(this.investmentPlans) || !this.investmentPlans.length) return;
-                        const todayDate = new Date();
-                        todayDate.setHours(0, 0, 0, 0);
-                        const today = todayDate.getTime();
-                        const lastCheckDate = new Date(this.lastCheckDate);
-                        if (!Number.isFinite(lastCheckDate.getTime())) return;
-                        lastCheckDate.setHours(0, 0, 0, 0);
-                        const lastCheck = lastCheckDate.getTime();
-                        if (lastCheck >= today) return;
-
-                        let logs = [], newTransactionsCount = 0;
-                        const plans = this.investmentPlans.filter(p => {
-                            const day = Number(p.day), amount = Number(p.amount);
-                            return Number.isInteger(day) && day >= 1 && day <= 31 && Number.isFinite(amount) && amount > 0;
+                        if (!Array.isArray(this.cachedHistoricalData) || !Array.isArray(this.investmentPlans) || !this.investmentPlans.length) return;
+                        const todayStr = this.getLocalYMD(new Date());
+                        const savedCheckDate = this.getLocalYMD(new Date(this.lastCheckDate || Date.now()));
+                        if (!this.taipeiDateKeyToUTCDate(savedCheckDate)) return;
+                        // 以 YYYY-MM-DD 字串／UTC 日曆逐日處理，避免手機時區影響日期與跨日判斷。
+                        let currKey = savedCheckDate <= todayStr ? savedCheckDate : todayStr;
+                        const planStart = this.startDate ? this.normalizeTransactionDate(this.startDate) : '';
+                        const usablePlans = this.investmentPlans.filter(p => {
+                            const day = Number(p && p.day);
+                            return Number.isInteger(day) && day >= 1 && day <= 31;
                         });
+                        if (!usablePlans.length) return;
                         const history = this.cachedHistoricalData
                             .filter(d => d && Number.isFinite(new Date(d.time).getTime()) && Number.isFinite(Number(d.close)) && Number(d.close) > 0)
-                            .slice()
-                            .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
-                        const todayStr = this.getLocalYMD(todayDate);
-                        let currDate = new Date(lastCheck);
-                        currDate.setDate(currDate.getDate() + 1);
-                        const planStart = this.startDate ? new Date(`${this.startDate}T00:00:00`).getTime() : 0;
-
-                        while (currDate.getTime() <= today) {
-                            const scheduledDate = this.getLocalYMD(currDate);
-                            if (currDate.getTime() >= planStart) {
-                                for (const plan of plans.filter(p => Number(p.day) === currDate.getDate())) {
-                                    let execPrice = null;
-                                    const maxDate = new Date(currDate);
-                                    maxDate.setDate(maxDate.getDate() + 7);
-                                    const maxDateStr = this.getLocalYMD(maxDate);
-                                    // 排定扣款日若遇休市，僅採用 0–7 天內第一筆有效收盤價，不可借用多年後的價格。
-                                    for (const row of history) {
-                                        const rowDate = this.getLocalYMD(new Date(row.time));
-                                        if (rowDate >= scheduledDate && rowDate <= maxDateStr && rowDate <= todayStr) {
-                                            execPrice = Number(row.close);
-                                            break;
-                                        }
-                                    }
-                                    // 當日沒有日線但即時報價有效時，才允許使用當日即時價。
-                                    if ((!Number.isFinite(execPrice) || execPrice <= 0) && scheduledDate === todayStr) {
-                                        const livePrice = Number(this.currentPrice);
-                                        if (Number.isFinite(livePrice) && livePrice > 0) execPrice = livePrice;
-                                    }
-                                    if (!Number.isFinite(execPrice) || execPrice <= 0) {
-                                        logs.push(`⚠️ ${scheduledDate}：沒有可用的有效股價，略過本次自動扣款。`);
+                            .map(d => ({ ...d, dateKey: this.getLocalYMD(new Date(d.time)), close: Number(d.close) }))
+                            .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+                        const suppressed = new Set(Array.isArray(this.skippedAutoOccurrences) ? this.skippedAutoOccurrences.map(String) : []);
+                        let logs = [], newTransactionsCount = 0, pendingDate = '';
+                        let guard = 0;
+                        while (currKey && currKey <= todayStr && guard++ < 5000) {
+                            const dateParts = currKey.split('-').map(Number);
+                            const scheduledDay = dateParts[2];
+                            if ((!planStart || currKey >= planStart)) {
+                                for (const plan of usablePlans.filter(p => Number(p.day) === scheduledDay)) {
+                                    const planAmount = Number(plan.amount);
+                                    const planId = String(plan.id ?? `${plan.day}-${plan.amount}`);
+                                    const occurrenceKey = `${planId}|${currKey}`;
+                                    if (suppressed.has(occurrenceKey) || suppressed.has(`legacy-auto|${currKey}`)) continue; // 使用者刪除過的自動扣款，視為已明確取消，不再補回。
+                                    if (!Number.isFinite(planAmount) || planAmount <= 0) {
+                                        logs.push(`⚠️ ${currKey}：扣款計畫金額空白或無效，已略過；請至系統設定修正。`);
                                         continue;
                                     }
-                                    execPrice = Number(execPrice.toFixed(2));
-                                    const planAmount = Number(plan.amount);
+                                    const alreadyAdded = this.transactions.some(t => {
+                                        if (!t || t.action !== 'buy') return false;
+                                        if (t.autoOccurrenceKey != null) return String(t.autoOccurrenceKey) === occurrenceKey;
+                                        const oldPlanId = t.autoPlanId == null ? '' : String(t.autoPlanId);
+                                        const oldScheduledDate = this.normalizeTransactionDate(t.autoScheduledDate || t.date);
+                                        if (oldPlanId && oldPlanId === planId && oldScheduledDate === currKey) return true;
+                                        // 舊版自動交易沒有 occurrence key：只在同一扣款日已有舊自動紀錄時防重複。
+                                        return t.type === 'auto' && oldScheduledDate === currKey;
+                                    });
+                                    if (alreadyAdded) continue;
+
+                                    // 只依歷史行情中實際存在的交易日決定成交日；週末、國定假日及補假日都會自然順延。
+                                    // 若當日尚無已確認的交易日行情，暫不使用即時／快取報價，避免休市日誤扣。
+                                    const maxDateStr = this.addDaysToDateKey(currKey, 10);
+                                    const row = history.find(item => item.dateKey >= currKey && item.dateKey <= maxDateStr && item.dateKey <= todayStr);
+                                    if (!row) {
+                                        const daysSinceScheduled = Math.floor((this.taipeiDateKeyToUTCDate(todayStr) - this.taipeiDateKeyToUTCDate(currKey)) / 86400000);
+                                        if (daysSinceScheduled <= 10) {
+                                            pendingDate = currKey;
+                                            logs.push(`⏳ ${currKey}：尚未取得扣款日之後的已確認交易日行情；遇週末／休市將順延，並在下次載入行情時重試。`);
+                                            break;
+                                        }
+                                        logs.push(`⚠️ ${currKey}：超過 10 天仍無可用交易日行情，未新增紀錄。`);
+                                        continue;
+                                    }
+                                    const execPrice = Number(Number(row.close).toFixed(2));
                                     const shares = Math.floor(planAmount / execPrice);
                                     const cost = Math.round(shares * execPrice);
                                     if (!Number.isFinite(shares) || shares <= 0 || !Number.isFinite(cost) || cost <= 0) {
-                                        logs.push(`⚠️ ${scheduledDate}：扣款金額不足以買進 1 股，未新增交易明細。`);
+                                        logs.push(`⚠️ ${currKey}：扣款金額不足以買進 1 股，未新增交易明細。`);
                                         continue;
                                     }
-                                    const txn = { id: Date.now() + Math.random(), date: scheduledDate, amount: cost, shares, price: execPrice, type: 'auto', action: 'buy', commission: this.calculateTransactionCommission(cost), wireFee: 0, tax: 0, feePolicyVersion: 2, feeRecordVersion: 2, commissionManual: false, wireFeeManual: false, taxManual: false };
+                                    const txn = {
+                                        id: Date.now() + Math.random(), date: row.dateKey, autoScheduledDate: currKey,
+                                        autoOccurrenceKey: occurrenceKey, amount: cost, shares, price: execPrice,
+                                        type: 'auto', autoPlanId: planId, action: 'buy',
+                                        commission: this.calculateTransactionCommission(cost), wireFee: 0, tax: 0,
+                                        feePolicyVersion: 2, feeRecordVersion: 2,
+                                        commissionManual: false, wireFeeManual: false, taxManual: false
+                                    };
                                     if (!this.isValidTransactionForBackup(txn)) {
-                                        logs.push(`⚠️ ${scheduledDate}：交易資料未通過檢查，未新增自動扣款紀錄。`);
+                                        logs.push(`⚠️ ${currKey}：交易資料未通過檢查，未新增自動扣款紀錄。`);
                                         continue;
                                     }
                                     this.transactions.push(txn);
                                     this.transactionSavedSnapshot[String(txn.id)] = JSON.parse(JSON.stringify(txn));
                                     newTransactionsCount++;
-                                    logs.push(`📅 ${scheduledDate}：買入 ${shares} 股，成交總額 ${cost} 元、手續費 ${txn.commission} 元，實際支出 ${cost + txn.commission} 元`);
+                                    logs.push(`📅 計畫日 ${currKey}（交易日 ${row.dateKey}）：買入 ${shares} 股，成交總額 ${cost} 元、手續費 ${txn.commission} 元，實際支出 ${cost + txn.commission} 元`);
                                 }
                             }
-                            currDate.setDate(currDate.getDate() + 1);
+                            currKey = this.addDaysToDateKey(currKey, 1);
                         }
-
                         if (logs.length > 0) {
                             this.newLogs = logs;
                             this.showLogs = true;
                         }
-                        this.lastCheckDate = Date.now();
-                        // 僅在真的新增至少一筆有效自動扣款明細時觸發雲端自動備份。
+                        if (pendingDate) {
+                            // 保留待處理日期，下一次載入行情仍會重試該扣款日。
+                            this.lastCheckDate = Date.parse(`${this.addDaysToDateKey(pendingDate, -1)}T00:00:00+08:00`);
+                        } else {
+                            this.lastCheckDate = Date.now();
+                        }
                         this.saveData(newTransactionsCount > 0);
                     },
-
                     /* =========================================================
                        📉 詳細頁 K 線圖表繪製區塊
                        ========================================================= */
@@ -3398,8 +3530,8 @@ html {
                     /* =========================================================
                        ✍️ 投資計畫與明細手動編輯區塊
                        ========================================================= */
-                    addPlan() { this.investmentPlans.push({ id: Date.now(), day: 15, amount: 10000 }); this.saveData(true); },
-                    removePlan(id) { const prior = this.investmentPlans.length; this.investmentPlans = this.investmentPlans.filter(p => p.id !== id); this.saveData(this.investmentPlans.length !== prior); },
+                    addPlan() { this.investmentPlansDraft.push({ id: `plan-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, day: '15', amount: '10000' }); },
+                    removePlan(id) { this.investmentPlansDraft = this.investmentPlansDraft.filter(p => String(p.id) !== String(id)); },
 
                     executeManualAdd() { this.openNewTransactionEditor(); },
 
@@ -3430,12 +3562,65 @@ html {
                     /* =========================================================
                        🗑️ 刪除與全系統備份還原操作
                        ========================================================= */
-                    confirmRemoveTransaction(id) { this.pendingDeleteId = id; this.pendingDeleteType = 'single'; this.confirmBoxText = '確定要刪除這筆紀錄嗎？'; this.showConfirmBox = true; },
-                    confirmClearTransactions() { this.pendingDeleteType = 'all'; this.confirmBoxText = '⚠️ 警告：確定清空「所有」明細？(無法復原)'; this.showConfirmBox = true; },
+                    confirmRemoveTransaction(id) { this.pendingDeleteId = id; this.pendingDeleteType = 'single'; this.confirmBoxText = '確定要刪除這筆紀錄嗎？若是自動扣款，刪除後本次計畫也會標記為已取消，不會自動補回。'; this.showConfirmBox = true; },
+                    suppressDeletedAutoOccurrences(records) {
+                        const keys = new Set(Array.isArray(this.skippedAutoOccurrences) ? this.skippedAutoOccurrences.map(String) : []);
+                        (records || []).forEach(t => {
+                            if (!t || !(t.autoOccurrenceKey || t.autoPlanId != null || t.type === 'auto')) return;
+                            const scheduledDate = this.normalizeTransactionDate(t.autoScheduledDate || t.date);
+                            if (!scheduledDate) return;
+                            const planId = String(t.autoPlanId ?? 'legacy-auto');
+                            keys.add(t.autoOccurrenceKey ? String(t.autoOccurrenceKey) : `${planId}|${scheduledDate}`);
+                        });
+                        this.skippedAutoOccurrences = Array.from(keys);
+                    },
+                    normalizeTransactionDate(value) {
+                        const text = String(value || '').trim();
+                        const match = text.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+                        if (!match) return '';
+                        const year = Number(match[1]), month = Number(match[2]), day = Number(match[3]);
+                        const date = new Date(year, month - 1, day);
+                        if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return '';
+                        return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                    },
+                    openClearTransactionsModal() {
+                        const dates = (this.transactions || []).map(t => this.normalizeTransactionDate(t && t.date)).filter(Boolean).sort();
+                        this.clearTransactionsMode = 'range';
+                        this.clearDateFrom = dates[0] || '';
+                        this.clearDateTo = dates[dates.length - 1] || '';
+                        this.showClearTransactionsModal = true;
+                    },
+                    get clearTransactionsPreviewCount() {
+                        if (this.clearTransactionsMode === 'all') return (this.transactions || []).length;
+                        if (!this.clearDateFrom || !this.clearDateTo || this.clearDateFrom > this.clearDateTo) return 0;
+                        return (this.transactions || []).filter(t => {
+                            const date = this.normalizeTransactionDate(t && t.date);
+                            return date && date >= this.clearDateFrom && date <= this.clearDateTo;
+                        }).length;
+                    },
+                    requestClearTransactions() {
+                        const count = this.clearTransactionsPreviewCount;
+                        if (count <= 0) return this.showMsg(this.clearTransactionsMode === 'all' ? '目前沒有交易明細可刪除。' : '這個日期區間沒有可刪除的交易明細，或起訖日期不正確。');
+                        if (this.clearTransactionsMode === 'range') {
+                            if (!this.clearDateFrom || !this.clearDateTo || this.clearDateFrom > this.clearDateTo) return this.showMsg('請選擇正確的起訖日期，起始日不可晚於結束日。');
+                            this.pendingDeleteType = 'range';
+                            this.pendingDeleteFrom = this.clearDateFrom;
+                            this.pendingDeleteTo = this.clearDateTo;
+                            this.confirmBoxText = `⚠️ 最後確認：將刪除 ${this.clearDateFrom} 至 ${this.clearDateTo} 之間的 ${count} 筆交易明細。\n既有庫存設定不會被刪除，刪除後無法復原。`;
+                        } else {
+                            this.pendingDeleteType = 'all';
+                            this.pendingDeleteFrom = '';
+                            this.pendingDeleteTo = '';
+                            this.confirmBoxText = `⚠️ 最後確認：將永久刪除目前標的的全部 ${count} 筆交易明細。\n既有庫存設定不會被刪除，刪除後無法復原。`;
+                        }
+                        this.showClearTransactionsModal = false;
+                        this.showConfirmBox = true;
+                    },
 
                     executeConfirmAction() {
                         if (this.pendingDeleteType === 'single') { 
                             const priorCount = this.transactions.length;
+                            this.suppressDeletedAutoOccurrences(this.transactions.filter(t => t.id === this.pendingDeleteId));
                             this.transactions = this.transactions.filter(t => t.id !== this.pendingDeleteId);
                             delete this.transactionSavedSnapshot[String(this.pendingDeleteId)];
                             this.showTransactionEditor = false;
@@ -3443,11 +3628,26 @@ html {
                         } 
                         else if (this.pendingDeleteType === 'all') { 
                             const hadTransactions = this.transactions.length > 0;
+                            this.suppressDeletedAutoOccurrences(this.transactions);
                             this.transactions = [];
                             this.transactionSavedSnapshot = {};
-                            this.showMsg('🗑️ 所有歷史明細已清空！');
+                            this.showMsg('🗑️ 目前標的的所有交易明細已清空；既有庫存設定仍保留。');
                             this.saveData(hadTransactions); 
-                        } 
+                        }
+                        else if (this.pendingDeleteType === 'range') {
+                            const from = this.pendingDeleteFrom, to = this.pendingDeleteTo;
+                            const removed = this.transactions.filter(t => {
+                                const date = this.normalizeTransactionDate(t && t.date);
+                                return date && date >= from && date <= to;
+                            });
+                            const removedIds = new Set(removed.map(t => String(t.id)));
+                            this.suppressDeletedAutoOccurrences(removed);
+                            this.transactions = this.transactions.filter(t => !removedIds.has(String(t.id)));
+                            removedIds.forEach(id => { delete this.transactionSavedSnapshot[id]; });
+                            this.showMsg(`🗑️ 已刪除 ${from} 至 ${to} 的 ${removed.length} 筆交易明細；其他資料未變更。`);
+                            this.saveData(removed.length > 0);
+                            this.pendingDeleteFrom = ''; this.pendingDeleteTo = '';
+                        }
                         else if (this.pendingDeleteType === 'etf') {
                             const code = this.pendingDeleteId; 
                             delete this.etfs[code]; 
@@ -3509,13 +3709,12 @@ html {
                     closeInfoBox() { this.showInfoBox = false; },
                     showMsg(text, reload = false) { this.msgBoxText = text; this.reloadOnClose = reload; this.showMsgBox = true; },
                     closeMsgBox() { this.showMsgBox = false; if (this.reloadOnClose) window.location.reload(); },
-                    closeConfirmBox() { this.showConfirmBox = false; this.pendingDeleteId = null; },
+                    closeConfirmBox() { this.showConfirmBox = false; this.pendingDeleteId = null; this.pendingDeleteType = ''; this.pendingDeleteFrom = ''; this.pendingDeleteTo = ''; },
                     formatMoney(num) { return isNaN(num) || num == null ? '0' : Number(num).toLocaleString('zh-TW', { maximumFractionDigits: 0 }); },
                     formatPriceTimestamp(timestamp) {
                         const d = new Date(Number(timestamp));
                         if (!Number.isFinite(d.getTime())) return '時間不明';
-                        const pad = n => String(n).padStart(2, '0');
-                        return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                        return this.formatTaipeiDateTime(d, false);
                     },
                     getQuoteUpdateLabel(quote) {
                         if (!quote || !(Number(quote.price) > 0)) return '尚無成功取得的股價';
@@ -4343,7 +4542,7 @@ html {
         realMV: 0,
         realDate: '',
         realSWR: 0,
-        mDate: new Date().toISOString().split('T')[0],
+        mDate: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()),
         mValue: 10000000,
         mSWR: 4.0
       }">
@@ -4669,42 +4868,46 @@ html {
 
     <div class="space-y-8 relative z-10">
       <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-[0_4px_15px_rgb(0,0,0,0.02)]">
-        <h3 class="font-black text-slate-800 mb-2 text-lg flex items-center gap-2"><span class="w-6 h-6 rounded bg-blue-100 text-blue-600 flex items-center justify-center text-sm">1</span> 基礎庫存設定</h3>
-        <p class="text-sm font-bold text-red-500 bg-red-50 px-4 py-3 rounded-lg border border-red-100 mb-5">⚠️ 注意：僅在此處填寫期初總數，系統只能計算出「累積報酬率」。若您希望能精準算出將每次投入時間考慮進去的「年化報酬率 (XIRR)」，請務必將此處設為 0，並改至下方「歷史明細」逐筆填寫或匯入。</p>
+        <h3 class="font-black text-slate-800 mb-2 text-lg flex items-center gap-2"><span class="w-6 h-6 rounded bg-blue-100 text-blue-600 flex items-center justify-center text-sm">1</span> 既有庫存設定</h3>
+        <p class="text-sm font-bold text-red-500 bg-red-50 px-4 py-3 rounded-lg border border-red-100 mb-5">⚠️ 這裡是設定開始使用本程式時「已經持有」的庫存，不會新增交易明細。若要用每筆買賣日期精算年化報酬率（XIRR），請將既有持有股數與均價設為 0，再到交易明細逐筆輸入或匯入歷史交易。</p>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div class="bg-slate-50 p-4 rounded-xl shadow-inner border border-slate-100">
-            <label class="block text-sm font-bold text-slate-500 mb-2">期初庫存量 (股)</label>
-            <input type="number" step="1" x-model.number="baseShares" @focus="$el.dataset.previousValue = $el.value" @change="saveSettingChange($event, true)" class="w-full px-4 py-3 bg-white border border-slate-200 rounded-lg font-bold text-slate-700 text-lg">
+            <label class="block text-sm font-bold text-slate-500 mb-2">既有持有股數（股）</label>
+            <input type="number" min="0" step="1" x-model="baseSharesDraft" class="w-full px-4 py-3 bg-white border border-slate-200 rounded-lg font-bold text-slate-700 text-lg">
           </div>
           <div class="bg-slate-50 p-4 rounded-xl shadow-inner border border-slate-100">
-            <label class="block text-sm font-bold text-slate-500 mb-2">期初買入均價 (元)</label>
-            <input type="number" step="0.01" x-model.number="baseAvgCost" @focus="$el.dataset.previousValue = $el.value" @change="saveSettingChange($event, true)" class="w-full px-4 py-3 bg-white border border-slate-200 rounded-lg font-bold text-slate-700 text-lg">
+            <label class="block text-sm font-bold text-slate-500 mb-2">既有持有均價（元）</label>
+            <input type="number" min="0" step="0.01" x-model="baseAvgCostDraft" class="w-full px-4 py-3 bg-white border border-slate-200 rounded-lg font-bold text-slate-700 text-lg">
           </div>
+        </div>
+        <div class="flex gap-3 mt-4">
+          <button @click="cancelBaseInventorySettings()" class="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200">取消</button>
+          <button @click="saveBaseInventorySettings()" class="flex-1 py-3 bg-blue-600 text-white font-black rounded-xl hover:bg-blue-700 shadow-sm">儲存既有庫存</button>
         </div>
       </div>
 
       <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-[0_4px_15px_rgb(0,0,0,0.02)]">
         <h3 class="font-black text-slate-800 mb-2 text-lg flex items-center gap-2"><span class="w-6 h-6 rounded bg-indigo-100 text-indigo-600 flex items-center justify-center text-sm">2</span> 每月定期定額自動記帳</h3>
-        <p class="text-sm font-bold text-slate-500 mb-5 leading-relaxed">💡 系統會在扣款日當天，自動抓取「當下即時市價」寫入明細。由於各券商的實際成交價（如收盤價或盤中均價）可能略有不同，建議您在券商扣款完成後，至下方「歷史明細」微調單價與總金額，以確保帳戶 100% 精準。</p>
+        <p class="text-sm font-bold text-slate-500 mb-5 leading-relaxed">💡 本程式不是背景定時服務：會在您進入該 ETF 詳細頁、行情資料載入後檢查到期計畫；若當下沒有可用價格，會保留待重試，不建立空白紀錄。計畫金額是成交總額預算，手續費另計。實際成交後仍可至交易明細修正單價與金額。</p>
         <div class="space-y-5">
           <div class="bg-slate-50 p-4 rounded-xl shadow-inner border border-slate-100">
             <label class="block text-sm font-bold text-slate-500 mb-2">自動記帳起始日</label>
-            <input type="date" x-model="startDate" @focus="$el.dataset.previousValue = $el.value" @change="saveSettingChange($event)" class="w-full px-4 py-3 bg-white border border-slate-200 rounded-lg font-medium text-lg">
+            <input type="date" x-model="startDateDraft" class="w-full px-4 py-3 bg-white border border-slate-200 rounded-lg font-medium text-lg">
           </div>
           <div>
             <label class="block text-base font-bold text-slate-600 mb-3">扣款日與金額</label>
             <div class="space-y-3">
-              <template x-for="(plan, index) in investmentPlans" :key="plan.id">
+              <template x-for="(plan, index) in investmentPlansDraft" :key="plan.id">
                 <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between gap-3 group hover:border-indigo-300 transition-colors">
                   <div class="flex flex-wrap items-center gap-y-3 gap-x-3">
                     <div class="flex items-center gap-2 whitespace-nowrap bg-white px-3 py-2 rounded-lg border shadow-inner">
                       <span class="text-sm font-bold text-slate-500">每月</span>
-                      <input type="number" min="1" max="31" step="1" x-model.number="plan.day" @focus="$el.dataset.previousValue = $el.value" @change="saveSettingChange($event, true)" class="w-14 px-1 py-1 text-center font-bold text-indigo-600 text-lg bg-transparent border-none focus:ring-0">
+                      <input type="number" min="1" max="31" step="1" x-model="plan.day" class="w-14 px-1 py-1 text-center font-bold text-indigo-600 text-lg bg-transparent border-none focus:ring-0">
                       <span class="text-sm font-bold text-slate-500">日</span>
                     </div>
                     <div class="flex items-center gap-2 whitespace-nowrap bg-white px-3 py-2 rounded-lg border shadow-inner">
                       <span class="text-sm font-bold text-slate-500">扣款</span>
-                      <input type="number" min="0" step="1" x-model.number="plan.amount" @focus="$el.dataset.previousValue = $el.value" @change="saveSettingChange($event, true)" class="w-24 sm:w-28 px-1 py-1 text-right font-bold text-slate-700 text-lg bg-transparent border-none focus:ring-0">
+                      <input type="number" min="0" step="1" x-model="plan.amount" class="w-24 sm:w-28 px-1 py-1 text-right font-bold text-slate-700 text-lg bg-transparent border-none focus:ring-0">
                       <span class="text-sm font-bold text-slate-500">元</span>
                     </div>
                   </div>
@@ -4715,45 +4918,20 @@ html {
             </div>
           </div>
         </div>
-      </div>
-
-      <div class="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-[0_4px_15px_rgb(0,0,0,0.02)]">
-        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <h3 class="font-black text-slate-800 mb-1 text-lg flex items-center gap-2"><span class="w-6 h-6 rounded bg-emerald-100 text-emerald-600 flex items-center justify-center text-sm">3</span> 手動單筆收支紀錄</h3>
-            <p class="text-sm text-slate-500">新增、修改與刪除都在編輯視窗進行；清單只顯示交易摘要。</p>
-          </div>
-          <button @click="openNewTransactionEditor()" class="shrink-0 py-3 px-5 bg-emerald-600 text-white font-black rounded-xl shadow-sm hover:bg-emerald-700"><i class="fa-solid fa-plus mr-1"></i>新增一筆交易</button>
+        <div class="flex gap-3 mt-5">
+          <button @click="cancelInvestmentPlanSettings()" class="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200">取消</button>
+          <button @click="saveInvestmentPlanSettings()" class="flex-1 py-3 bg-indigo-600 text-white font-black rounded-xl hover:bg-indigo-700 shadow-sm">儲存定期定額設定</button>
         </div>
       </div>
 
       <div class="bg-gradient-to-b from-slate-50 to-white p-6 rounded-2xl border border-slate-200 shadow-[0_4px_15px_rgb(0,0,0,0.02)]">
         <h3 class="font-black text-slate-800 mb-5 text-lg flex items-center justify-between border-b border-slate-200 pb-3">
-          <span class="flex items-center gap-2"><span class="w-6 h-6 rounded bg-slate-200 text-slate-600 flex items-center justify-center text-sm">4</span> 交易明細</span>
+          <span class="flex items-center gap-2"><span class="w-6 h-6 rounded bg-slate-200 text-slate-600 flex items-center justify-center text-sm">3</span> 交易明細</span>
           <span class="text-sm font-bold text-slate-400 bg-white px-3 py-1.5 rounded shadow-sm border" x-text="'共 ' + transactions.length + ' 筆'"></span>
         </h3>
 
         <p class="text-sm font-bold text-blue-600 mb-4 bg-blue-50 p-3 rounded-xl border border-blue-100"><i class="fa-solid fa-circle-info mr-1"></i>明細清單為唯讀摘要。點擊單筆交易才可編輯或刪除；修改內容需按「儲存」才會生效。</p>
 
-        <div class="flex flex-col sm:flex-row gap-3 mb-4 shrink-0">
-          <button @click="downloadCSVTemplate()" class="flex-1 py-3 text-sm font-bold text-blue-600 hover:bg-blue-50 bg-white border border-blue-200 rounded-xl shadow-sm transition"><i class="fa-solid fa-download mr-1"></i> 下載 CSV 範例檔</button>
-          <button @click="exportTransactionsToCSV()" class="flex-1 py-3 text-sm font-bold text-purple-600 hover:bg-purple-50 bg-white border border-purple-200 rounded-xl shadow-sm transition"><i class="fa-solid fa-file-export mr-1"></i> 匯出明細</button>
-          <div class="flex-1 relative">
-            <input type="file" accept=".csv" id="csvUpload" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" @change="handleCSVUpload($event)">
-            <label for="csvUpload" class="flex items-center justify-center w-full h-full py-3 text-sm font-bold text-emerald-600 hover:bg-emerald-50 bg-white border border-emerald-200 rounded-xl shadow-sm transition cursor-pointer"><i class="fa-solid fa-upload mr-1"></i> 智慧匯入 CSV</label>
-          </div>
-        </div>
-
-        <details class="mb-4 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
-          <summary class="cursor-pointer font-black text-slate-700"><i class="fa-solid fa-circle-question mr-1 text-blue-500"></i> CSV 格式與匯入教學</summary>
-          <div class="mt-3 space-y-2 leading-relaxed">
-            <p>1. 初次使用請先按「下載 CSV 範例檔」，用 Excel 或試算表編輯後另存為 CSV（UTF-8）。</p>
-            <p>2. 新格式欄位順序為：<b>日期、類型、單價、股數、成交總額、手續費、匯費、證交稅</b>。日期使用西元 YYYY-MM-DD；金額欄只填數字，不要自行加入「元」字。</p>
-            <p>3. 類型請填：<b>買入、賣出、提領、配息、配股、調帳</b>。配息填配息總額；匯費獨立填寫。配股填增加股數，成交總額及費用填 0；調帳填股數差額與成本差額。</p>
-            <p>4. 舊版五欄格式「日期、類型、單價、股數、總金額」仍可匯入。舊格式的配息金額視為已扣除 10 元匯費的淨額，匯入時會一次還原為配息總額並記錄匯費 10 元；新版八欄格式不會再加回。</p>
-            <p>5. 匯入後先檢查預覽中的交易類型、金額及費用，再按「確認無誤並匯入」。無效資料會略過，與現有帳本相同的交易會被防重複機制略過。</p>
-          </div>
-        </details>
 
         <div :class="isFullscreenHistory ? 'fixed inset-0 z-[110] bg-slate-50 flex flex-col pb-0' : 'relative mt-2'">
           <div :class="isFullscreenHistory ? 'bg-slate-50 h-[100dvh] w-full max-w-4xl mx-auto flex flex-col p-4 sm:p-6 overflow-hidden shadow-2xl' : 'flex flex-col'">
@@ -4815,13 +4993,43 @@ html {
             </div>
 
             <div class="flex gap-3 mt-4 pt-4 border-t border-slate-200 shrink-0" :class="isFullscreenHistory ? 'pb-[env(safe-area-inset-bottom,1rem)]' : ''">
-              <button @click="openNewTransactionEditor()" class="flex-1 py-3.5 bg-blue-600 text-white font-bold rounded-xl shadow-md hover:bg-blue-700 hover:shadow-lg transition-all hover:-translate-y-0.5"><i class="fa-solid fa-plus mr-1"></i> 新增一筆</button>
-              <button @click="confirmClearTransactions()" x-show="transactions.length > 0" class="flex-1 py-3.5 bg-white text-red-500 font-bold border border-red-200 rounded-xl hover:bg-red-50 shadow-sm transition-all hover:-translate-y-0.5"><i class="fa-solid fa-trash-can mr-1"></i> 全部清空</button>
+              <button @click="openNewTransactionEditor()" class="w-full py-3.5 bg-blue-600 text-white font-bold rounded-xl shadow-md hover:bg-blue-700 hover:shadow-lg transition-all hover:-translate-y-0.5"><i class="fa-solid fa-plus mr-1"></i> 新增一筆交易</button>
             </div>
 
           </div>
         </div>
       </div>
+
+      <div class="mt-5 bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-sm">
+        <h3 class="font-black text-slate-800 mb-3 text-lg"><i class="fa-solid fa-file-csv text-blue-500 mr-2"></i>CSV 匯入與匯出</h3>
+        <div class="flex flex-col sm:flex-row gap-3 mb-4 shrink-0">
+          <button @click="downloadCSVTemplate()" class="flex-1 py-3 text-sm font-bold text-blue-600 hover:bg-blue-50 bg-white border border-blue-200 rounded-xl shadow-sm transition"><i class="fa-solid fa-download mr-1"></i> 下載 CSV 範例檔</button>
+          <button @click="exportTransactionsToCSV()" class="flex-1 py-3 text-sm font-bold text-purple-600 hover:bg-purple-50 bg-white border border-purple-200 rounded-xl shadow-sm transition"><i class="fa-solid fa-file-export mr-1"></i> 匯出明細</button>
+          <div class="flex-1 relative">
+            <input type="file" accept=".csv" id="csvUpload" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" @change="handleCSVUpload($event)">
+            <label for="csvUpload" class="flex items-center justify-center w-full h-full py-3 text-sm font-bold text-emerald-600 hover:bg-emerald-50 bg-white border border-emerald-200 rounded-xl shadow-sm transition cursor-pointer"><i class="fa-solid fa-upload mr-1"></i> 智慧匯入 CSV</label>
+          </div>
+        </div>
+
+        <details class="mb-4 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
+          <summary class="cursor-pointer font-black text-slate-700"><i class="fa-solid fa-circle-question mr-1 text-blue-500"></i> CSV 格式與匯入教學</summary>
+          <div class="mt-3 space-y-2 leading-relaxed">
+            <p>1. 初次使用請先按「下載 CSV 範例檔」，用 Excel 或試算表編輯後另存為 CSV（UTF-8）。</p>
+            <p>2. 新格式欄位順序為：<b>日期、類型、單價、股數、成交總額、手續費、匯費、證交稅</b>。日期使用西元 YYYY-MM-DD；金額欄只填數字，不要自行加入「元」字。</p>
+            <p>3. 類型請填：<b>買入、賣出、提領、配息、配股、調帳</b>。配息填配息總額；匯費獨立填寫。配股填增加股數，成交總額及費用填 0；調帳填股數差額與成本差額。</p>
+            <p>4. 舊版五欄格式「日期、類型、單價、股數、總金額」仍可匯入。舊格式的配息金額視為已扣除 10 元匯費的淨額，匯入時會一次還原為配息總額並記錄匯費 10 元；新版八欄格式不會再加回。</p>
+            <p>5. 匯入後先檢查預覽中的交易類型、金額及費用，再按「確認無誤並匯入」。無效資料會略過，與現有帳本相同的交易會被防重複機制略過。</p>
+          </div>
+        </details>
+
+      </div>
+
+      <details class="mt-4 rounded-2xl border border-red-200 bg-red-50/60 p-4">
+        <summary class="cursor-pointer font-black text-red-700 flex items-center gap-2"><i class="fa-solid fa-triangle-exclamation"></i> 資料維護／危險操作</summary>
+        <p class="mt-2 text-sm leading-relaxed text-red-700">刪除只影響目前 ETF 的交易明細，不會刪除「既有庫存設定」。系統會先顯示刪除筆數，再要求最後確認。</p>
+        <button @click="openClearTransactionsModal()" x-show="transactions.length > 0" class="mt-3 w-full py-3 bg-white text-red-700 font-black border border-red-300 rounded-xl hover:bg-red-100"><i class="fa-solid fa-trash-can mr-2"></i>刪除指定日期區間／全部明細</button>
+      </details>
+
       <div class="h-6"></div>
 
       <div class="bg-white p-6 md:p-8 rounded-2xl border border-slate-200 shadow-[0_4px_15px_rgb(0,0,0,0.02)] mb-8">
