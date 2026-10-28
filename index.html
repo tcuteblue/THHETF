@@ -347,6 +347,53 @@ html {
             </div>
         </div>
 
+        <div x-show="showBaseInventoryEditor" class="fixed inset-0 z-[150] flex items-center justify-center bg-slate-950/60 p-3 sm:p-5" x-transition x-cloak @keydown.escape.window="cancelBaseInventorySettings()" @click.self="cancelBaseInventorySettings()">
+            <div class="glass-card w-full max-w-lg max-h-[92vh] overflow-y-auto rounded-3xl p-5 sm:p-7 text-left shadow-2xl" @click.stop>
+                <div class="mb-5 flex items-start justify-between gap-3 border-b border-slate-200 pb-4">
+                    <div><h3 class="text-xl sm:text-2xl font-black text-slate-900">編輯既有庫存</h3><p class="mt-1 text-sm text-slate-500">輸入的內容先存在草稿；按下儲存後才會更新資料。</p></div>
+                    <button type="button" @click="cancelBaseInventorySettings()" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200" aria-label="取消編輯"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-relaxed text-amber-900 mb-4">既有庫存代表開始使用程式前已持有的部位。若你已用交易明細記錄這些持股，請勿在既有庫存重複輸入，避免重複計算。</div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div><label class="mb-1.5 block text-sm font-bold text-slate-600">既有持有股數（股）</label><input type="number" min="0" step="1" x-model="baseSharesDraft" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-lg font-bold text-slate-800"></div>
+                    <div><label class="mb-1.5 block text-sm font-bold text-slate-600">既有持有均價（元）</label><input type="number" min="0" step="0.0001" x-model="baseAvgCostDraft" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-lg font-bold text-slate-800"></div>
+                </div>
+                <div class="mt-5 flex flex-col sm:flex-row gap-3">
+                    <button type="button" @click="cancelBaseInventorySettings()" class="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200">取消</button>
+                    <button type="button" @click="saveBaseInventorySettings()" class="flex-1 py-3 bg-blue-600 text-white font-black rounded-xl hover:bg-blue-700 shadow-sm">儲存既有庫存</button>
+                </div>
+                <button type="button" @click="clearBaseInventory()" class="mt-4 w-full py-3 bg-red-50 text-red-700 font-black border border-red-200 rounded-xl hover:bg-red-100"><i class="fa-solid fa-trash-can mr-2"></i>清除既有庫存（交易明細保留）</button>
+            </div>
+        </div>
+
+        <div x-show="showInvestmentPlanEditor" class="fixed inset-0 z-[150] flex items-center justify-center bg-slate-950/60 p-3 sm:p-5" x-transition x-cloak @keydown.escape.window="cancelInvestmentPlanSettings()" @click.self="cancelInvestmentPlanSettings()">
+            <div class="glass-card w-full max-w-xl max-h-[92vh] overflow-y-auto rounded-3xl p-5 sm:p-7 text-left shadow-2xl" @click.stop>
+                <div class="mb-5 flex items-start justify-between gap-3 border-b border-slate-200 pb-4">
+                    <div><h3 class="text-xl sm:text-2xl font-black text-slate-900">編輯每月定期定額計畫</h3><p class="mt-1 text-sm text-slate-500">所有修改先存在草稿，按「儲存定期定額設定」才會生效。</p></div>
+                    <button type="button" @click="cancelInvestmentPlanSettings()" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200" aria-label="取消編輯"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <p class="text-sm font-bold text-slate-600 mb-4 leading-relaxed bg-indigo-50 border border-indigo-100 text-indigo-900 rounded-xl p-3">本程式不會在頁面關閉時於背景執行扣款。到期計畫會在進入 ETF 詳細頁並載入可用行情後檢查。設定金額代表成交總額預算，手續費另計。</p>
+                <div class="mb-5 rounded-xl border border-slate-200 bg-slate-50 p-4"><label class="block text-sm font-bold text-slate-600 mb-2">自動記帳起始日（選填）</label><input type="date" x-model="startDateDraft" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 font-semibold"></div>
+                <div>
+                    <div class="flex items-center justify-between gap-3 mb-3"><label class="text-base font-black text-slate-700">扣款日與金額</label><span class="text-xs text-slate-400">可設定多個日期</span></div>
+                    <div class="space-y-3">
+                        <template x-for="(plan, index) in investmentPlansDraft" :key="plan.id">
+                            <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between gap-3">
+                                <div class="flex flex-1 flex-wrap items-center gap-y-3 gap-x-3">
+                                    <div class="flex items-center gap-2 whitespace-nowrap bg-white px-3 py-2 rounded-lg border shadow-inner"><span class="text-sm font-bold text-slate-500">每月</span><input type="number" min="1" max="31" step="1" x-model="plan.day" class="w-14 px-1 py-1 text-center font-bold text-indigo-600 text-lg bg-transparent border-none focus:ring-0" aria-label="每月扣款日"><span class="text-sm font-bold text-slate-500">日</span></div>
+                                    <div class="flex items-center gap-2 whitespace-nowrap bg-white px-3 py-2 rounded-lg border shadow-inner"><span class="text-sm font-bold text-slate-500">金額</span><input type="number" min="1" step="1" x-model="plan.amount" class="w-24 sm:w-28 px-1 py-1 text-right font-bold text-slate-700 text-lg bg-transparent border-none focus:ring-0" aria-label="每次扣款金額"><span class="text-sm font-bold text-slate-500">元</span></div>
+                                </div>
+                                <button type="button" @click="removePlan(plan.id)" class="w-10 h-10 shrink-0 rounded-full bg-white border shadow-sm text-slate-400 hover:text-red-500 hover:border-red-200 flex items-center justify-center transition-all text-lg" aria-label="刪除此扣款計畫"><i class="fa-solid fa-xmark"></i></button>
+                            </div>
+                        </template>
+                        <div x-show="investmentPlansDraft.length === 0" class="text-center text-sm text-slate-400 border-2 border-dashed border-slate-200 rounded-xl p-5">目前沒有扣款計畫；可按下方按鈕新增。</div>
+                        <button type="button" @click="addPlan()" class="w-full py-3.5 border-2 border-dashed border-indigo-200 rounded-xl text-indigo-600 font-bold hover:bg-indigo-50 hover:border-indigo-300 transition-all flex items-center justify-center gap-2"><i class="fa-solid fa-plus"></i>新增扣款計畫</button>
+                    </div>
+                </div>
+                <div class="mt-5 flex gap-3"><button type="button" @click="cancelInvestmentPlanSettings()" class="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200">取消</button><button type="button" @click="saveInvestmentPlanSettings()" class="flex-1 py-3 bg-indigo-600 text-white font-black rounded-xl hover:bg-indigo-700 shadow-sm">儲存定期定額設定</button></div>
+            </div>
+        </div>
+
         <div x-show="showTransactionEditor" class="fixed inset-0 z-[145] flex items-center justify-center bg-slate-950/55 p-3 sm:p-5" x-transition x-cloak>
             <div class="glass-card w-full max-w-xl max-h-[94vh] overflow-y-auto rounded-3xl p-5 sm:p-7 text-left shadow-2xl" @keydown.escape.window="showTransactionEditor = false">
                 <div class="mb-5 flex items-start justify-between gap-3 border-b border-slate-200 pb-4">
@@ -528,6 +575,7 @@ html {
                     investmentPlans: [], transactions: [], skippedAutoOccurrences: [],
                     // 設定頁使用草稿，只有按下儲存才會寫入正式資料。
                     baseSharesDraft: '0', baseAvgCostDraft: '0', startDateDraft: '', investmentPlansDraft: [],
+                    showBaseInventoryEditor: false, showInvestmentPlanEditor: false,
                     showClearTransactionsModal: false, clearTransactionsMode: 'range', clearDateFrom: '', clearDateTo: '',
                     pendingDeleteFrom: '', pendingDeleteTo: '', 
                     baseRetirementMV: 0, baseRetirementDate: '', swrRate: 4.0, customLockDate: '',
@@ -1153,9 +1201,20 @@ html {
                             amount: p && p.amount != null ? String(p.amount) : ''
                         }));
                     },
+                    openBaseInventoryEditor() {
+                        this.baseSharesDraft = String(this.baseShares ?? 0);
+                        this.baseAvgCostDraft = String(this.baseAvgCost ?? 0);
+                        this.showBaseInventoryEditor = true;
+                    },
                     cancelBaseInventorySettings() {
                         this.baseSharesDraft = String(this.baseShares ?? 0);
                         this.baseAvgCostDraft = String(this.baseAvgCost ?? 0);
+                        this.showBaseInventoryEditor = false;
+                    },
+                    clearBaseInventory() {
+                        this.pendingDeleteType = 'baseInventory';
+                        this.confirmBoxText = '⚠️ 確定要清除目前標的的既有庫存設定嗎？\n持有股數與均價將設為 0，但所有交易明細都會保留。此操作會同步儲存，請確認交易明細沒有重複計算這批庫存。';
+                        this.showConfirmBox = true;
                     },
                     saveBaseInventorySettings() {
                         const sharesText = String(this.baseSharesDraft ?? '').trim();
@@ -1171,6 +1230,15 @@ html {
                         this.cancelBaseInventorySettings();
                         this.showMsg(changed ? '✅ 既有庫存設定已儲存。' : '資料沒有變更。');
                     },
+                    openInvestmentPlanEditor() {
+                        this.startDateDraft = this.startDate || '';
+                        this.investmentPlansDraft = (Array.isArray(this.investmentPlans) ? this.investmentPlans : []).map((p, i) => ({
+                            id: p && p.id != null ? p.id : `plan-${i}-${Date.now()}`,
+                            day: p && p.day != null ? String(p.day) : '',
+                            amount: p && p.amount != null ? String(p.amount) : ''
+                        }));
+                        this.showInvestmentPlanEditor = true;
+                    },
                     cancelInvestmentPlanSettings() {
                         this.startDateDraft = this.startDate || '';
                         this.investmentPlansDraft = (Array.isArray(this.investmentPlans) ? this.investmentPlans : []).map((p, i) => ({
@@ -1178,6 +1246,7 @@ html {
                             day: p && p.day != null ? String(p.day) : '',
                             amount: p && p.amount != null ? String(p.amount) : ''
                         }));
+                        this.showInvestmentPlanEditor = false;
                     },
                     saveInvestmentPlanSettings() {
                         const plans = Array.isArray(this.investmentPlansDraft) ? this.investmentPlansDraft : [];
@@ -3648,6 +3717,14 @@ html {
                             this.saveData(removed.length > 0);
                             this.pendingDeleteFrom = ''; this.pendingDeleteTo = '';
                         }
+                        else if (this.pendingDeleteType === 'baseInventory') {
+                            const changed = (Number(this.baseShares) || 0) !== 0 || (Number(this.baseAvgCost) || 0) !== 0;
+                            this.baseShares = 0;
+                            this.baseAvgCost = 0;
+                            this.cancelBaseInventorySettings();
+                            this.saveData(changed);
+                            this.showMsg(changed ? '✅ 已清除既有庫存設定；交易明細仍完整保留。' : '既有庫存已經是 0，沒有需要清除的數值。');
+                        }
                         else if (this.pendingDeleteType === 'etf') {
                             const code = this.pendingDeleteId; 
                             delete this.etfs[code]; 
@@ -4869,61 +4946,46 @@ html {
     <div class="space-y-8 relative z-10">
       <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-[0_4px_15px_rgb(0,0,0,0.02)]">
         <h3 class="font-black text-slate-800 mb-2 text-lg flex items-center gap-2"><span class="w-6 h-6 rounded bg-blue-100 text-blue-600 flex items-center justify-center text-sm">1</span> 既有庫存設定</h3>
-        <p class="text-sm font-bold text-red-500 bg-red-50 px-4 py-3 rounded-lg border border-red-100 mb-5">⚠️ 這裡是設定開始使用本程式時「已經持有」的庫存，不會新增交易明細。若要用每筆買賣日期精算年化報酬率（XIRR），請將既有持有股數與均價設為 0，再到交易明細逐筆輸入或匯入歷史交易。</p>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-          <div class="bg-slate-50 p-4 rounded-xl shadow-inner border border-slate-100">
-            <label class="block text-sm font-bold text-slate-500 mb-2">既有持有股數（股）</label>
-            <input type="number" min="0" step="1" x-model="baseSharesDraft" class="w-full px-4 py-3 bg-white border border-slate-200 rounded-lg font-bold text-slate-700 text-lg">
+        <p class="text-sm font-bold text-red-500 bg-red-50 px-4 py-3 rounded-lg border border-red-100 mb-4">⚠️ 這裡是開始使用本程式時已經持有的庫存，不會新增交易明細。若要以歷史交易逐筆精算年化報酬率（XIRR），請將既有持有股數與均價設為 0，再到交易明細輸入或匯入歷史交易。</p>
+        <button type="button" @click="openBaseInventoryEditor()" class="w-full text-left bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-300 rounded-2xl p-4 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-300">
+          <div class="flex items-center justify-between gap-3 mb-3">
+            <span class="font-black text-slate-800">目前既有庫存</span>
+            <span class="text-sm font-bold text-blue-600"><i class="fa-solid fa-pen-to-square mr-1"></i>點擊編輯</span>
           </div>
-          <div class="bg-slate-50 p-4 rounded-xl shadow-inner border border-slate-100">
-            <label class="block text-sm font-bold text-slate-500 mb-2">既有持有均價（元）</label>
-            <input type="number" min="0" step="0.01" x-model="baseAvgCostDraft" class="w-full px-4 py-3 bg-white border border-slate-200 rounded-lg font-bold text-slate-700 text-lg">
+          <div class="grid grid-cols-2 gap-3">
+            <div class="bg-white border border-slate-100 rounded-xl p-3">
+              <div class="text-xs font-bold text-slate-500 mb-1">既有持有股數</div>
+              <div class="text-xl font-black text-slate-800" x-text="formatMoney(baseShares) + ' 股'"></div>
+            </div>
+            <div class="bg-white border border-slate-100 rounded-xl p-3">
+              <div class="text-xs font-bold text-slate-500 mb-1">既有持有均價</div>
+              <div class="text-xl font-black text-slate-800" x-text="Number(baseAvgCost || 0).toLocaleString('zh-TW', {minimumFractionDigits: 0, maximumFractionDigits: 4}) + ' 元'"></div>
+            </div>
           </div>
-        </div>
-        <div class="flex gap-3 mt-4">
-          <button @click="cancelBaseInventorySettings()" class="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200">取消</button>
-          <button @click="saveBaseInventorySettings()" class="flex-1 py-3 bg-blue-600 text-white font-black rounded-xl hover:bg-blue-700 shadow-sm">儲存既有庫存</button>
-        </div>
+        </button>
       </div>
 
       <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-[0_4px_15px_rgb(0,0,0,0.02)]">
         <h3 class="font-black text-slate-800 mb-2 text-lg flex items-center gap-2"><span class="w-6 h-6 rounded bg-indigo-100 text-indigo-600 flex items-center justify-center text-sm">2</span> 每月定期定額自動記帳</h3>
-        <p class="text-sm font-bold text-slate-500 mb-5 leading-relaxed">💡 本程式不是背景定時服務：會在您進入該 ETF 詳細頁、行情資料載入後檢查到期計畫；若當下沒有可用價格，會保留待重試，不建立空白紀錄。計畫金額是成交總額預算，手續費另計。實際成交後仍可至交易明細修正單價與金額。</p>
-        <div class="space-y-5">
-          <div class="bg-slate-50 p-4 rounded-xl shadow-inner border border-slate-100">
-            <label class="block text-sm font-bold text-slate-500 mb-2">自動記帳起始日</label>
-            <input type="date" x-model="startDateDraft" class="w-full px-4 py-3 bg-white border border-slate-200 rounded-lg font-medium text-lg">
+        <p class="text-sm font-bold text-slate-500 mb-4 leading-relaxed">💡 本程式不是背景定時服務：會在進入該 ETF 詳細頁、行情資料載入後檢查到期計畫；若當下沒有可用價格，會保留待重試，不建立空白紀錄。計畫金額是成交總額預算，手續費另計。</p>
+        <button type="button" @click="openInvestmentPlanEditor()" class="w-full text-left bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-2xl p-4 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-300">
+          <div class="flex items-center justify-between gap-3 mb-3">
+            <span class="font-black text-slate-800">目前自動扣款計畫</span>
+            <span class="text-sm font-bold text-indigo-600"><i class="fa-solid fa-pen-to-square mr-1"></i>點擊編輯</span>
           </div>
-          <div>
-            <label class="block text-base font-bold text-slate-600 mb-3">扣款日與金額</label>
-            <div class="space-y-3">
-              <template x-for="(plan, index) in investmentPlansDraft" :key="plan.id">
-                <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between gap-3 group hover:border-indigo-300 transition-colors">
-                  <div class="flex flex-wrap items-center gap-y-3 gap-x-3">
-                    <div class="flex items-center gap-2 whitespace-nowrap bg-white px-3 py-2 rounded-lg border shadow-inner">
-                      <span class="text-sm font-bold text-slate-500">每月</span>
-                      <input type="number" min="1" max="31" step="1" x-model="plan.day" class="w-14 px-1 py-1 text-center font-bold text-indigo-600 text-lg bg-transparent border-none focus:ring-0">
-                      <span class="text-sm font-bold text-slate-500">日</span>
-                    </div>
-                    <div class="flex items-center gap-2 whitespace-nowrap bg-white px-3 py-2 rounded-lg border shadow-inner">
-                      <span class="text-sm font-bold text-slate-500">扣款</span>
-                      <input type="number" min="0" step="1" x-model="plan.amount" class="w-24 sm:w-28 px-1 py-1 text-right font-bold text-slate-700 text-lg bg-transparent border-none focus:ring-0">
-                      <span class="text-sm font-bold text-slate-500">元</span>
-                    </div>
-                  </div>
-                  <button @click="removePlan(plan.id)" class="w-10 h-10 rounded-full bg-white border shadow-sm text-slate-400 hover:text-red-500 hover:border-red-200 flex items-center justify-center transition-all text-lg"><i class="fa-solid fa-xmark"></i></button>
-                </div>
-              </template>
-              <button @click="addPlan()" class="w-full py-4 border-2 border-dashed border-indigo-200 rounded-xl text-indigo-500 font-bold hover:bg-indigo-50 hover:border-indigo-300 transition-all flex items-center justify-center gap-2 text-base"><i class="fa-solid fa-plus"></i> 新增扣款計畫</button>
-            </div>
+          <div class="text-sm text-slate-600 mb-3"><span class="font-bold">自動記帳起始日：</span><span x-text="startDate || '未指定（依照既有計畫檢查）'"></span></div>
+          <div class="space-y-2" x-show="investmentPlans && investmentPlans.length > 0">
+            <template x-for="plan in investmentPlans" :key="plan.id || plan.day">
+              <div class="flex items-center justify-between gap-3 bg-white border border-slate-100 rounded-xl px-3 py-2">
+                <span class="font-bold text-slate-700" x-text="'每月 ' + plan.day + ' 日'"></span>
+                <span class="font-black text-indigo-700" x-text="formatMoney(plan.amount) + ' 元'"></span>
+              </div>
+            </template>
           </div>
-        </div>
-        <div class="flex gap-3 mt-5">
-          <button @click="cancelInvestmentPlanSettings()" class="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200">取消</button>
-          <button @click="saveInvestmentPlanSettings()" class="flex-1 py-3 bg-indigo-600 text-white font-black rounded-xl hover:bg-indigo-700 shadow-sm">儲存定期定額設定</button>
-        </div>
+          <div x-show="!investmentPlans || investmentPlans.length === 0" class="text-sm font-semibold text-slate-400 bg-white rounded-xl p-3 border border-dashed border-slate-200">目前沒有設定自動扣款計畫，點擊此處新增。</div>
+          <div class="mt-3 text-xs text-slate-400">新增、修改、刪除計畫只會暫存在草稿，按儲存後才生效。</div>
+        </button>
       </div>
-
       <div class="bg-gradient-to-b from-slate-50 to-white p-6 rounded-2xl border border-slate-200 shadow-[0_4px_15px_rgb(0,0,0,0.02)]">
         <h3 class="font-black text-slate-800 mb-5 text-lg flex items-center justify-between border-b border-slate-200 pb-3">
           <span class="flex items-center gap-2"><span class="w-6 h-6 rounded bg-slate-200 text-slate-600 flex items-center justify-center text-sm">3</span> 交易明細</span>
