@@ -249,7 +249,7 @@ html {
                     <label class="block text-sm font-bold text-slate-700">帳號名稱（中文或英文）</label>
                     <input x-model="accountNameInput" @keydown.enter.prevent="useExistingAccount()" maxlength="40" autocomplete="username" type="text" placeholder="例如：蔡宏和" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900">
                     <label class="block text-sm font-bold text-slate-700">帳號密碼</label>
-                    <input x-model="accountPasswordInput" @keydown.enter.prevent="useExistingAccount()" maxlength="64" autocomplete="current-password" type="password" placeholder="登入密碼（5～64 個字元）" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900">
+                    <input x-model="accountPasswordInput" @keydown.enter.prevent="useExistingAccount()" maxlength="64" autocomplete="current-password" type="password" placeholder="登入密碼（6～64 個字元）" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900">
                     <div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs leading-relaxed text-blue-900">新增帳號時，下方需再次輸入相同密碼。原本尚未設定密碼的舊帳號，第一次登入會以你輸入的新密碼完成一次性設定；請由原帳號持有人在自己的裝置先完成設定。</div>
                     <label class="block text-sm font-bold text-slate-700">再次輸入密碼（新增帳號／首次升級舊帳號時使用）</label>
                     <input x-model="accountPasswordConfirmInput" @keydown.enter.prevent="createNewAccount()" maxlength="64" autocomplete="new-password" type="password" placeholder="再次輸入密碼" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900">
@@ -266,7 +266,7 @@ html {
                         <button @click="showAccountPasswordChange = !showAccountPasswordChange; accountPasswordChangeMessage = ''" class="mt-3 w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 font-bold text-slate-700 hover:bg-slate-50">修改此帳號登入密碼</button>
                         <div x-show="showAccountPasswordChange" class="mt-3 space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
                             <input x-model="accountCurrentPasswordInput" type="password" maxlength="64" autocomplete="current-password" placeholder="目前密碼" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5">
-                            <input x-model="accountNewPasswordInput" type="password" maxlength="64" autocomplete="new-password" placeholder="新密碼（5～64 個字元）" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5">
+                            <input x-model="accountNewPasswordInput" type="password" maxlength="64" autocomplete="new-password" placeholder="新密碼（6～64 個字元）" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5">
                             <input x-model="accountNewPasswordConfirmInput" type="password" maxlength="64" autocomplete="new-password" placeholder="再次輸入新密碼" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5">
                             <button @click="changeAccountPassword()" :disabled="accountManagerBusy" class="w-full rounded-lg bg-indigo-600 px-4 py-2.5 font-black text-white disabled:opacity-50">確認修改登入密碼</button>
                             <p x-show="accountPasswordChangeMessage" class="text-sm font-bold text-slate-600" x-text="accountPasswordChangeMessage"></p>
@@ -1396,7 +1396,7 @@ html {
                                 return;
                             }
                             if (auth.passwordSetupRequired) {
-                                if (password.length < 5 || password.length > 64) throw new Error('首次設定帳號密碼需為 5～64 個字元。');
+                                if (password.length < 6 || password.length > 64) throw new Error('首次設定帳號密碼需為 6～64 個字元。');
                                 if (String(this.accountPasswordConfirmInput || '') !== password) throw new Error('此舊帳號尚未設定密碼，請在再次輸入欄位輸入相同密碼以完成首次設定。');
                                 this.accountMessage = '正在為舊帳號設定首次登入密碼……';
                                 await this.accountApi('etf_set_account_password', { accountName: name, password });
@@ -1481,7 +1481,7 @@ html {
                         const password = String(this.accountPasswordInput || '');
                         const confirmPassword = String(this.accountPasswordConfirmInput || '');
                         if (!name) { this.accountMessage = '請先輸入帳號名稱。'; return; }
-                        if (password.length < 5 || password.length > 64) { this.accountMessage = '新帳號密碼需為 5～64 個字元。'; return; }
+                        if (password.length < 6 || password.length > 64) { this.accountMessage = '新帳號密碼需為 6～64 個字元。'; return; }
                         if (password !== confirmPassword) { this.accountMessage = '兩次輸入的密碼不一致。'; return; }
                         this.accountManagerBusy = true;
                         this.accountMessage = '正在建立雲端帳號……';
@@ -1521,7 +1521,7 @@ html {
                         if (!this.legacyClaimName || !this.legacyCloudData) return;
                         const password = String(this.accountPasswordInput || '');
                         const confirmPassword = String(this.accountPasswordConfirmInput || '');
-                        if (password.length < 5 || password.length > 64) { this.accountMessage = '建立帳號密碼需為 5～64 個字元。'; return; }
+                        if (password.length < 6 || password.length > 64) { this.accountMessage = '建立帳號密碼需為 6～64 個字元。'; return; }
                         if (password !== confirmPassword) { this.accountMessage = '兩次輸入的密碼不一致。'; return; }
                         const localData = this.serializeCurrentData(false);
                         const cloudData = this.legacyCloudData;
@@ -1593,7 +1593,7 @@ html {
                         if (!this.currentAccountId) return;
                         const currentPassword = String(this.accountCurrentPasswordInput || '');
                         const newPassword = String(this.accountNewPasswordInput || '');
-                        if (!currentPassword || newPassword.length < 5 || newPassword.length > 64) { this.accountPasswordChangeMessage = '請輸入目前密碼；新密碼需為 5～64 個字元。'; return; }
+                        if (!currentPassword || newPassword.length < 6 || newPassword.length > 64) { this.accountPasswordChangeMessage = '請輸入目前密碼；新密碼需為 6～64 個字元。'; return; }
                         if (newPassword !== String(this.accountNewPasswordConfirmInput || '')) { this.accountPasswordChangeMessage = '兩次輸入的新密碼不一致。'; return; }
                         this.accountManagerBusy = true;
                         this.accountPasswordChangeMessage = '正在更新帳號密碼……';
