@@ -167,15 +167,15 @@ html {
 
     <div x-data="investmentApp" x-cloak class="max-w-4xl mx-auto px-4 sm:px-6 pt-6 relative">
 
-        <!-- 多帳號入口：名稱用於查找帳號；不列出其他帳號名，也不要求密碼。 -->
+        <!-- ETF 多帳號登入：密碼僅送往既有共用 GAS，前端不寫入 localStorage。 -->
         <div x-show="showAccountManager" x-cloak class="fixed inset-0 z-[250] flex items-center justify-center bg-slate-950/60 p-3 sm:p-5">
             <div class="w-full max-w-lg max-h-[92vh] overflow-y-auto rounded-3xl border border-slate-200 bg-white p-5 sm:p-7 shadow-2xl">
                 <div class="mb-5 flex items-start gap-3">
                     <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-100 text-blue-700"><i class="fa-solid fa-users text-xl"></i></div>
                     <div class="flex-1">
-                        <h2 class="text-2xl font-black text-slate-900" x-text="currentAccountId ? '帳號管理' : '選擇帳號'"></h2>
-                        <p class="mt-1 text-sm leading-relaxed text-slate-500" x-show="!currentAccountId">輸入帳號名稱，使用既有雲端資料，或新增專屬帳號。</p>
-                        <p class="mt-1 text-sm leading-relaxed text-slate-500" x-show="currentAccountId">目前帳號：<strong class="text-slate-700" x-text="currentAccountName"></strong>。可切換帳號、修改名稱或繼續使用。</p>
+                        <h2 class="text-2xl font-black text-slate-900" x-text="currentAccountId ? '帳號管理' : '帳號登入'"></h2>
+                        <p class="mt-1 text-sm leading-relaxed text-slate-500" x-show="!currentAccountId">輸入帳號名稱及登入密碼。首次升級舊帳號時，會要求設定新密碼。</p>
+                        <p class="mt-1 text-sm leading-relaxed text-slate-500" x-show="currentAccountId">目前帳號：<strong class="text-slate-700" x-text="currentAccountName"></strong>。可修改帳號名稱、帳號密碼或切換使用者。</p>
                     </div>
                 </div>
 
@@ -229,11 +229,32 @@ html {
                     </div>
                 </template>
 
-                <div x-show="!showAccountConflict && !showLegacyMigration" class="space-y-4">
+                <template x-if="savedAccountRestorePending && currentAccountId">
+                    <div class="space-y-4">
+                        <div class="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                            <div class="font-black text-amber-900"><i class="fa-solid fa-cloud-arrow-down mr-2"></i>等待下載帳號雲端資料</div>
+                            <p class="mt-2 text-sm leading-relaxed text-amber-900">目前裝置沒有這個帳號的本機資料，但登入狀態仍有效。網路或雲端暫時無法讀取時，不需要重新輸入密碼；可以在恢復連線後再次下載。</p>
+                        </div>
+                        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                            目前帳號：<strong x-text="currentAccountName"></strong>
+                        </div>
+                        <button @click="retrySavedAccountRestore()" :disabled="accountManagerBusy" class="w-full rounded-xl bg-blue-600 px-4 py-3 font-black text-white hover:bg-blue-700 disabled:opacity-50"><i class="fa-solid fa-cloud-arrow-down mr-2"></i>重新下載雲端帳本</button>
+                        <button @click="logoutAccount()" :disabled="accountManagerBusy" class="w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 font-bold text-amber-800 hover:bg-amber-100">登出並切換使用者</button>
+                        <div x-show="accountManagerBusy" class="flex items-center justify-center gap-2 py-2 text-sm font-bold text-slate-500"><i class="fa-solid fa-spinner fa-spin"></i><span x-text="accountMessage || '處理中……'"></span></div>
+                        <div x-show="accountMessage && !accountManagerBusy" class="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm font-bold leading-relaxed text-slate-700" x-text="accountMessage"></div>
+                    </div>
+                </template>
+
+                <div x-show="!showAccountConflict && !showLegacyMigration && !savedAccountRestorePending" class="space-y-4">
                     <label class="block text-sm font-bold text-slate-700">帳號名稱（中文或英文）</label>
-                    <input x-model="accountNameInput" @keydown.enter.prevent="useExistingAccount()" maxlength="40" autocomplete="off" type="text" placeholder="例如：蔡宏和" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900">
+                    <input x-model="accountNameInput" @keydown.enter.prevent="useExistingAccount()" maxlength="40" autocomplete="username" type="text" placeholder="例如：蔡宏和" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900">
+                    <label class="block text-sm font-bold text-slate-700">帳號密碼</label>
+                    <input x-model="accountPasswordInput" @keydown.enter.prevent="useExistingAccount()" maxlength="64" autocomplete="current-password" type="password" placeholder="登入密碼（6～64 個字元）" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900">
+                    <div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs leading-relaxed text-blue-900">新增帳號時，下方需再次輸入相同密碼。原本尚未設定密碼的舊帳號，第一次登入會以你輸入的新密碼完成一次性設定；請由原帳號持有人在自己的裝置先完成設定。</div>
+                    <label class="block text-sm font-bold text-slate-700">再次輸入密碼（新增帳號／首次升級舊帳號時使用）</label>
+                    <input x-model="accountPasswordConfirmInput" @keydown.enter.prevent="createNewAccount()" maxlength="64" autocomplete="new-password" type="password" placeholder="再次輸入密碼" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900">
                     <div class="grid gap-3 sm:grid-cols-2">
-                        <button @click="useExistingAccount()" :disabled="accountManagerBusy" class="rounded-xl bg-blue-600 px-4 py-3 font-black text-white hover:bg-blue-700 disabled:opacity-50"><i class="fa-solid fa-cloud-arrow-down mr-2"></i>使用既有帳號</button>
+                        <button @click="useExistingAccount()" :disabled="accountManagerBusy" class="rounded-xl bg-blue-600 px-4 py-3 font-black text-white hover:bg-blue-700 disabled:opacity-50"><i class="fa-solid fa-right-to-bracket mr-2"></i>載入既有帳號</button>
                         <button @click="createNewAccount()" :disabled="accountManagerBusy" class="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-black text-blue-800 hover:bg-blue-100 disabled:opacity-50"><i class="fa-solid fa-user-plus mr-2"></i>新增帳號</button>
                     </div>
                     <div x-show="currentAccountId" class="border-t border-slate-200 pt-4">
@@ -242,11 +263,46 @@ html {
                             <input x-model="accountRenameInput" maxlength="40" type="text" placeholder="輸入新的帳號名稱" class="w-full rounded-xl border border-slate-300 px-4 py-3">
                             <button @click="renameCurrentAccount()" :disabled="accountManagerBusy" class="w-full rounded-xl bg-indigo-600 px-4 py-2.5 font-black text-white hover:bg-indigo-700 disabled:opacity-50">儲存新名稱</button>
                         </div>
+                        <button @click="showAccountPasswordChange = !showAccountPasswordChange; accountPasswordChangeMessage = ''" class="mt-3 w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 font-bold text-slate-700 hover:bg-slate-50">修改此帳號登入密碼</button>
+                        <div x-show="showAccountPasswordChange" class="mt-3 space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                            <input x-model="accountCurrentPasswordInput" type="password" maxlength="64" autocomplete="current-password" placeholder="目前密碼" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5">
+                            <input x-model="accountNewPasswordInput" type="password" maxlength="64" autocomplete="new-password" placeholder="新密碼（6～64 個字元）" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5">
+                            <input x-model="accountNewPasswordConfirmInput" type="password" maxlength="64" autocomplete="new-password" placeholder="再次輸入新密碼" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5">
+                            <button @click="changeAccountPassword()" :disabled="accountManagerBusy" class="w-full rounded-lg bg-indigo-600 px-4 py-2.5 font-black text-white disabled:opacity-50">確認修改登入密碼</button>
+                            <p x-show="accountPasswordChangeMessage" class="text-sm font-bold text-slate-600" x-text="accountPasswordChangeMessage"></p>
+                        </div>
+                        <button @click="logoutAccount()" class="mt-3 w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 font-bold text-amber-800 hover:bg-amber-100">登出並切換使用者</button>
                     </div>
                     <div x-show="accountManagerBusy" class="flex items-center justify-center gap-2 py-2 text-sm font-bold text-slate-500"><i class="fa-solid fa-spinner fa-spin"></i><span x-text="accountMessage || '處理中……'"></span></div>
                     <div x-show="accountMessage && !accountManagerBusy" class="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm font-bold leading-relaxed text-slate-700" x-text="accountMessage"></div>
                     <button x-show="currentAccountId" @click="closeAccountManager()" class="w-full rounded-xl px-4 py-2.5 font-bold text-slate-500 hover:bg-slate-100">返回目前帳號</button>
-                    <p class="text-xs leading-relaxed text-slate-400">帳號名稱用來尋找雲端資料，不是密碼。免密碼設計代表知道名稱的人可能讀取該帳號資料。系統不會列出其他帳號名稱。</p>
+                    <p class="text-xs leading-relaxed text-slate-400">帳號密碼以明文保存在共用 GAS 指定的 Google Drive 帳號索引；本機只保存伺服器簽發的裝置登入憑證，不保存帳號密碼。在這台裝置載入帳號一次後，程式會記住登入狀態；下次開啟不必再次輸入帳號密碼。</p>
+                </div>
+            </div>
+        </div>
+
+        <div x-show="showAdvancedPasswordModal" x-cloak class="fixed inset-0 z-[270] flex items-center justify-center bg-slate-950/60 p-4" x-transition>
+            <div class="glass-card w-full max-w-sm rounded-3xl p-6 shadow-2xl">
+                <h3 class="mb-2 text-xl font-black text-slate-900"><i class="fa-solid fa-lock mr-2 text-blue-600"></i>進入進階模式</h3>
+                <p class="mb-4 text-sm leading-relaxed text-slate-600">請輸入 ETF 存股管家的雲端進階模式密碼。首次初始化預設密碼為 41927；驗證必須由雲端完成。</p>
+                <input x-model="advancedPasswordInput" @keydown.enter.prevent="verifyAdvancedModePassword()" type="password" maxlength="64" autocomplete="current-password" placeholder="進階模式密碼" class="mb-3 w-full rounded-xl border border-slate-300 bg-white px-4 py-3">
+                <p x-show="advancedPasswordMessage" class="mb-3 text-sm font-bold text-red-600" x-text="advancedPasswordMessage"></p>
+                <div class="flex gap-2">
+                    <button @click="showAdvancedPasswordModal = false; advancedPasswordInput = ''; advancedPasswordMessage = ''" class="flex-1 rounded-xl bg-slate-100 px-4 py-3 font-bold text-slate-600">取消</button>
+                    <button @click="verifyAdvancedModePassword()" :disabled="isAdvancedPasswordBusy" class="flex-1 rounded-xl bg-blue-600 px-4 py-3 font-black text-white disabled:opacity-50" x-text="isAdvancedPasswordBusy ? '驗證中…' : '驗證進入'"></button>
+                </div>
+            </div>
+        </div>
+
+        <div x-show="showAdvancedPasswordChangeModal" x-cloak class="fixed inset-0 z-[271] flex items-center justify-center bg-slate-950/60 p-4" x-transition>
+            <div class="glass-card w-full max-w-sm rounded-3xl p-6 shadow-2xl">
+                <h3 class="mb-2 text-xl font-black text-slate-900"><i class="fa-solid fa-key mr-2 text-indigo-600"></i>修改進階模式密碼</h3>
+                <input x-model="advancedCurrentPasswordInput" type="password" maxlength="64" autocomplete="current-password" placeholder="目前進階模式密碼" class="mb-3 w-full rounded-xl border border-slate-300 bg-white px-4 py-3">
+                <input x-model="advancedNewPasswordInput" type="password" maxlength="64" autocomplete="new-password" placeholder="新密碼（最多 64 字元）" class="mb-3 w-full rounded-xl border border-slate-300 bg-white px-4 py-3">
+                <p x-show="advancedPasswordChangeMessage" class="mb-3 text-sm font-bold text-red-600" x-text="advancedPasswordChangeMessage"></p>
+                <div class="flex gap-2">
+                    <button @click="showAdvancedPasswordChangeModal = false; advancedCurrentPasswordInput = ''; advancedNewPasswordInput = ''; advancedPasswordChangeMessage = ''" class="flex-1 rounded-xl bg-slate-100 px-4 py-3 font-bold text-slate-600">取消</button>
+                    <button @click="submitAdvancedModePasswordChange()" :disabled="isAdvancedPasswordChanging" class="flex-1 rounded-xl bg-indigo-600 px-4 py-3 font-black text-white disabled:opacity-50" x-text="isAdvancedPasswordChanging ? '修改中…' : '確認修改'"></button>
                 </div>
             </div>
         </div>
@@ -541,6 +597,10 @@ html {
                 'DEFAULT': { name: '自訂ETF', issuer: 'unknown', indicators: ['k', 'ma240', 'ma2400', 'panic', 'cost90', 'cost80'] }
             };
 
+            // ETF 專屬進階模式密碼 API；與既有 ETF 資料備份 gasUrl 分開管理。
+            const LEDGER_GAS_URL = 'https://script.google.com/macros/s/AKfycbw0wAnCPZkw3nlyx0Eg08Ejk49oG_itD82PqH9IP4X7S4oR5br1NTCmlUJsNfME2kbZ/exec';
+            const ETF_ADVANCED_MODE_KEY = 'ETFManager_AdvancedMode_CloudVerified';
+
             // 🎯 指標權重與顯示文字設定
             const INDICATOR_RULES = {
                 'k': { weight: 10, label: '短線 K值 < 20', color: 'text-blue-600' },
@@ -602,7 +662,30 @@ html {
                     currentAccountName: '',
                     accountNameInput: '',
                     accountRenameInput: '',
+                    accountPasswordInput: '',
+                    accountPasswordConfirmInput: '',
+                    accountSessionToken: '', // 伺服器簽發的裝置登入憑證；密碼本身不保存於本機。
+                    pendingAccountId: '',
+                    pendingAccountName: '',
+                    showAccountPasswordChange: false,
+                    accountCurrentPasswordInput: '',
+                    accountNewPasswordInput: '',
+                    accountNewPasswordConfirmInput: '',
+                    accountPasswordChangeMessage: '',
+                    advancedModeEnabled: false,
+                    settingsSecretTapCount: 0,
+                    settingsSecretTapTimer: null,
+                    showAdvancedPasswordModal: false,
+                    advancedPasswordInput: '',
+                    advancedPasswordMessage: '',
+                    isAdvancedPasswordBusy: false,
+                    showAdvancedPasswordChangeModal: false,
+                    advancedCurrentPasswordInput: '',
+                    advancedNewPasswordInput: '',
+                    advancedPasswordChangeMessage: '',
+                    isAdvancedPasswordChanging: false,
                     showAccountManager: false,
+                    savedAccountRestorePending: false,
                     showAccountConflict: false,
                     showLegacyMigration: false,
                     accountManagerBusy: false,
@@ -673,6 +756,7 @@ html {
                         this.$watch('activeTab', (val) => { if(val === 'settings') this.$nextTick(() => { const list = document.getElementById('txnList'); if(list) list.scrollTop = list.scrollHeight; }); });
 
                         this.loadData();
+                        this.applyModeUI();
                         this.initAccountSession();
                         this.checkGlobalReminders();
                     },
@@ -839,7 +923,10 @@ html {
                     writeAccountMeta(patch, accountId = this.currentAccountId) {
                         if (!accountId) return;
                         const current = this.readAccountMeta(accountId);
-                        const next = { ...current, ...patch, accountId, accountName: accountId === this.currentAccountId ? this.currentAccountName : current.accountName };
+                        const next = { ...current, ...patch, accountId };
+                        if (!Object.prototype.hasOwnProperty.call(patch || {}, 'accountName')) {
+                            next.accountName = accountId === this.currentAccountId ? this.currentAccountName : current.accountName;
+                        }
                         if (accountId === this.currentAccountId) this.accountDirty = !!next.dirty;
                         try { localStorage.setItem(this.getAccountMetaKey(accountId), JSON.stringify(next)); } catch (e) {}
                     },
@@ -856,44 +943,165 @@ html {
                         if (includeLocalCache) payload.homePrices = this.homePrices;
                         return payload;
                     },
-                    initAccountSession() {
-                        let savedId = '', savedName = '';
+                    getAccountDeviceId() {
+                        const key = 'THH_ETF_DEVICE_ID';
+                        let id = '';
+                        try { id = localStorage.getItem(key) || ''; } catch (e) {}
+                        if (!id) {
+                            try { id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : `device_${Date.now()}_${Math.random().toString(36).slice(2)}`; } catch (e) { id = `device_${Date.now()}_${Math.random().toString(36).slice(2)}`; }
+                            try { localStorage.setItem(key, id); } catch (e) {}
+                        }
+                        return id;
+                    },
+                    getAccountSessionKey(accountId) { return `THH_ETF_SESSION_TOKEN__${accountId}`; },
+                    getStoredAccountSessionToken(accountId) {
+                        try { return localStorage.getItem(this.getAccountSessionKey(accountId)) || ''; } catch (e) { return ''; }
+                    },
+                    persistAccountSession(account, token) {
+                        if (!account || !account.id || !token) throw new Error('雲端沒有回傳有效的裝置登入憑證。');
+                        this.currentAccountId = String(account.id);
+                        this.currentAccountName = String(account.name || '');
+                        this.accountSessionToken = String(token);
+                        localStorage.setItem(this.getAccountSessionKey(this.currentAccountId), this.accountSessionToken);
+                        localStorage.setItem('THH_ETF_ACTIVE_ACCOUNT_ID', this.currentAccountId);
+                        localStorage.setItem('THH_ETF_ACTIVE_ACCOUNT_NAME', this.currentAccountName);
+                    },
+                    clearActiveAccountSession(removeServerSession = false) {
+                        const id = this.currentAccountId;
+                        const token = this.accountSessionToken;
+                        const deviceId = this.getAccountDeviceId();
+                        if (removeServerSession && id && token) {
+                            this.accountApi('etf_logout_account', { accountId: id, deviceId }).catch(e => console.warn('登出雲端裝置憑證失敗：', e));
+                        }
+                        if (id) {
+                            try { localStorage.removeItem(this.getAccountSessionKey(id)); } catch (e) {}
+                        }
+                        try {
+                            localStorage.removeItem('THH_ETF_ACTIVE_ACCOUNT_ID');
+                            localStorage.removeItem('THH_ETF_ACTIVE_ACCOUNT_NAME');
+                        } catch (e) {}
+                        this.accountSessionToken = '';
+                        this.currentAccountId = '';
+                        this.currentAccountName = '';
+                    },
+                    async initAccountSession() {
+                        let savedId = '', savedName = '', savedToken = '';
                         try {
                             savedId = localStorage.getItem('THH_ETF_ACTIVE_ACCOUNT_ID') || '';
                             savedName = localStorage.getItem('THH_ETF_ACTIVE_ACCOUNT_NAME') || '';
+                            savedToken = savedId ? (localStorage.getItem(this.getAccountSessionKey(savedId)) || '') : '';
                             this.legacyLocalDataAvailable = !!localStorage.getItem('THH_ETF_Data_V1');
                         } catch (e) {}
-                        if (savedId && savedName) {
+                        this.pendingAccountId = savedId;
+                        this.pendingAccountName = savedName;
+                        this.accountNameInput = savedName;
+                        this.accountPasswordInput = '';
+                        this.accountPasswordConfirmInput = '';
+
+                        // 已載入過帳號的裝置使用 GAS 簽發的 session token 自動恢復，不再要求每次輸入帳密。
+                        if (savedId && savedToken) {
                             this.currentAccountId = savedId;
                             this.currentAccountName = savedName;
-                            const raw = localStorage.getItem(this.getAccountStorageKey(savedId));
-                            if (raw) {
+                            this.accountSessionToken = savedToken;
+                            // 只驗證本裝置 session 是否仍有效，不讀取帳本、不做版本比對。
+                            // 一般模式即使 GAS 暫時連不上，也允許先使用已存在的本機資料。
+                            if (navigator.onLine) {
                                 try {
-                                    const parsed = JSON.parse(raw);
-                                    this.etfs = parsed.etfs || {};
-                                    this.globalSettings = { ...this.globalSettings, ...(parsed.global || {}), cloudBackupStatus: '' };
-                                    if (parsed.homePrices) this.homePrices = parsed.homePrices;
-                                } catch (e) {}
+                                    await this.accountApi('etf_validate_account_session', { accountId: savedId });
+                                } catch (sessionError) {
+                                    const reason = String(sessionError?.message || sessionError || '');
+                                    if (/登入狀態已失效|登入憑證不存在|雲端找不到這個帳號/.test(reason)) {
+                                        this.clearActiveAccountSession(false);
+                                        this.showAccountManager = true;
+                                        this.accountMessage = '本裝置的帳號登入狀態已失效，請重新載入帳號並輸入密碼。';
+                                        return;
+                                    }
+                                    console.warn('目前無法確認雲端 session；先保留本機資料：', sessionError);
+                                }
                             }
-                            const meta = this.readAccountMeta(savedId);
-                            this.accountCloudVersion = Number(meta.baseVersion || 0);
-                            this.accountCloudUpdatedAt = meta.cloudUpdatedAt || '';
-                            this.accountDirty = !!meta.dirty;
-                            this.refreshActiveAccountFromCloud();
-                            return;
+                            const localRaw = localStorage.getItem(this.getAccountStorageKey(savedId));
+                            if (localRaw) {
+                                try {
+                                    const localData = JSON.parse(localRaw);
+                                    if (!localData || !localData.etfs) throw new Error('本機帳本格式不正確。');
+                                    this.applyAccountData(localData);
+                                    this.currentAccountId = savedId;
+                                    this.currentAccountName = savedName || localData.accountName || '';
+                                    const meta = this.readAccountMeta(savedId);
+                                    this.accountCloudVersion = Number(meta.baseVersion || 0);
+                                    this.accountCloudUpdatedAt = meta.cloudUpdatedAt || '';
+                                    this.accountDirty = !!meta.dirty;
+                                    this.showAccountManager = false;
+                                    this.showAccountConflict = false;
+                                    this.showLegacyMigration = false;
+                                    this.accountMessage = '';
+                                    const migratedFees = this.migrateLegacyTransactionFees();
+                                    this.saveData(!!migratedFees);
+                                    this.fetchHomePrices();
+
+                                    // 一般模式：本機已有資料時不比對、不下載雲端帳本；只在本機無資料時才拉取。
+                                    // 進階模式：照原規格執行啟動時雲端版本比對。
+                                    if (this.isAdvancedMode()) {
+                                        await this.refreshActiveAccountFromCloud();
+                                    } else if (meta.dirty) {
+                                        this.queueAutoCloudBackup(3000);
+                                    }
+                                    return;
+                                } catch (localError) {
+                                    console.warn('自動載入本機帳號資料失敗，將嘗試雲端還原：', localError);
+                                }
+                            }
+                            // 沒有這個帳號的本機資料時，無論模式都自動下載雲端備份；不把其他帳號資料帶入。
+                            try {
+                                const loaded = await this.accountApi('etf_load_account', { accountId: savedId });
+                                if (!loaded || !loaded.data || !loaded.account) throw new Error('找不到可還原的雲端帳本。');
+                                this.activateAccount(loaded.account, loaded.data);
+                                this.showMsg('✅ 本機沒有此帳號資料，已自動從雲端下載備份並還原。');
+                                return;
+                            } catch (cloudError) {
+                                console.warn('自動下載帳號雲端備份失敗：', cloudError);
+                                // Session 已通過驗證；雲端讀取暫時失敗不代表密碼錯誤，不清除登入憑證。
+                                // 保留目前帳號與 token，提供重新下載按鈕，避免下次啟動又要求輸入密碼。
+                                this.currentAccountId = savedId;
+                                this.currentAccountName = savedName;
+                                this.accountSessionToken = savedToken;
+                                this.savedAccountRestorePending = true;
+                                this.showAccountManager = true;
+                                this.accountNameInput = savedName;
+                                this.accountPasswordInput = '';
+                                this.accountPasswordConfirmInput = '';
+                                this.accountMessage = `本機沒有此帳號資料，雲端備份暫時無法下載：${cloudError.message || cloudError}。本裝置登入狀態已保留，請確認網路後按「重新下載雲端帳本」，不必重新輸入密碼。`;
+                                return;
+                            }
                         }
+
                         this.currentAccountId = '';
                         this.currentAccountName = '';
+                        this.accountSessionToken = '';
                         this.showAccountManager = true;
-                        this.accountMessage = this.legacyLocalDataAvailable
-                            ? '偵測到這台裝置有舊版本機資料。請輸入帳號名稱；首次建立帳號時會保留並歸入該帳號。'
-                            : '請輸入帳號名稱，選擇使用既有帳號或新增帳號。';
+                        if (!this.accountMessage) {
+                            this.accountMessage = this.legacyLocalDataAvailable
+                                ? '偵測到這台裝置有舊版本機資料。請載入帳號後，選擇是否將舊資料歸入該帳號。'
+                                : '請輸入帳號名稱及密碼，首次載入帳號時輸入密碼；成功後本裝置會記住登入狀態，下次開啟不必重新輸入。';
+                        }
                     },
                     async accountApi(action, payload = {}) {
-                        if (!this.gasUrl) throw new Error('尚未設定雲端備份 API 網址。');
+                        if (!this.gasUrl) throw new Error('尚未設定共用 GAS 帳號／資料備份 API 網址。');
+                        const protectedActions = [
+                            'etf_load_account', 'etf_backup_account', 'etf_rename_account',
+                            'etf_change_account_password', 'etf_logout_account', 'etf_validate_account_session'
+                        ];
+                        const body = { action, ...payload };
+                        if (protectedActions.includes(action)) {
+                            const token = this.accountSessionToken || this.getStoredAccountSessionToken(this.currentAccountId);
+                            if (!this.currentAccountId || !token) throw new Error('本裝置尚未載入帳號，請先輸入帳號密碼。');
+                            body.accountId = body.accountId || this.currentAccountId;
+                            body.deviceId = this.getAccountDeviceId();
+                            body.sessionToken = token;
+                        }
                         const response = await fetch(this.gasUrl, {
                             method: 'POST',
-                            body: JSON.stringify({ action, ...payload }),
+                            body: JSON.stringify(body),
                             headers: { 'Content-Type': 'text/plain;charset=utf-8' }
                         });
                         if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -927,12 +1135,152 @@ html {
                         this.currentView = 'home';
                         this.activeETF = null;
                     },
+                    activateAccountLocal(account, fallbackData = null) {
+                        const accountId = String(account?.id || '');
+                        if (!accountId) throw new Error('雲端沒有回傳有效的帳號 ID。');
+                        this.currentAccountId = accountId;
+                        this.currentAccountName = account.name || this.currentAccountName || '';
+                        if (this.accountSessionToken) localStorage.setItem(this.getAccountSessionKey(accountId), this.accountSessionToken);
+                        localStorage.setItem('THH_ETF_ACTIVE_ACCOUNT_ID', this.currentAccountId);
+                        localStorage.setItem('THH_ETF_ACTIVE_ACCOUNT_NAME', this.currentAccountName);
+                        const raw = localStorage.getItem(this.getAccountStorageKey(accountId));
+                        const adoptedLegacyLocal = !raw && !!(fallbackData && fallbackData.etfs) && this.legacyLocalDataAvailable;
+                        if (raw) {
+                            const parsed = JSON.parse(raw);
+                            this.applyAccountData(parsed);
+                        } else if (fallbackData && fallbackData.etfs) {
+                            this.applyAccountData(fallbackData);
+                        } else {
+                            this.etfs = {};
+                            this.homePrices = {};
+                            this.globalSettings = { ...this.globalSettings, lastRemindedMonth: null, cloudBackupStatus: '' };
+                            this.currentView = 'home';
+                            this.activeETF = null;
+                        }
+                        const meta = this.readAccountMeta(accountId);
+                        if (adoptedLegacyLocal) {
+                            // 只在使用者明確選擇匯入舊版本機資料時標記待比對；不自動把舊資料歸給不同帳號。
+                            this.writeAccountMeta({ baseVersion: Number(meta.baseVersion || 0), dirty: true, localModifiedAt: Date.now(), accountName: this.currentAccountName }, accountId);
+                        }
+                        this.accountCloudVersion = Number(meta.baseVersion || 0);
+                        this.accountCloudUpdatedAt = meta.cloudUpdatedAt || '';
+                        this.accountDirty = !!meta.dirty;
+                        this.globalSettings.cloudBackupStatus = '';
+                        this.showAccountManager = false;
+                        this.showAccountConflict = false;
+                        this.showLegacyMigration = false;
+                        this.accountConflict = null;
+                        this.accountMessage = '';
+                        this.savedAccountRestorePending = false;
+                        const migratedFees = this.migrateLegacyTransactionFees();
+                        this.saveData(!!migratedFees);
+                        this.fetchHomePrices();
+                    },
+                    isAdvancedMode() { return this.advancedModeEnabled === true; },
+                    applyModeUI() {
+                        this.advancedModeEnabled = localStorage.getItem(ETF_ADVANCED_MODE_KEY) === '1';
+                        // 一般模式仍然允許靜默自動雲端備份；模式只控制手動雲端按鈕及啟動時雙向比對。
+                        // 不因切回一般模式取消已排程的自動備份。
+                    },
+                    recordSettingsSecretTap() {
+                        this.settingsSecretTapCount += 1;
+                        if (this.settingsSecretTapTimer) clearTimeout(this.settingsSecretTapTimer);
+                        if (this.settingsSecretTapCount >= 5) {
+                            this.settingsSecretTapCount = 0;
+                            this.settingsSecretTapTimer = null;
+                            this.openAdvancedPasswordModal();
+                            return;
+                        }
+                        this.settingsSecretTapTimer = setTimeout(() => {
+                            this.settingsSecretTapCount = 0;
+                            this.settingsSecretTapTimer = null;
+                        }, 2500);
+                    },
+                    handleSettingsNavClick() {
+                        this.activeTab = 'settings';
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                        this.recordSettingsSecretTap();
+                    },
+                    openAdvancedPasswordModal() {
+                        if (this.isAdvancedMode()) {
+                            this.showMsg('目前已是進階模式。可在系統設定的進階模式管理區修改密碼或關閉進階模式。');
+                            return;
+                        }
+                        this.advancedPasswordInput = '';
+                        this.advancedPasswordMessage = '';
+                        this.showAdvancedPasswordModal = true;
+                    },
+                    async callAdvancedPasswordApi(payload) {
+                        if (!LEDGER_GAS_URL) throw new Error('尚未設定共用 GAS 密碼 API 網址。');
+                        const response = await fetch(LEDGER_GAS_URL, {
+                            method: 'POST', body: JSON.stringify(payload),
+                            headers: { 'Content-Type': 'text/plain;charset=utf-8' }
+                        });
+                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                        const result = await response.json();
+                        if (!result || result.status !== 'success') throw new Error(result?.message || '雲端密碼服務回應異常');
+                        return result;
+                    },
+                    async verifyAdvancedModePassword() {
+                        if (this.isAdvancedPasswordBusy) return;
+                        const password = String(this.advancedPasswordInput || '');
+                        if (!password) { this.advancedPasswordMessage = '請輸入進階模式密碼。'; return; }
+                        this.isAdvancedPasswordBusy = true;
+                        this.advancedPasswordMessage = '';
+                        try {
+                            const result = await this.callAdvancedPasswordApi({ action: 'etf_advanced_password_verify', password });
+                            // 僅在共用 GAS 回傳 success 後寫入本機模式旗標；不保存密碼。
+                            localStorage.setItem(ETF_ADVANCED_MODE_KEY, '1');
+                            this.applyModeUI();
+                            this.showAdvancedPasswordModal = false;
+                            this.advancedPasswordInput = '';
+                            this.showMsg(result.initialized ? '✅ 已初始化 ETF 存股管家的雲端進階模式密碼，進階模式已開啟。' : '✅ 雲端密碼驗證成功，進階模式已開啟。');
+                            if (this.currentAccountId) await this.refreshActiveAccountFromCloud();
+                        } catch (error) {
+                            this.advancedPasswordMessage = error.message || '密碼驗證失敗。';
+                        } finally { this.isAdvancedPasswordBusy = false; }
+                    },
+                    openAdvancedPasswordChangeModal() {
+                        if (!this.isAdvancedMode()) return;
+                        this.advancedCurrentPasswordInput = '';
+                        this.advancedNewPasswordInput = '';
+                        this.advancedPasswordChangeMessage = '';
+                        this.showAdvancedPasswordChangeModal = true;
+                    },
+                    async submitAdvancedModePasswordChange() {
+                        if (!this.isAdvancedMode() || this.isAdvancedPasswordChanging) return;
+                        const currentPassword = String(this.advancedCurrentPasswordInput || '');
+                        const newPassword = String(this.advancedNewPasswordInput || '');
+                        if (!currentPassword || !newPassword.trim()) { this.advancedPasswordChangeMessage = '目前密碼與新密碼都必須填寫。'; return; }
+                        if (newPassword.length > 64) { this.advancedPasswordChangeMessage = '新密碼最多 64 個字元。'; return; }
+                        this.isAdvancedPasswordChanging = true;
+                        this.advancedPasswordChangeMessage = '';
+                        try {
+                            await this.callAdvancedPasswordApi({ action: 'etf_advanced_password_change', currentPassword, newPassword });
+                            this.showAdvancedPasswordChangeModal = false;
+                            this.advancedCurrentPasswordInput = '';
+                            this.advancedNewPasswordInput = '';
+                            this.showMsg('✅ ETF 存股管家的雲端進階模式密碼已更新。已經登入進階模式的本裝置不會自動退出。');
+                        } catch (error) {
+                            this.advancedPasswordChangeMessage = error.message || '密碼修改失敗。';
+                        } finally { this.isAdvancedPasswordChanging = false; }
+                    },
+                    exitAdvancedMode() {
+                        if (!this.isAdvancedMode()) return;
+                        if (!confirm('確定要關閉進階模式嗎？關閉後仍會自動雲端備份；啟動時不再進行雲端帳本版本比對，並隱藏手動雲端備份及還原功能。本機與雲端資料都不會刪除。')) return;
+                        localStorage.removeItem(ETF_ADVANCED_MODE_KEY);
+                        this.applyModeUI();
+                        this.showMsg('已切換回一般模式。本機資料仍保留，自動雲端備份會繼續執行；下次進入進階模式需要重新驗證雲端密碼。');
+                    },
+
                     activateAccount(account, data, options = {}) {
                         const accountId = String(account.id || '');
                         if (!accountId) throw new Error('雲端沒有回傳有效的帳號 ID。');
                         this.currentAccountId = accountId;
                         this.currentAccountName = account.name || this.currentAccountName || '';
+                        if (!this.accountSessionToken) this.accountSessionToken = this.getStoredAccountSessionToken(accountId);
                         try {
+                            if (this.accountSessionToken) localStorage.setItem(this.getAccountSessionKey(accountId), this.accountSessionToken);
                             localStorage.setItem('THH_ETF_ACTIVE_ACCOUNT_ID', this.currentAccountId);
                             localStorage.setItem('THH_ETF_ACTIVE_ACCOUNT_NAME', this.currentAccountName);
                         } catch (e) {}
@@ -953,6 +1301,7 @@ html {
                         this.showLegacyMigration = false;
                         this.accountConflict = null;
                         this.accountMessage = '';
+                        this.savedAccountRestorePending = false;
                         if (migratedFees) this.saveData(true);
                         this.fetchHomePrices();
                     },
@@ -998,7 +1347,7 @@ html {
                         this.accountMessage = '';
                     },
                     async refreshActiveAccountFromCloud() {
-                        if (!this.currentAccountId) return;
+                        if (!this.isAdvancedMode() || !this.currentAccountId) return false;
                         try {
                             const result = await this.accountApi('etf_load_account', { accountId: this.currentAccountId });
                             if (!result.account || !result.data) return;
@@ -1034,46 +1383,126 @@ html {
                     },
                     async useExistingAccount() {
                         const name = String(this.accountNameInput || '').trim();
+                        const password = String(this.accountPasswordInput || '');
                         if (!name) { this.accountMessage = '請先輸入帳號名稱。'; return; }
+                        if (!password) { this.accountMessage = '請輸入帳號登入密碼。'; return; }
                         this.accountManagerBusy = true;
-                        this.accountMessage = '正在查詢雲端帳號……';
+                        this.accountMessage = '正在驗證帳號密碼……';
                         try {
-                            const result = await this.accountApi('etf_find_account', { accountName: name });
-                            if (result.found && result.account) {
-                                const loaded = await this.accountApi('etf_load_account', { accountId: result.account.id });
-                                await this.initAccountFromCloud(loaded.account || result.account, loaded.data);
-                            } else if (result.legacyAvailable) {
+                            const deviceId = this.getAccountDeviceId();
+                            let auth = await this.accountApi('etf_login_account', { accountName: name, password, deviceId });
+                            if (auth.legacyAvailable) {
                                 await this.prepareLegacyMigration(name);
+                                return;
+                            }
+                            if (auth.passwordSetupRequired) {
+                                if (password.length < 6 || password.length > 64) throw new Error('首次設定帳號密碼需為 6～64 個字元。');
+                                if (String(this.accountPasswordConfirmInput || '') !== password) throw new Error('此舊帳號尚未設定密碼，請在再次輸入欄位輸入相同密碼以完成首次設定。');
+                                this.accountMessage = '正在為舊帳號設定首次登入密碼……';
+                                await this.accountApi('etf_set_account_password', { accountName: name, password });
+                                auth = await this.accountApi('etf_login_account', { accountName: name, password, deviceId });
+                            }
+                            if (!auth.account || !auth.account.id || !auth.sessionToken) throw new Error('帳號驗證回應缺少帳號資料或裝置登入憑證。');
+                            this.persistAccountSession(auth.account, auth.sessionToken);
+                            this.accountPasswordInput = '';
+                            this.accountPasswordConfirmInput = '';
+                            this.pendingAccountId = auth.account.id;
+                            this.pendingAccountName = auth.account.name || name;
+
+                            let adoptedLegacyData = null;
+                            const accountLocalKey = this.getAccountStorageKey(auth.account.id);
+                            const hasAccountLocal = !!localStorage.getItem(accountLocalKey);
+                            if (!hasAccountLocal && this.legacyLocalDataAvailable) {
+                                try {
+                                    const rawLegacy = localStorage.getItem('THH_ETF_Data_V1');
+                                    const parsedLegacy = rawLegacy ? JSON.parse(rawLegacy) : null;
+                                    if (parsedLegacy && parsedLegacy.etfs) {
+                                        const importLocal = confirm(`偵測到這台裝置有尚未歸入任何帳號的舊版本機資料（${this.accountDataSummary(parsedLegacy)}）。\n\n是否將這份資料歸入「${auth.account.name || name}」？\n\n選擇「取消」會保留原始舊資料，並優先使用該帳號自己的本機／雲端資料。`);
+                                        if (importLocal) {
+                                            adoptedLegacyData = parsedLegacy;
+                                            localStorage.setItem(accountLocalKey, JSON.stringify(parsedLegacy));
+                                            this.writeAccountMeta({ baseVersion: Number(auth.account.version || 0), dirty: true, localModifiedAt: Date.now(), accountName: auth.account.name || name }, auth.account.id);
+                                        }
+                                    }
+                                } catch (migrationError) {
+                                    console.warn('讀取舊版本機資料失敗，原始資料仍保留：', migrationError);
+                                }
+                            }
+
+                            if (this.isAdvancedMode()) {
+                                this.accountMessage = '帳號驗證成功，正在比對雲端資料……';
+                                const loaded = await this.accountApi('etf_load_account', { accountId: auth.account.id });
+                                await this.initAccountFromCloud(loaded.account || auth.account, loaded.data);
+                            } else if (hasAccountLocal || adoptedLegacyData) {
+                                this.activateAccountLocal(auth.account, adoptedLegacyData);
+                                const meta = this.readAccountMeta(auth.account.id);
+                                if (adoptedLegacyData) {
+                                    this.writeAccountMeta({ baseVersion: Number(auth.account.version || 0), dirty: true, localModifiedAt: Date.now(), accountName: auth.account.name || name }, auth.account.id);
+                                    this.saveData(true);
+                                } else if (meta.dirty) this.queueAutoCloudBackup(3000);
+                                this.showMsg('✅ 帳號已載入。本機資料直接開啟；一般模式不執行啟動時雲端帳本比對，資料變更仍會自動雲端備份。');
                             } else {
-                                this.accountMessage = '雲端找不到這個帳號。請確認名稱，或選擇「新增帳號」。';
+                                this.accountMessage = '本機沒有此帳號資料，正在自動下載雲端備份……';
+                                const loaded = await this.accountApi('etf_load_account', { accountId: auth.account.id });
+                                if (!loaded.data) throw new Error('雲端沒有可還原的帳本資料。');
+                                this.activateAccount(loaded.account || auth.account, loaded.data);
+                                this.showMsg('✅ 本機沒有此帳號資料，已自動下載雲端備份並還原。');
                             }
                         } catch (e) {
-                            this.accountMessage = `查詢失敗：${e.message}`;
+                            // 若密碼已通過驗證並簽發 session，但後續下載／比對暫時失敗，保留該 session。
+                            // 若登入本身失敗，則恢復本機先前已載入的帳號 session（若有）。
+                            try {
+                                const savedId = localStorage.getItem('THH_ETF_ACTIVE_ACCOUNT_ID') || '';
+                                const savedName = localStorage.getItem('THH_ETF_ACTIVE_ACCOUNT_NAME') || '';
+                                const savedToken = savedId ? (localStorage.getItem(this.getAccountSessionKey(savedId)) || '') : '';
+                                if (savedId && savedToken) {
+                                    this.currentAccountId = savedId;
+                                    this.currentAccountName = savedName;
+                                    this.accountSessionToken = savedToken;
+                                    const hasLocal = !!localStorage.getItem(this.getAccountStorageKey(savedId));
+                                    this.savedAccountRestorePending = !hasLocal;
+                                    this.accountMessage = hasLocal
+                                        ? `載入帳號時發生問題：${e.message}。本機帳號登入狀態已保留，現有本機資料不會被清除。`
+                                        : `帳號已驗證，但雲端帳本暫時無法下載：${e.message}。登入狀態已保留，可按「重新下載雲端帳本」，不必再次輸入密碼。`;
+                                } else {
+                                    this.accountSessionToken = '';
+                                    this.savedAccountRestorePending = false;
+                                    this.accountMessage = `載入帳號失敗：${e.message}`;
+                                }
+                            } catch (restoreSessionError) {
+                                this.accountSessionToken = '';
+                                this.savedAccountRestorePending = false;
+                                this.accountMessage = `載入帳號失敗：${e.message}`;
+                            }
                         } finally { this.accountManagerBusy = false; }
                     },
                     async createNewAccount() {
                         const name = String(this.accountNameInput || '').trim();
+                        const password = String(this.accountPasswordInput || '');
+                        const confirmPassword = String(this.accountPasswordConfirmInput || '');
                         if (!name) { this.accountMessage = '請先輸入帳號名稱。'; return; }
+                        if (password.length < 6 || password.length > 64) { this.accountMessage = '新帳號密碼需為 6～64 個字元。'; return; }
+                        if (password !== confirmPassword) { this.accountMessage = '兩次輸入的密碼不一致。'; return; }
                         this.accountManagerBusy = true;
-                        this.accountMessage = '正在檢查帳號名稱是否重複……';
+                        this.accountMessage = '正在建立雲端帳號……';
                         try {
                             const found = await this.accountApi('etf_find_account', { accountName: name });
-                            if (found.found) {
-                                this.accountMessage = '這個帳號名稱已存在。請選擇「使用既有帳號」，或輸入其他名稱。';
-                                return;
-                            }
+                            if (found.found) throw new Error('這個帳號名稱已存在。請輸入該帳號密碼並選擇「載入既有帳號」。');
                             if (found.legacyAvailable) {
                                 await this.prepareLegacyMigration(name);
                                 return;
                             }
-                            // 只有尚未綁定任何帳號的舊裝置，才把現有未歸屬本機資料帶入第一個帳號。
-                            const initialData = !this.currentAccountId && this.legacyLocalDataAvailable
-                                ? this.serializeCurrentData(false)
-                                : { etfs: {}, global: { lastRemindedMonth: null, lastBackupTime: '', hideInstallBtn: false } };
-                            const result = await this.accountApi('etf_create_account', { accountName: name, backupData: initialData, requestId: this.makeBackupRequestId() });
-                            if (!result.account || !result.data) throw new Error(result.message || '建立帳號失敗。');
+                            const localInitialData = this.serializeCurrentData(false);
+                            const result = await this.accountApi('etf_create_account', {
+                                accountName: name, password, deviceId: this.getAccountDeviceId(),
+                                backupData: localInitialData, requestId: this.makeBackupRequestId()
+                            });
+                            if (!result.account || !result.data || !result.sessionToken) throw new Error(result.message || '建立帳號失敗，缺少裝置登入憑證。');
+                            this.persistAccountSession(result.account, result.sessionToken);
+                            this.accountPasswordInput = '';
+                            this.accountPasswordConfirmInput = '';
                             this.activateAccount(result.account, result.data);
-                            this.showMsg('✅ 帳號已建立，資料已保存至專屬雲端備份。');
+                            this.showMsg('✅ 帳號已建立並載入。這台裝置已記住登入狀態，下次開啟不必再次輸入帳號密碼。');
                         } catch (e) {
                             this.accountMessage = `新增帳號失敗：${e.message}`;
                         } finally { this.accountManagerBusy = false; }
@@ -1090,6 +1519,10 @@ html {
                     },
                     async claimLegacyAccount(useCloud) {
                         if (!this.legacyClaimName || !this.legacyCloudData) return;
+                        const password = String(this.accountPasswordInput || '');
+                        const confirmPassword = String(this.accountPasswordConfirmInput || '');
+                        if (password.length < 6 || password.length > 64) { this.accountMessage = '建立帳號密碼需為 6～64 個字元。'; return; }
+                        if (password !== confirmPassword) { this.accountMessage = '兩次輸入的密碼不一致。'; return; }
                         const localData = this.serializeCurrentData(false);
                         const cloudData = this.legacyCloudData;
                         const chosen = useCloud ? cloudData : localData;
@@ -1099,19 +1532,21 @@ html {
                             try { localStorage.setItem(`THH_ETF_MigrationCloudSnapshot_${Date.now()}`, JSON.stringify(cloudData)); } catch (e) {}
                         }
                         this.accountManagerBusy = true;
-                        this.accountMessage = '正在移轉舊版備份……';
+                        this.accountMessage = '正在移轉舊版備份並建立帳號……';
                         try {
                             const result = await this.accountApi('etf_claim_legacy_account', {
-                                accountName: this.legacyClaimName,
-                                backupData: chosen,
-                                requestId: this.makeBackupRequestId()
+                                accountName: this.legacyClaimName, password, deviceId: this.getAccountDeviceId(),
+                                backupData: chosen, requestId: this.makeBackupRequestId()
                             });
-                            if (!result.account || !result.data) throw new Error(result.message || '移轉失敗。');
+                            if (!result.account || !result.data || !result.sessionToken) throw new Error(result.message || '移轉失敗，缺少裝置登入憑證。');
+                            this.persistAccountSession(result.account, result.sessionToken);
+                            this.accountPasswordInput = '';
+                            this.accountPasswordConfirmInput = '';
                             this.activateAccount(result.account, result.data);
                             this.legacyCloudData = null;
                             this.legacyClaimName = '';
                             this.legacyLocalDataAvailable = false;
-                            this.showMsg('✅ 舊版資料已移轉至新帳號。原本的本機資料鍵值仍保留，雲端目前備份已改為該帳號專用。');
+                            this.showMsg('✅ 舊版資料已移轉並建立帳號。這台裝置已記住登入狀態。');
                         } catch (e) { this.accountMessage = `移轉失敗：${e.message}`; }
                         finally { this.accountManagerBusy = false; }
                     },
@@ -1134,7 +1569,7 @@ html {
                         // 使用者已明確選擇本機版本，因此以目前雲端版本作為新的比較基準，再執行一次受版本檢查的備份。
                         this.activateAccount(conflict.account, conflict.localData, { dirty: true });
                         this.writeAccountMeta({ baseVersion: conflict.cloudVersion, cloudUpdatedAt: conflict.account.lastBackupAt || conflict.account.updatedAt || '', dirty: true, localModifiedAt: Date.now() });
-                        await this.cloudBackup(false, 0);
+                        await this.cloudBackup(true, 0);
                     },
                     async renameCurrentAccount() {
                         if (!this.currentAccountId) return;
@@ -1154,12 +1589,85 @@ html {
                         } catch (e) { this.accountMessage = `修改名稱失敗：${e.message}`; }
                         finally { this.accountManagerBusy = false; }
                     },
-                    closeAccountManager() {
+                    async changeAccountPassword() {
                         if (!this.currentAccountId) return;
+                        const currentPassword = String(this.accountCurrentPasswordInput || '');
+                        const newPassword = String(this.accountNewPasswordInput || '');
+                        if (!currentPassword || newPassword.length < 6 || newPassword.length > 64) { this.accountPasswordChangeMessage = '請輸入目前密碼；新密碼需為 6～64 個字元。'; return; }
+                        if (newPassword !== String(this.accountNewPasswordConfirmInput || '')) { this.accountPasswordChangeMessage = '兩次輸入的新密碼不一致。'; return; }
+                        this.accountManagerBusy = true;
+                        this.accountPasswordChangeMessage = '正在更新帳號密碼……';
+                        try {
+                            await this.accountApi('etf_change_account_password', { accountId: this.currentAccountId, currentPassword, newPassword });
+                            this.accountCurrentPasswordInput = '';
+                            this.accountNewPasswordInput = '';
+                            this.accountNewPasswordConfirmInput = '';
+                            this.accountPasswordChangeMessage = '✅ 帳號登入密碼已更新。其他裝置下次登入需使用新密碼。';
+                        } catch (error) {
+                            this.accountPasswordChangeMessage = `修改失敗：${error.message}`;
+                        } finally { this.accountManagerBusy = false; }
+                    },
+                    logoutAccount() {
+                        if (!confirm('確定登出目前帳號並切換使用者嗎？本機資料會保留，不會刪除。')) return;
+                        if (this.cloudBackupTimer) clearTimeout(this.cloudBackupTimer);
+                        if (this.cloudBackupRetryTimer) clearTimeout(this.cloudBackupRetryTimer);
+                        this.cloudBackupTimer = null;
+                        this.cloudBackupRetryTimer = null;
+                        this.clearActiveAccountSession(true);
+                        this.etfs = {};
+                        this.homePrices = {};
+                        this.currentView = 'home';
+                        this.activeETF = null;
+                        this.globalSettings = { lastRemindedMonth: null, lastBackupTime: '', hideInstallBtn: false, cloudBackupStatus: '' };
+                        this.accountPasswordInput = '';
+                        this.accountPasswordConfirmInput = '';
+                        this.accountNameInput = '';
+                        this.accountRenameInput = '';
+                        this.showAccountPasswordChange = false;
+                        this.savedAccountRestorePending = false;
+                        this.showAccountConflict = false;
+                        this.showLegacyMigration = false;
+                        this.accountConflict = null;
+                        this.accountMessage = '請輸入要載入的帳號名稱及密碼。';
+                        this.showAccountManager = true;
+                    },
+                    async retrySavedAccountRestore() {
+                        if (!this.savedAccountRestorePending || !this.currentAccountId || !this.accountSessionToken || this.accountManagerBusy) return;
+                        this.accountManagerBusy = true;
+                        this.accountMessage = '正在使用本裝置已保存的登入憑證下載雲端帳本……';
+                        try {
+                            const loaded = await this.accountApi('etf_load_account', { accountId: this.currentAccountId });
+                            if (!loaded || !loaded.account || !loaded.data || !loaded.data.etfs) throw new Error('雲端沒有可還原的有效帳本資料。');
+                            this.activateAccount(loaded.account, loaded.data);
+                            this.savedAccountRestorePending = false;
+                            this.showMsg('✅ 雲端帳本已下載並還原，不需要重新輸入帳號密碼。');
+                        } catch (error) {
+                            const detail = String(error?.message || error || '未知錯誤');
+                            if (/登入狀態已失效|登入憑證不存在|重新載入帳號/.test(detail)) {
+                                this.clearActiveAccountSession(false);
+                                this.savedAccountRestorePending = false;
+                                this.accountMessage = '本裝置的登入憑證已失效，請重新載入帳號並輸入密碼。';
+                            } else {
+                                this.accountMessage = `雲端下載仍未成功：${detail}。登入狀態已保留，請稍後再按一次「重新下載雲端帳本」。`;
+                            }
+                        } finally {
+                            this.accountManagerBusy = false;
+                        }
+                    },
+                    closeAccountManager() {
+                        if (!this.currentAccountId || this.savedAccountRestorePending) return;
                         this.showAccountManager = false;
                         this.showAccountConflict = false;
                         this.showLegacyMigration = false;
                         this.accountMessage = '';
+                    },
+                    queueAutoCloudBackup(delay = 3000) {
+                        if (!this.currentAccountId || !this.accountSessionToken || !this.gasUrl) return;
+                        if (this.cloudBackupTimer) clearTimeout(this.cloudBackupTimer);
+                        this.cloudBackupTimer = setTimeout(() => {
+                            this.cloudBackupTimer = null;
+                            if (this.currentAccountId && this.accountSessionToken) this.cloudBackup(true, 0);
+                        }, Math.max(0, Number(delay) || 0));
                     },
                     saveData(shouldAutoBackup = false) {
                         if (this.currentView === 'detail' && this.activeETF) {
@@ -1173,20 +1681,13 @@ html {
                         }
                         try { localStorage.setItem(this.getAccountStorageKey(), JSON.stringify(localPayload)); } catch (e) {}
 
-                        // 原有時機：只有明確的重要資料變更才觸發，延遲 3 秒合併短時間連續操作。
-                        if (this.currentAccountId && shouldAutoBackup && this.gasUrl) {
+                        // 一般／進階模式都會在資料變更後自動雲端備份；進階模式額外在啟動時比對版本。
+                        if (this.currentAccountId && shouldAutoBackup) {
                             this.writeAccountMeta({ dirty: true, localModifiedAt: Date.now(), accountName: this.currentAccountName });
-                            if (this.cloudBackupTimer) clearTimeout(this.cloudBackupTimer);
-                            if (this.cloudBackupRetryTimer) {
-                                clearTimeout(this.cloudBackupRetryTimer);
-                                this.cloudBackupRetryTimer = null;
-                            }
-                            this.cloudBackupTimer = setTimeout(() => {
-                                this.cloudBackupTimer = null;
-                                this.cloudBackup(true, 0);
-                            }, 3000);
+                            if (this.cloudBackupRetryTimer) clearTimeout(this.cloudBackupRetryTimer);
+                            this.cloudBackupRetryTimer = null;
+                            this.queueAutoCloudBackup(3000);
                         } else if (!this.currentAccountId) {
-                            // 尚未選擇帳號時只保存舊版本地資料，不會意外上傳到任何帳號。
                             try { localStorage.setItem('THH_ETF_Data_V1', JSON.stringify(localPayload)); } catch (e) {}
                         }
                     },
@@ -1815,6 +2316,10 @@ html {
 
                     // 多帳號雲端備份：手動與自動備份共用當前帳號的唯一檔案。
                     async cloudBackup(isAuto = false, attempt = 0) {
+                        if (!this.isAdvancedMode() && !isAuto) {
+                            this.showMsg('一般模式會自動雲端備份；手動雲端備份請先切換至進階模式。');
+                            return false;
+                        }
                         if (!this.currentAccountId) {
                             if (!isAuto) this.showMsg('請先選擇或建立帳號，再進行雲端備份。');
                             return;
@@ -1890,8 +2395,12 @@ html {
                                 }, delay);
                             } else {
                                 this.globalSettings.cloudBackupStatus = isAuto
-                                    ? `⚠️ 雲端同步仍未成功：${detail}。本地資料已保留，請檢查網路或手動重試。`
+                                    ? `⚠️ 雲端同步仍未成功：${detail}。本地資料已保留，請檢查網路或重新載入帳號。`
                                     : `⚠️ 雲端備份失敗：${detail}。本地資料仍保留，請檢查網路後重試。`;
+                                if (/登入狀態已失效|登入憑證不存在|重新載入帳號/.test(detail)) {
+                                    this.accountMessage = '本裝置的雲端登入憑證已失效，請重新載入帳號並輸入密碼。';
+                                    this.showAccountManager = true;
+                                }
                                 this.saveData(false);
                                 if (!isAuto) this.showMsg(`❌ 雲端備份失敗：${detail}`);
                                 // 保留同一個 requestId，讓再次重試能辨識「伺服器已成功、但回覆途中失敗」的情況。
@@ -1909,6 +2418,7 @@ html {
 
                     // 手動還原：讀取目前帳號的唯一雲端備份檔。
                     async cloudRestore() {
+                        if (!this.isAdvancedMode()) return this.showMsg('一般模式不提供雲端還原；請先通過進階模式密碼驗證。');
                         if (!this.currentAccountId) return this.showMsg('請先選擇帳號。');
                         if (!confirm('⚠️ 雲端還原將會以雲端最新資料取代目前帳號的本機資料。\n\n系統會先保留一份本地復原快照。確定要繼續嗎？')) return;
                         this.isCloudSyncing = 'restore';
@@ -3917,12 +4427,12 @@ html {
                             <i class="fa-solid fa-xmark"></i>
                         </button>
                     </div>
-                    <div x-show="globalSettings.lastBackupTime" class="w-full text-base sm:text-lg font-bold text-slate-500 bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm flex items-center gap-2">
+                    <div x-show="advancedModeEnabled && globalSettings.lastBackupTime" class="w-full text-base sm:text-lg font-bold text-slate-500 bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm flex items-center gap-2">
                         <i class="fa-solid" :class="accountDirty ? 'fa-cloud-arrow-up text-amber-500' : 'fa-cloud-check text-emerald-500'"></i><span x-text="accountDirty ? '待同步｜最後成功備份：' : '最後備份：'"></span><span x-text="globalSettings.lastBackupTime || '尚未備份'"></span>
                     </div>
                 </div>
             </header>
-            <div x-show="globalSettings.cloudBackupStatus" x-cloak class="mb-6 p-4 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 text-sm font-bold shadow-sm">
+            <div x-show="advancedModeEnabled && globalSettings.cloudBackupStatus" x-cloak class="mb-6 p-4 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 text-sm font-bold shadow-sm">
                 <div class="flex items-start gap-2"><i class="fa-solid fa-triangle-exclamation mt-0.5"></i><span class="flex-1" x-text="globalSettings.cloudBackupStatus"></span></div>
                 <button @click="cloudBackup(false)" :disabled="isCloudSyncing !== ''" class="mt-2 px-3 py-1.5 rounded-lg bg-white border border-amber-300 text-amber-800 hover:bg-amber-100 disabled:opacity-50">立即重試雲端備份</button>
             </div>
@@ -4058,27 +4568,23 @@ html {
                 <label style="display:block; font-size:18px; font-weight:900; text-align:center; color:#7f8fa6; margin-bottom: 10px;">
                     全系統備份還原
                 </label>
-                <div x-show="globalSettings.cloudBackupStatus" x-cloak class="mb-3 p-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 text-sm font-bold">
-                    <div class="flex items-start gap-2"><i class="fa-solid fa-triangle-exclamation mt-0.5"></i><span class="flex-1" x-text="globalSettings.cloudBackupStatus"></span></div>
-                    <button @click="cloudBackup(false)" :disabled="isCloudSyncing !== ''" class="mt-2 px-3 py-1.5 rounded-lg bg-white border border-amber-300 text-amber-800 hover:bg-amber-100 disabled:opacity-50">立即重試雲端備份</button>
+                <div x-show="!advancedModeEnabled && globalSettings.cloudBackupStatus" x-cloak class="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold leading-relaxed text-amber-800">
+                    <div class="flex items-start gap-2"><i class="fa-solid fa-cloud-arrow-up mt-0.5"></i><span class="flex-1" x-text="'一般模式自動雲端備份狀態：' + globalSettings.cloudBackupStatus"></span></div>
+                    <p class="mt-1 text-xs font-medium text-amber-700">本機資料仍已保存。請確認網路及帳號登入狀態；一般模式不提供手動雲端備份／還原按鈕。</p>
                 </div>
-                
+                <div id="advanced-cloud-controls" x-show="advancedModeEnabled" x-cloak>
+                    <div x-show="globalSettings.cloudBackupStatus" class="mb-3 p-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 text-sm font-bold">
+                        <div class="flex items-start gap-2"><i class="fa-solid fa-triangle-exclamation mt-0.5"></i><span class="flex-1" x-text="globalSettings.cloudBackupStatus"></span></div>
+                        <button @click="cloudBackup(false)" :disabled="isCloudSyncing !== ''" class="mt-2 px-3 py-1.5 rounded-lg bg-white border border-amber-300 text-amber-800 hover:bg-amber-100 disabled:opacity-50">立即重試雲端備份</button>
+                    </div>
+                    <div class="backup-grid">
+                        <button class="btn-grid btn-c-bak" @click="cloudBackup()" :disabled="isCloudSyncing !== ''"><i class="fa-solid" :class="isCloudSyncing === 'backup' ? 'fa-spinner fa-spin' : 'fa-cloud-arrow-up'"></i> 雲端備份</button>
+                        <button class="btn-grid btn-c-res" @click="cloudRestore()" :disabled="isCloudSyncing !== ''"><i class="fa-solid" :class="isCloudSyncing === 'restore' ? 'fa-spinner fa-spin' : 'fa-cloud-arrow-down'"></i> 雲端還原</button>
+                    </div>
+                </div>
                 <div class="backup-grid">
-                    <!-- 🎯 只有當值為 'backup' 時才轉圈圈 -->
-                    <button class="btn-grid btn-c-bak" @click="cloudBackup()" :disabled="isCloudSyncing !== ''">
-                        <i class="fa-solid" :class="isCloudSyncing === 'backup' ? 'fa-spinner fa-spin' : 'fa-cloud-arrow-up'"></i> 雲端備份
-                    </button>
-                    <!-- 🎯 只有當值為 'restore' 時才轉圈圈 -->
-                    <button class="btn-grid btn-c-res" @click="cloudRestore()" :disabled="isCloudSyncing !== ''">
-                        <i class="fa-solid" :class="isCloudSyncing === 'restore' ? 'fa-spinner fa-spin' : 'fa-cloud-arrow-down'"></i> 雲端還原
-                    </button>
-                    <!-- 無論雲端在做什麼，本機備份仍可點擊（或您想全部停用也可以加上 :disabled="isCloudSyncing !== ''"） -->
-                    <button class="btn-grid btn-l-bak" @click="exportSystemBackup(true)">
-                        <i class="fa-solid fa-download"></i> 本機備份
-                    </button>
-                    <button class="btn-grid btn-l-res" @click="document.getElementById('file-input-home').click()">
-                        <i class="fa-solid fa-upload"></i> 本機還原
-                    </button>
+                    <button class="btn-grid btn-l-bak" @click="exportSystemBackup(true)"><i class="fa-solid fa-download"></i> 本機備份</button>
+                    <button class="btn-grid btn-l-res" @click="document.getElementById('file-input-home').click()"><i class="fa-solid fa-upload"></i> 本機還原</button>
                 </div>
                 
                 <!-- 隱藏的檔案上傳元件 (供本機還原使用) -->
@@ -4107,16 +4613,16 @@ html {
                         <button @click="activeTab = 'dashboard'; window.scrollTo({top:0, behavior:'smooth'})" class="flex-shrink-0 min-w-[70px] flex-1 py-2 text-base sm:text-lg font-bold rounded-lg transition-all whitespace-nowrap" :class="activeTab === 'dashboard' ? 'bg-white text-blue-600 shadow-sm border border-slate-200/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'">主控台</button>
                         <button @click="activeTab = 'report'; window.scrollTo({top:0, behavior:'smooth'})" class="flex-shrink-0 min-w-[70px] flex-1 py-2 text-base sm:text-lg font-bold rounded-lg transition-all whitespace-nowrap" :class="activeTab === 'report' ? 'bg-white text-blue-600 shadow-sm border border-slate-200/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'">深度報告</button>
                         <button @click="activeTab = 'withdraw'; window.scrollTo({top:0, behavior:'smooth'})" class="flex-shrink-0 min-w-[70px] flex-1 py-2 text-base sm:text-lg font-bold rounded-lg transition-all whitespace-nowrap" :class="activeTab === 'withdraw' ? 'bg-white text-blue-600 shadow-sm border border-slate-200/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'">動態提領</button>
-                        <button @click="activeTab = 'settings'; window.scrollTo({top:0, behavior:'smooth'})" class="flex-shrink-0 min-w-[70px] flex-1 py-2 text-base sm:text-lg font-bold rounded-lg transition-all whitespace-nowrap" :class="activeTab === 'settings' ? 'bg-white text-blue-600 shadow-sm border border-slate-200/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'">系統設定</button>
+                        <button @click="handleSettingsNavClick()" data-settings-secret-trigger="sticky" class="flex-shrink-0 min-w-[70px] flex-1 py-2 text-base sm:text-lg font-bold rounded-lg transition-all whitespace-nowrap" :class="activeTab === 'settings' ? 'bg-white text-blue-600 shadow-sm border border-slate-200/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'">系統設定</button>
                     </div>
                 </div>
             </div>
 
             <header class="mb-6 pt-2">
-                <div x-show="globalSettings.lastBackupTime" class="w-full mb-3 text-base sm:text-lg font-bold text-slate-500 bg-white px-4 py-3 rounded-xl border border-slate-200 shadow-sm flex items-center justify-start gap-2">
+                <div x-show="advancedModeEnabled && globalSettings.lastBackupTime" class="w-full mb-3 text-base sm:text-lg font-bold text-slate-500 bg-white px-4 py-3 rounded-xl border border-slate-200 shadow-sm flex items-center justify-start gap-2">
                     <i class="fa-solid fa-cloud-check text-emerald-500"></i>最後備份：<span x-text="globalSettings.lastBackupTime"></span>
                 </div>
-                <div x-show="globalSettings.cloudBackupStatus" x-cloak class="w-full mb-6 p-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 text-sm font-bold">
+                <div x-show="advancedModeEnabled && globalSettings.cloudBackupStatus" x-cloak class="w-full mb-6 p-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 text-sm font-bold">
                     <div class="flex items-start gap-2"><i class="fa-solid fa-triangle-exclamation mt-0.5"></i><span class="flex-1" x-text="globalSettings.cloudBackupStatus"></span></div>
                     <button @click="cloudBackup(false)" :disabled="isCloudSyncing !== ''" class="mt-2 px-3 py-1.5 rounded-lg bg-white border border-amber-300 text-amber-800 hover:bg-amber-100 disabled:opacity-50">立即重試雲端備份</button>
                 </div>
@@ -4198,7 +4704,7 @@ html {
   <button @click="activeTab = 'dashboard'" class="flex-shrink-0 min-w-[70px] flex-1 py-3 text-base sm:text-lg font-bold rounded-lg transition-all whitespace-nowrap" :class="activeTab === 'dashboard' ? 'bg-white text-blue-600 shadow-sm border border-slate-200/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'">主控台</button>
   <button @click="activeTab = 'report'" class="flex-shrink-0 min-w-[70px] flex-1 py-3 text-base sm:text-lg font-bold rounded-lg transition-all whitespace-nowrap" :class="activeTab === 'report' ? 'bg-white text-blue-600 shadow-sm border border-slate-200/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'">深度報告</button>
   <button @click="activeTab = 'withdraw'" class="flex-shrink-0 min-w-[70px] flex-1 py-3 text-base sm:text-lg font-bold rounded-lg transition-all whitespace-nowrap" :class="activeTab === 'withdraw' ? 'bg-white text-blue-600 shadow-sm border border-slate-200/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'">動態提領</button>
-  <button @click="activeTab = 'settings'" class="flex-shrink-0 min-w-[70px] flex-1 py-3 text-base sm:text-lg font-bold rounded-lg transition-all whitespace-nowrap" :class="activeTab === 'settings' ? 'bg-white text-blue-600 shadow-sm border border-slate-200/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'">系統設定</button>
+  <button id="settings-nav-secret-trigger" @click="handleSettingsNavClick()" class="flex-shrink-0 min-w-[70px] flex-1 py-3 text-base sm:text-lg font-bold rounded-lg transition-all whitespace-nowrap" :class="activeTab === 'settings' ? 'bg-white text-blue-600 shadow-sm border border-slate-200/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'">系統設定</button>
 </div>
 </header>
 
@@ -5007,6 +5513,18 @@ html {
     </div>
 
     <div class="space-y-8 relative z-10">
+    <div id="advanced-mode-panel" x-show="advancedModeEnabled" x-cloak class="rounded-2xl border border-indigo-200 bg-indigo-50/70 p-5 shadow-sm">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <h3 class="font-black text-indigo-900"><i class="fa-solid fa-shield-halved mr-2"></i>進階模式管理</h3>
+        <span class="rounded-full bg-indigo-100 px-3 py-1 text-xs font-black text-indigo-700">已啟用</span>
+      </div>
+      <p class="mb-4 text-sm leading-relaxed text-indigo-900">進階模式會啟用雲端帳本比對、雲端備份／還原及自動雲端備份。這組密碼與目前帳號的登入密碼是分開管理的。</p>
+      <div class="grid gap-3 sm:grid-cols-2">
+        <button @click="openAdvancedPasswordChangeModal()" class="rounded-xl border border-indigo-200 bg-white px-4 py-3 font-bold text-indigo-800 hover:bg-indigo-100"><i class="fa-solid fa-key mr-2"></i>修改進階模式密碼</button>
+        <button @click="exitAdvancedMode()" class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 font-bold text-amber-800 hover:bg-amber-100"><i class="fa-solid fa-power-off mr-2"></i>關閉進階模式</button>
+      </div>
+    </div>
+
       <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-[0_4px_15px_rgb(0,0,0,0.02)]">
         <h3 class="font-black text-slate-800 mb-2 text-lg flex items-center gap-2"><span class="w-6 h-6 rounded bg-blue-100 text-blue-600 flex items-center justify-center text-sm">1</span> 既有庫存設定</h3>
         <p class="text-sm font-bold text-red-500 bg-red-50 px-4 py-3 rounded-lg border border-red-100 mb-4">⚠️ 這裡是開始使用本程式時已經持有的庫存，不會新增交易明細。若要以歷史交易逐筆精算年化報酬率（XIRR），請將既有持有股數與均價設為 0，再到交易明細輸入或匯入歷史交易。</p>
