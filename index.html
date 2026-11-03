@@ -167,12 +167,6 @@ html {
 
     <div x-data="investmentApp" x-cloak class="max-w-4xl mx-auto px-4 sm:px-6 pt-6 relative">
 
-        <!-- 全程固定於畫面右上角，只顯示「一般模式／進階模式」四個字。 -->
-        <div class="fixed right-3 z-[300] pointer-events-none rounded-full border px-3 py-1.5 text-xs sm:text-sm font-black tracking-wide shadow-md"
-             style="top: calc(env(safe-area-inset-top, 0px) + 8px); right: max(12px, env(safe-area-inset-right, 0px) + 8px);"
-             :class="advancedModeEnabled ? 'border-indigo-200 bg-indigo-600 text-white' : 'border-slate-300 bg-slate-700 text-white'"
-             x-text="advancedModeEnabled ? '進階模式' : '一般模式'"></div>
-
         <!-- ETF 多帳號登入：密碼僅送往既有共用 GAS，前端不寫入 localStorage。 -->
         <div x-show="showAccountManager" x-cloak class="fixed inset-0 z-[250] flex items-center justify-center bg-slate-950/60 p-3 sm:p-5">
             <div class="w-full max-w-lg max-h-[92vh] overflow-y-auto rounded-3xl border border-slate-200 bg-white p-5 sm:p-7 shadow-2xl">
@@ -4567,6 +4561,10 @@ html {
                     </div>
                 </div>
                 <div class="flex flex-col gap-2 w-full sm:w-auto items-end">
+                    <!-- 總覽頁右上角模式標籤；與總覽頁標題同屬一般頁面版面，不使用浮動定位。 -->
+                    <span class="inline-flex items-center justify-center self-end rounded-full border px-3 py-1.5 text-xs sm:text-sm font-black tracking-wide whitespace-nowrap shrink-0"
+                          :class="advancedModeEnabled ? 'border-indigo-200 bg-indigo-600 text-white' : 'border-slate-300 bg-slate-700 text-white'"
+                          x-text="advancedModeEnabled ? '進階模式' : '一般模式'"></span>
                     <div x-show="!isStandalone && !globalSettings.hideInstallBtn" class="flex flex-row gap-2 w-full sm:w-auto items-center">
                         <button @click="installApp()" class="w-full sm:w-auto px-4 py-2 h-10 bg-white border border-slate-200 rounded-xl shadow-sm text-blue-500 font-bold text-base hover:text-blue-700 hover:bg-blue-50 hover:-translate-y-1 transition-all flex justify-center items-center">
                             <i class="fa-solid fa-download mr-2"></i> 安裝 APP
@@ -4780,9 +4778,13 @@ html {
                 </div>
 
                 <div class="flex flex-col lg:flex-row lg:justify-between lg:items-end gap-4 mb-6">
-                    <div>
-                        <h1 class="text-3xl sm:text-4xl font-black text-blue-900 flex flex-wrap items-center gap-3"><div class="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center text-xl shadow-inner"><i class="fa-solid fa-layer-group"></i></div><span x-text="activeETFName"></span>
-                    </h1>
+                    <div class="w-full lg:flex-1 min-w-0">
+                        <h1 class="w-full text-3xl sm:text-4xl font-black text-blue-900 flex flex-wrap items-center gap-3"><div class="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center text-xl shadow-inner shrink-0"><i class="fa-solid fa-layer-group"></i></div><span x-text="activeETFName"></span>
+                            <!-- ETF 個別頁及主控台／深度報告等子頁共用此標籤，只顯示一次。 -->
+                            <span class="ml-auto inline-flex items-center justify-center rounded-full border px-3 py-1.5 text-xs sm:text-sm font-black tracking-wide whitespace-nowrap shrink-0"
+                                  :class="advancedModeEnabled ? 'border-indigo-200 bg-indigo-600 text-white' : 'border-slate-300 bg-slate-700 text-white'"
+                                  x-text="advancedModeEnabled ? '進階模式' : '一般模式'"></span>
+                        </h1>
                     </div>
 
                     <div class="w-full lg:w-auto flex flex-col gap-3">
