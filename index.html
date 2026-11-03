@@ -4562,6 +4562,10 @@ html {
                     <p class="text-base font-medium text-slate-500 mt-2">跨 ETF 總資產管理與策略評估</p>
                     <div class="mt-3 flex flex-wrap items-center gap-2 text-sm font-bold text-slate-600">
                         <span class="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5"><i class="fa-solid fa-user-circle text-blue-600"></i>帳號：<span x-text="currentAccountName || '尚未選擇'"></span></span>
+                        <span class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 font-black shadow-sm" :class="advancedModeEnabled ? 'border-indigo-200 bg-indigo-50 text-indigo-800' : 'border-slate-300 bg-slate-100 text-slate-700'">
+                            <i class="fa-solid" :class="advancedModeEnabled ? 'fa-shield-halved' : 'fa-user'"></i>
+                            <span x-text="'目前模式：' + (advancedModeEnabled ? '進階模式' : '一般模式')"></span>
+                        </span>
                         <button @click="showLegacyMigration = false; showAccountConflict = false; showAccountManagerScreen(currentAccountId ? 'overview' : 'home'); showAccountManager = true" class="rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-blue-700 hover:bg-blue-100">帳號管理／切換</button>
                     </div>
                 </div>
@@ -4748,6 +4752,12 @@ html {
 
             <div class="fixed top-0 left-0 right-0 z-[100] bg-white/95 backdrop-blur-xl border-b border-slate-200 shadow-sm transform transition-transform duration-300 ease-in-out pt-[env(safe-area-inset-top,0px)]" :class="(isScrolled && !isFullscreenHistory) ? 'translate-y-0' : '-translate-y-full'">
                 <div class="max-w-4xl mx-auto px-4 sm:px-6 py-2 pb-3">
+                    <div class="flex justify-end mb-1">
+                        <span class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] sm:text-xs font-black shadow-sm" :class="advancedModeEnabled ? 'border-indigo-200 bg-indigo-50 text-indigo-800' : 'border-slate-300 bg-slate-100 text-slate-700'">
+                            <i class="fa-solid" :class="advancedModeEnabled ? 'fa-shield-halved' : 'fa-user'"></i>
+                            <span x-text="'目前模式：' + (advancedModeEnabled ? '進階模式' : '一般模式')"></span>
+                        </span>
+                    </div>
                     <div @click="scrollToTop()" class="cursor-pointer flex justify-between items-center px-1 mb-2">
                         <div class="font-black text-blue-900 flex items-center gap-2 text-xl"><i class="fa-solid Bellevue fa-arrow-up text-blue-500 mr-1 text-base"></i><span x-text="activeETFName"></span></div>
                         <div class="font-black text-2xl tracking-tight" :class="prevClose > 0 ? ((currentPrice - prevClose) > 0.001 ? 'text-red-500' : ((prevClose - currentPrice) > 0.001 ? 'text-green-500' : 'text-slate-800')) : 'text-slate-800'">
@@ -4780,7 +4790,12 @@ html {
 
                 <div class="flex flex-col lg:flex-row lg:justify-between lg:items-end gap-4 mb-6">
                     <div>
-                        <h1 class="text-3xl sm:text-4xl font-black text-blue-900 flex flex-wrap items-center gap-3"><div class="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center text-xl shadow-inner"><i class="fa-solid fa-layer-group"></i></div><span x-text="activeETFName"></span></h1>
+                        <h1 class="text-3xl sm:text-4xl font-black text-blue-900 flex flex-wrap items-center gap-3"><div class="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center text-xl shadow-inner"><i class="fa-solid fa-layer-group"></i></div><span x-text="activeETFName"></span>
+                        <span class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs sm:text-sm font-black shadow-sm" :class="advancedModeEnabled ? 'border-indigo-200 bg-indigo-50 text-indigo-800' : 'border-slate-300 bg-slate-100 text-slate-700'">
+                            <i class="fa-solid" :class="advancedModeEnabled ? 'fa-shield-halved' : 'fa-user'"></i>
+                            <span x-text="'目前模式：' + (advancedModeEnabled ? '進階模式' : '一般模式')"></span>
+                        </span>
+                    </h1>
                     </div>
 
                     <div class="w-full lg:w-auto flex flex-col gap-3">
