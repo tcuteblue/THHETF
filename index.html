@@ -170,13 +170,20 @@ html {
         <!-- ETF 多帳號登入：密碼僅送往既有共用 GAS，前端不寫入 localStorage。 -->
         <div x-show="showAccountManager" x-cloak class="fixed inset-0 z-[250] flex items-center justify-center bg-slate-950/60 p-3 sm:p-5">
             <div class="w-full max-w-lg max-h-[92vh] overflow-y-auto rounded-3xl border border-slate-200 bg-white p-5 sm:p-7 shadow-2xl">
-                <div class="mb-5 flex items-start gap-3">
-                    <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-100 text-blue-700"><i class="fa-solid fa-users text-xl"></i></div>
-                    <div class="flex-1">
-                        <h2 class="text-2xl font-black text-slate-900" x-text="currentAccountId ? '帳號管理' : '帳號登入'"></h2>
-                        <p class="mt-1 text-sm leading-relaxed text-slate-500" x-show="!currentAccountId">輸入帳號名稱及登入密碼。首次升級舊帳號時，會要求設定新密碼。</p>
-                        <p class="mt-1 text-sm leading-relaxed text-slate-500" x-show="currentAccountId">目前帳號：<strong class="text-slate-700" x-text="currentAccountName"></strong>。可修改帳號名稱、帳號密碼或切換使用者。</p>
+                <div class="mb-5 flex items-center justify-between gap-3">
+                    <div class="flex min-w-0 items-center gap-3">
+                        <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-100 text-blue-700"><i class="fa-solid fa-users text-xl"></i></div>
+                        <div class="min-w-0 flex-1">
+                            <h2 class="text-2xl font-black text-slate-900">帳號管理</h2>
+                            <p class="mt-1 truncate text-sm leading-relaxed text-slate-500" x-show="currentAccountId">目前帳號：<strong class="text-slate-700" x-text="currentAccountName"></strong></p>
+                            <p class="mt-1 text-sm leading-relaxed text-slate-500" x-show="!currentAccountId">請選擇要進行的帳號操作。</p>
+                        </div>
                     </div>
+                    <span class="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-2 text-xs font-black"
+                          :class="advancedModeEnabled ? 'border border-indigo-200 bg-indigo-50 text-indigo-700' : 'border border-slate-200 bg-slate-100 text-slate-700'">
+                        <i class="fa-solid" :class="advancedModeEnabled ? 'fa-shield-halved' : 'fa-user' "></i>
+                        <span x-text="advancedModeEnabled ? '進階模式' : '一般模式'"></span>
+                    </span>
                 </div>
 
                 <template x-if="showAccountConflict && accountConflict">
@@ -222,6 +229,11 @@ html {
                                 <p class="mt-1 text-xs text-slate-500" x-text="legacyLocalDataAvailable ? '偵測到此裝置的舊版資料' : '此裝置沒有舊版本機資料' "></p>
                             </div>
                         </div>
+                        <div class="space-y-2 rounded-xl border border-blue-100 bg-blue-50 p-3">
+                            <label class="block text-sm font-bold text-blue-900">請再次輸入剛才設定的帳號密碼</label>
+                            <input x-model="accountPasswordConfirmInput" @keydown.enter.prevent="claimLegacyAccount(true)" autocomplete="new-password" type="password" placeholder="再次輸入密碼確認" class="w-full rounded-xl border border-blue-200 bg-white px-4 py-3 text-base text-slate-900">
+                            <p class="text-xs leading-relaxed text-blue-800">密碼位數不限，兩次輸入必須完全相同。</p>
+                        </div>
                         <button @click="claimLegacyAccount(true)" :disabled="accountManagerBusy" class="w-full rounded-xl bg-emerald-600 px-4 py-3 font-black text-white hover:bg-emerald-700 disabled:opacity-50"><i class="fa-solid fa-cloud-arrow-down mr-2"></i>以舊版雲端資料建立帳號</button>
                         <button x-show="legacyLocalDataAvailable" @click="claimLegacyAccount(false)" :disabled="accountManagerBusy" class="w-full rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 font-black text-amber-900 hover:bg-amber-100 disabled:opacity-50"><i class="fa-solid fa-laptop mr-2"></i>以本機資料建立帳號</button>
                         <div x-show="accountMessage && !accountManagerBusy" class="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm font-bold leading-relaxed text-slate-700" x-text="accountMessage"></div>
@@ -246,37 +258,124 @@ html {
                 </template>
 
                 <div x-show="!showAccountConflict && !showLegacyMigration && !savedAccountRestorePending" class="space-y-4">
-                    <label class="block text-sm font-bold text-slate-700">帳號名稱（中文或英文）</label>
-                    <input x-model="accountNameInput" @keydown.enter.prevent="useExistingAccount()" maxlength="40" autocomplete="username" type="text" placeholder="例如：蔡宏和" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900">
-                    <label class="block text-sm font-bold text-slate-700">帳號密碼</label>
-                    <input x-model="accountPasswordInput" @keydown.enter.prevent="useExistingAccount()" autocomplete="current-password" type="password" placeholder="登入密碼（位數不限）" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900">
-                    <div class="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs leading-relaxed text-blue-900">新增帳號時，下方需再次輸入相同密碼。原本尚未設定密碼的舊帳號，第一次登入會以你輸入的新密碼完成一次性設定；請由原帳號持有人在自己的裝置先完成設定。</div>
-                    <label class="block text-sm font-bold text-slate-700">再次輸入密碼（新增帳號／首次升級舊帳號時使用）</label>
-                    <input x-model="accountPasswordConfirmInput" @keydown.enter.prevent="createNewAccount()" autocomplete="new-password" type="password" placeholder="再次輸入密碼" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900">
-                    <div class="grid gap-3 sm:grid-cols-2">
-                        <button @click="useExistingAccount()" :disabled="accountManagerBusy" class="rounded-xl bg-blue-600 px-4 py-3 font-black text-white hover:bg-blue-700 disabled:opacity-50"><i class="fa-solid fa-right-to-bracket mr-2"></i>載入既有帳號</button>
-                        <button @click="createNewAccount()" :disabled="accountManagerBusy" class="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-black text-blue-800 hover:bg-blue-100 disabled:opacity-50"><i class="fa-solid fa-user-plus mr-2"></i>新增帳號</button>
-                    </div>
-                    <div x-show="currentAccountId" class="border-t border-slate-200 pt-4">
-                        <button @click="accountRenameInput = currentAccountName; accountMessage = '';" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 font-bold text-slate-700 hover:bg-slate-50">修改目前帳號名稱</button>
-                        <div x-show="accountRenameInput !== ''" class="mt-3 space-y-2">
-                            <input x-model="accountRenameInput" maxlength="40" type="text" placeholder="輸入新的帳號名稱" class="w-full rounded-xl border border-slate-300 px-4 py-3">
-                            <button @click="renameCurrentAccount()" :disabled="accountManagerBusy" class="w-full rounded-xl bg-indigo-600 px-4 py-2.5 font-black text-white hover:bg-indigo-700 disabled:opacity-50">儲存新名稱</button>
+                    <!-- 已載入帳號：先顯示目前帳號與可執行的管理項目。 -->
+                    <template x-if="currentAccountId && accountManagerView === 'overview'">
+                        <div class="space-y-3">
+                            <div class="rounded-2xl border border-blue-100 bg-blue-50 p-4">
+                                <div class="flex items-center gap-2 text-sm font-bold text-blue-800"><i class="fa-solid fa-circle-check"></i>目前已載入帳號</div>
+                                <div class="mt-1 break-words text-lg font-black text-slate-900" x-text="currentAccountName"></div>
+                                <p class="mt-1 text-xs leading-relaxed text-blue-800">此裝置會保留登入狀態，下次開啟程式不必重新輸入帳密。</p>
+                            </div>
+                            <button @click="showAccountManagerScreen('rename')" class="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 text-left hover:bg-slate-50">
+                                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-700"><i class="fa-solid fa-user-pen"></i></span>
+                                <span class="min-w-0 flex-1"><strong class="block text-sm text-slate-900">修改帳號名稱</strong><span class="mt-0.5 block text-xs text-slate-500">更改顯示名稱，不影響原有帳本資料</span></span>
+                                <i class="fa-solid fa-chevron-right text-slate-400"></i>
+                            </button>
+                            <button @click="showAccountManagerScreen('password')" class="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 text-left hover:bg-slate-50">
+                                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-700"><i class="fa-solid fa-key"></i></span>
+                                <span class="min-w-0 flex-1"><strong class="block text-sm text-slate-900">修改登入密碼</strong><span class="mt-0.5 block text-xs text-slate-500">設定新的帳號登入密碼，位數不限</span></span>
+                                <i class="fa-solid fa-chevron-right text-slate-400"></i>
+                            </button>
+                            <button @click="logoutAccount()" :disabled="accountManagerBusy" class="flex w-full items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-left hover:bg-amber-100 disabled:opacity-50">
+                                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-amber-700"><i class="fa-solid fa-right-left"></i></span>
+                                <span class="min-w-0 flex-1"><strong class="block text-sm text-amber-900">切換／載入其他帳號</strong><span class="mt-0.5 block text-xs text-amber-800">登出目前帳號後，可選擇載入或建立其他帳號；原有資料會保留</span></span>
+                                <i class="fa-solid fa-chevron-right text-amber-500"></i>
+                            </button>
+                            <button @click="closeAccountManager()" class="w-full rounded-xl px-4 py-2.5 font-bold text-slate-500 hover:bg-slate-100">返回程式</button>
                         </div>
-                        <button @click="showAccountPasswordChange = !showAccountPasswordChange; accountPasswordChangeMessage = ''" class="mt-3 w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 font-bold text-slate-700 hover:bg-slate-50">修改此帳號登入密碼</button>
-                        <div x-show="showAccountPasswordChange" class="mt-3 space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                            <input x-model="accountCurrentPasswordInput" type="password" autocomplete="current-password" placeholder="目前密碼" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5">
-                            <input x-model="accountNewPasswordInput" type="password" autocomplete="new-password" placeholder="新密碼（位數不限）" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5">
-                            <input x-model="accountNewPasswordConfirmInput" type="password" autocomplete="new-password" placeholder="再次輸入新密碼" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5">
-                            <button @click="changeAccountPassword()" :disabled="accountManagerBusy" class="w-full rounded-lg bg-indigo-600 px-4 py-2.5 font-black text-white disabled:opacity-50">確認修改登入密碼</button>
-                            <p x-show="accountPasswordChangeMessage" class="text-sm font-bold text-slate-600" x-text="accountPasswordChangeMessage"></p>
+                    </template>
+
+                    <!-- 尚未載入帳號：先選擇操作，不立即顯示帳密欄位。 -->
+                    <template x-if="!currentAccountId && accountManagerView === 'home'">
+                        <div class="space-y-3">
+                            <button @click="showAccountManagerScreen('login')" class="flex w-full items-center gap-3 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-left hover:bg-blue-100">
+                                <span class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white"><i class="fa-solid fa-right-to-bracket text-lg"></i></span>
+                                <span class="min-w-0 flex-1"><strong class="block text-base text-blue-900">載入既有帳號</strong><span class="mt-1 block text-xs leading-relaxed text-blue-800">已經有帳號？輸入帳號名稱和密碼即可載入。</span></span>
+                                <i class="fa-solid fa-chevron-right text-blue-500"></i>
+                            </button>
+                            <button @click="showAccountManagerScreen('create')" class="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left hover:bg-slate-50">
+                                <span class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700"><i class="fa-solid fa-user-plus text-lg"></i></span>
+                                <span class="min-w-0 flex-1"><strong class="block text-base text-slate-900">建立新帳號</strong><span class="mt-1 block text-xs leading-relaxed text-slate-500">第一次使用，建立自己的帳號及登入密碼。</span></span>
+                                <i class="fa-solid fa-chevron-right text-slate-400"></i>
+                            </button>
+                            <div x-show="legacyLocalDataAvailable" class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900"><i class="fa-solid fa-circle-info mr-1"></i>偵測到這台裝置有舊版本機資料。載入或建立帳號時，系統會再提示如何處理這份資料。</div>
                         </div>
-                        <button @click="logoutAccount()" class="mt-3 w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 font-bold text-amber-800 hover:bg-amber-100">登出並切換使用者</button>
-                    </div>
+                    </template>
+
+                    <!-- 載入既有帳號：一般登入只顯示帳號名稱及密碼兩欄。 -->
+                    <template x-if="!currentAccountId && accountManagerView === 'login'">
+                        <div class="space-y-3">
+                            <div class="flex items-center justify-between">
+                                <h3 class="text-lg font-black text-slate-900">載入既有帳號</h3>
+                                <button @click="showAccountManagerScreen('home')" class="text-sm font-bold text-slate-500 hover:text-slate-800"><i class="fa-solid fa-arrow-left mr-1"></i>返回</button>
+                            </div>
+                            <label class="block text-sm font-bold text-slate-700">帳號名稱</label>
+                            <input x-model="accountNameInput" @keydown.enter.prevent="useExistingAccount()" maxlength="40" autocomplete="username" type="text" placeholder="輸入帳號名稱" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900">
+                            <label class="block text-sm font-bold text-slate-700">帳號密碼</label>
+                            <input x-model="accountPasswordInput" @keydown.enter.prevent="useExistingAccount()" autocomplete="current-password" type="password" placeholder="輸入登入密碼（位數不限）" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900">
+                            <div x-show="accountPasswordSetupPending" class="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                                <div class="text-sm font-bold text-amber-900">此舊帳號尚未設定登入密碼</div>
+                                <label class="block text-sm font-bold text-amber-900">請再次輸入相同密碼以完成首次設定</label>
+                                <input x-model="accountPasswordConfirmInput" @keydown.enter.prevent="useExistingAccount()" autocomplete="new-password" type="password" placeholder="再次輸入密碼" class="w-full rounded-xl border border-amber-200 bg-white px-4 py-3 text-base text-slate-900">
+                            </div>
+                            <p class="text-xs leading-relaxed text-slate-500">帳號密碼位數不限。此裝置成功載入一次後，程式會記住登入狀態。</p>
+                            <button @click="useExistingAccount()" :disabled="accountManagerBusy" class="w-full rounded-xl bg-blue-600 px-4 py-3 font-black text-white hover:bg-blue-700 disabled:opacity-50"><i class="fa-solid fa-right-to-bracket mr-2"></i>載入帳號</button>
+                        </div>
+                    </template>
+
+                    <!-- 建立帳號：只有選擇建立後才顯示三個欄位。 -->
+                    <template x-if="!currentAccountId && accountManagerView === 'create'">
+                        <div class="space-y-3">
+                            <div class="flex items-center justify-between">
+                                <h3 class="text-lg font-black text-slate-900">建立新帳號</h3>
+                                <button @click="showAccountManagerScreen('home')" class="text-sm font-bold text-slate-500 hover:text-slate-800"><i class="fa-solid fa-arrow-left mr-1"></i>返回</button>
+                            </div>
+                            <label class="block text-sm font-bold text-slate-700">帳號名稱</label>
+                            <input x-model="accountNameInput" @keydown.enter.prevent="createNewAccount()" maxlength="40" autocomplete="username" type="text" placeholder="輸入想使用的帳號名稱" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900">
+                            <label class="block text-sm font-bold text-slate-700">設定帳號密碼</label>
+                            <input x-model="accountPasswordInput" @keydown.enter.prevent="createNewAccount()" autocomplete="new-password" type="password" placeholder="設定登入密碼（位數不限）" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900">
+                            <label class="block text-sm font-bold text-slate-700">再次輸入密碼</label>
+                            <input x-model="accountPasswordConfirmInput" @keydown.enter.prevent="createNewAccount()" autocomplete="new-password" type="password" placeholder="再次輸入相同密碼" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900">
+                            <p class="text-xs leading-relaxed text-slate-500">密碼位數不限，兩次輸入必須完全相同。若偵測到舊版雲端資料，系統會再請你選擇要移轉的資料。</p>
+                            <button @click="createNewAccount()" :disabled="accountManagerBusy" class="w-full rounded-xl bg-emerald-600 px-4 py-3 font-black text-white hover:bg-emerald-700 disabled:opacity-50"><i class="fa-solid fa-user-plus mr-2"></i>建立並載入帳號</button>
+                        </div>
+                    </template>
+
+                    <!-- 修改名稱：點選後才顯示編輯欄位。 -->
+                    <template x-if="currentAccountId && accountManagerView === 'rename'">
+                        <div class="space-y-3">
+                            <div class="flex items-center justify-between">
+                                <h3 class="text-lg font-black text-slate-900">修改帳號名稱</h3>
+                                <button @click="showAccountManagerScreen('overview')" class="text-sm font-bold text-slate-500 hover:text-slate-800"><i class="fa-solid fa-arrow-left mr-1"></i>返回</button>
+                            </div>
+                            <label class="block text-sm font-bold text-slate-700">新的帳號名稱</label>
+                            <input x-model="accountRenameInput" @keydown.enter.prevent="renameCurrentAccount()" maxlength="40" type="text" placeholder="輸入新的帳號名稱" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-base">
+                            <button @click="renameCurrentAccount()" :disabled="accountManagerBusy" class="w-full rounded-xl bg-indigo-600 px-4 py-3 font-black text-white disabled:opacity-50">儲存新名稱</button>
+                        </div>
+                    </template>
+
+                    <!-- 修改密碼：點選後才顯示密碼欄位。 -->
+                    <template x-if="currentAccountId && accountManagerView === 'password'">
+                        <div class="space-y-3">
+                            <div class="flex items-center justify-between">
+                                <h3 class="text-lg font-black text-slate-900">修改登入密碼</h3>
+                                <button @click="showAccountManagerScreen('overview')" class="text-sm font-bold text-slate-500 hover:text-slate-800"><i class="fa-solid fa-arrow-left mr-1"></i>返回</button>
+                            </div>
+                            <label class="block text-sm font-bold text-slate-700">目前密碼</label>
+                            <input x-model="accountCurrentPasswordInput" @keydown.enter.prevent="changeAccountPassword()" type="password" autocomplete="current-password" placeholder="輸入目前密碼" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-base">
+                            <label class="block text-sm font-bold text-slate-700">新密碼</label>
+                            <input x-model="accountNewPasswordInput" @keydown.enter.prevent="changeAccountPassword()" type="password" autocomplete="new-password" placeholder="輸入新密碼（位數不限）" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-base">
+                            <label class="block text-sm font-bold text-slate-700">再次輸入新密碼</label>
+                            <input x-model="accountNewPasswordConfirmInput" @keydown.enter.prevent="changeAccountPassword()" type="password" autocomplete="new-password" placeholder="再次輸入新密碼確認" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-base">
+                            <p class="text-xs leading-relaxed text-slate-500">帳號密碼位數不限。修改成功後，其他裝置下次登入需使用新密碼。</p>
+                            <button @click="changeAccountPassword()" :disabled="accountManagerBusy" class="w-full rounded-xl bg-indigo-600 px-4 py-3 font-black text-white disabled:opacity-50">確認修改登入密碼</button>
+                            <p x-show="accountPasswordChangeMessage" class="rounded-lg bg-slate-50 p-3 text-sm font-bold text-slate-600" x-text="accountPasswordChangeMessage"></p>
+                        </div>
+                    </template>
+
                     <div x-show="accountManagerBusy" class="flex items-center justify-center gap-2 py-2 text-sm font-bold text-slate-500"><i class="fa-solid fa-spinner fa-spin"></i><span x-text="accountMessage || '處理中……'"></span></div>
                     <div x-show="accountMessage && !accountManagerBusy" class="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm font-bold leading-relaxed text-slate-700" x-text="accountMessage"></div>
-                    <button x-show="currentAccountId" @click="closeAccountManager()" class="w-full rounded-xl px-4 py-2.5 font-bold text-slate-500 hover:bg-slate-100">返回目前帳號</button>
-                    <p class="text-xs leading-relaxed text-slate-400">帳號密碼以明文保存在共用 GAS 指定的 Google Drive 帳號索引；本機只保存伺服器簽發的裝置登入憑證，不保存帳號密碼。在這台裝置載入帳號一次後，程式會記住登入狀態；下次開啟不必再次輸入帳號密碼。</p>
+                    <p x-show="currentAccountId && accountManagerView === 'overview'" class="text-xs leading-relaxed text-slate-400">帳號密碼存放於共用 GAS 指定的 Google Drive 帳號索引；本機只保存伺服器簽發的裝置登入憑證，不保存帳號密碼。</p>
                 </div>
             </div>
         </div>
@@ -685,6 +784,8 @@ html {
                     advancedPasswordChangeMessage: '',
                     isAdvancedPasswordChanging: false,
                     showAccountManager: false,
+                    accountManagerView: 'home', // home / login / create / overview / rename / password
+                    accountPasswordSetupPending: false,
                     savedAccountRestorePending: false,
                     showAccountConflict: false,
                     showLegacyMigration: false,
@@ -966,6 +1067,27 @@ html {
                         localStorage.setItem('THH_ETF_ACTIVE_ACCOUNT_ID', this.currentAccountId);
                         localStorage.setItem('THH_ETF_ACTIVE_ACCOUNT_NAME', this.currentAccountName);
                     },
+                    showAccountManagerScreen(view) {
+                        this.accountManagerView = view || (this.currentAccountId ? 'overview' : 'home');
+                        this.accountMessage = '';
+                        if (view === 'home' || view === 'login' || view === 'create') {
+                            this.accountNameInput = '';
+                            this.accountPasswordInput = '';
+                            this.accountPasswordConfirmInput = '';
+                            this.accountPasswordSetupPending = false;
+                        }
+                        if (view === 'rename') this.accountRenameInput = this.currentAccountName || '';
+                        if (view === 'password') {
+                            this.accountCurrentPasswordInput = '';
+                            this.accountNewPasswordInput = '';
+                            this.accountNewPasswordConfirmInput = '';
+                            this.accountPasswordChangeMessage = '';
+                        }
+                        if (view === 'overview') {
+                            this.accountRenameInput = '';
+                            this.accountPasswordChangeMessage = '';
+                        }
+                    },
                     clearActiveAccountSession(removeServerSession = false) {
                         const id = this.currentAccountId;
                         const token = this.accountSessionToken;
@@ -1013,6 +1135,7 @@ html {
                                     if (/登入狀態已失效|登入憑證不存在|雲端找不到這個帳號/.test(reason)) {
                                         this.clearActiveAccountSession(false);
                                         this.showAccountManager = true;
+                                        this.accountManagerView = 'login';
                                         this.accountMessage = '本裝置的帳號登入狀態已失效，請重新載入帳號並輸入密碼。';
                                         return;
                                     }
@@ -1056,7 +1179,7 @@ html {
                                 const loaded = await this.accountApi('etf_load_account', { accountId: savedId });
                                 if (!loaded || !loaded.data || !loaded.account) throw new Error('找不到可還原的雲端帳本。');
                                 this.activateAccount(loaded.account, loaded.data);
-                                this.showMsg('✅ 本機沒有此帳號資料，已自動從雲端下載備份並還原。');
+                                this.showMsg('✅ 帳號已成功載入。可在「帳號管理」修改名稱與密碼。');
                                 return;
                             } catch (cloudError) {
                                 console.warn('自動下載帳號雲端備份失敗：', cloudError);
@@ -1079,10 +1202,11 @@ html {
                         this.currentAccountName = '';
                         this.accountSessionToken = '';
                         this.showAccountManager = true;
+                        this.accountManagerView = 'home';
                         if (!this.accountMessage) {
                             this.accountMessage = this.legacyLocalDataAvailable
-                                ? '偵測到這台裝置有舊版本機資料。請載入帳號後，選擇是否將舊資料歸入該帳號。'
-                                : '請輸入帳號名稱及密碼，首次載入帳號時輸入密碼；成功後本裝置會記住登入狀態，下次開啟不必重新輸入。';
+                                ? '偵測到這台裝置有舊版本機資料。載入或建立帳號時，系統會再提示如何處理。'
+                                : '請選擇載入既有帳號或建立新帳號。';
                         }
                     },
                     async accountApi(action, payload = {}) {
@@ -1167,6 +1291,7 @@ html {
                         this.accountDirty = !!meta.dirty;
                         this.globalSettings.cloudBackupStatus = '';
                         this.showAccountManager = false;
+                        this.accountManagerView = 'overview';
                         this.showAccountConflict = false;
                         this.showLegacyMigration = false;
                         this.accountConflict = null;
@@ -1396,15 +1521,25 @@ html {
                                 return;
                             }
                             if (auth.passwordSetupRequired) {
-                                if (String(this.accountPasswordConfirmInput || '') !== password) throw new Error('此舊帳號尚未設定密碼，請在再次輸入欄位輸入相同密碼以完成首次設定。');
+                                if (!this.accountPasswordSetupPending || !String(this.accountPasswordConfirmInput || '')) {
+                                    this.accountPasswordSetupPending = true;
+                                    this.accountMessage = '此舊帳號尚未設定登入密碼，請在下方再次輸入相同密碼，再按一次「載入帳號」完成設定。';
+                                    return;
+                                }
+                                if (String(this.accountPasswordConfirmInput || '') !== password) {
+                                    this.accountMessage = '再次輸入的密碼不一致，請重新確認。';
+                                    return;
+                                }
                                 this.accountMessage = '正在為舊帳號設定首次登入密碼……';
                                 await this.accountApi('etf_set_account_password', { accountName: name, password });
                                 auth = await this.accountApi('etf_login_account', { accountName: name, password, deviceId });
+                                this.accountPasswordSetupPending = false;
                             }
                             if (!auth.account || !auth.account.id || !auth.sessionToken) throw new Error('帳號驗證回應缺少帳號資料或裝置登入憑證。');
                             this.persistAccountSession(auth.account, auth.sessionToken);
                             this.accountPasswordInput = '';
                             this.accountPasswordConfirmInput = '';
+                            this.accountPasswordSetupPending = false;
                             this.pendingAccountId = auth.account.id;
                             this.pendingAccountName = auth.account.name || name;
 
@@ -1432,6 +1567,9 @@ html {
                                 this.accountMessage = '帳號驗證成功，正在比對雲端資料……';
                                 const loaded = await this.accountApi('etf_load_account', { accountId: auth.account.id });
                                 await this.initAccountFromCloud(loaded.account || auth.account, loaded.data);
+                                if (this.currentAccountId === auth.account.id && !this.showAccountManager && !this.showAccountConflict) {
+                                    this.showMsg('✅ 帳號已成功載入。可在「帳號管理」修改名稱與密碼。');
+                                }
                             } else if (hasAccountLocal || adoptedLegacyData) {
                                 this.activateAccountLocal(auth.account, adoptedLegacyData);
                                 const meta = this.readAccountMeta(auth.account.id);
@@ -1439,13 +1577,13 @@ html {
                                     this.writeAccountMeta({ baseVersion: Number(auth.account.version || 0), dirty: true, localModifiedAt: Date.now(), accountName: auth.account.name || name }, auth.account.id);
                                     this.saveData(true);
                                 } else if (meta.dirty) this.queueAutoCloudBackup(3000);
-                                this.showMsg('✅ 帳號已載入。本機資料直接開啟；一般模式不執行啟動時雲端帳本比對，資料變更仍會自動雲端備份。');
+                                this.showMsg('✅ 帳號已成功載入。可在「帳號管理」修改名稱與密碼。');
                             } else {
                                 this.accountMessage = '本機沒有此帳號資料，正在自動下載雲端備份……';
                                 const loaded = await this.accountApi('etf_load_account', { accountId: auth.account.id });
                                 if (!loaded.data) throw new Error('雲端沒有可還原的帳本資料。');
                                 this.activateAccount(loaded.account || auth.account, loaded.data);
-                                this.showMsg('✅ 本機沒有此帳號資料，已自動下載雲端備份並還原。');
+                                this.showMsg('✅ 帳號已成功載入。可在「帳號管理」修改名稱與密碼。');
                             }
                         } catch (e) {
                             // 若密碼已通過驗證並簽發 session，但後續下載／比對暫時失敗，保留該 session。
@@ -1501,7 +1639,7 @@ html {
                             this.accountPasswordInput = '';
                             this.accountPasswordConfirmInput = '';
                             this.activateAccount(result.account, result.data);
-                            this.showMsg('✅ 帳號已建立並載入。這台裝置已記住登入狀態，下次開啟不必再次輸入帳號密碼。');
+                            this.showMsg('✅ 帳號已成功建立並載入。可在「帳號管理」修改名稱與密碼。');
                         } catch (e) {
                             this.accountMessage = `新增帳號失敗：${e.message}`;
                         } finally { this.accountManagerBusy = false; }
@@ -1545,7 +1683,7 @@ html {
                             this.legacyCloudData = null;
                             this.legacyClaimName = '';
                             this.legacyLocalDataAvailable = false;
-                            this.showMsg('✅ 舊版資料已移轉並建立帳號。這台裝置已記住登入狀態。');
+                            this.showMsg('✅ 舊版資料已成功移轉並載入帳號。可在「帳號管理」修改名稱與密碼。');
                         } catch (e) { this.accountMessage = `移轉失敗：${e.message}`; }
                         finally { this.accountManagerBusy = false; }
                     },
@@ -1620,14 +1758,16 @@ html {
                         this.globalSettings = { lastRemindedMonth: null, lastBackupTime: '', hideInstallBtn: false, cloudBackupStatus: '' };
                         this.accountPasswordInput = '';
                         this.accountPasswordConfirmInput = '';
+                        this.accountPasswordSetupPending = false;
                         this.accountNameInput = '';
                         this.accountRenameInput = '';
+                        this.accountManagerView = 'home';
                         this.showAccountPasswordChange = false;
                         this.savedAccountRestorePending = false;
                         this.showAccountConflict = false;
                         this.showLegacyMigration = false;
                         this.accountConflict = null;
-                        this.accountMessage = '請輸入要載入的帳號名稱及密碼。';
+                        this.accountMessage = '請選擇要載入既有帳號或建立新帳號。';
                         this.showAccountManager = true;
                     },
                     async retrySavedAccountRestore() {
@@ -1639,7 +1779,7 @@ html {
                             if (!loaded || !loaded.account || !loaded.data || !loaded.data.etfs) throw new Error('雲端沒有可還原的有效帳本資料。');
                             this.activateAccount(loaded.account, loaded.data);
                             this.savedAccountRestorePending = false;
-                            this.showMsg('✅ 雲端帳本已下載並還原，不需要重新輸入帳號密碼。');
+                            this.showMsg('✅ 帳號已成功載入。可在「帳號管理」修改名稱與密碼。');
                         } catch (error) {
                             const detail = String(error?.message || error || '未知錯誤');
                             if (/登入狀態已失效|登入憑證不存在|重新載入帳號/.test(detail)) {
@@ -1658,6 +1798,7 @@ html {
                         this.showAccountManager = false;
                         this.showAccountConflict = false;
                         this.showLegacyMigration = false;
+                        this.accountManagerView = 'overview';
                         this.accountMessage = '';
                     },
                     queueAutoCloudBackup(delay = 3000) {
@@ -2397,7 +2538,14 @@ html {
                                     ? `⚠️ 雲端同步仍未成功：${detail}。本地資料已保留，請檢查網路或重新載入帳號。`
                                     : `⚠️ 雲端備份失敗：${detail}。本地資料仍保留，請檢查網路後重試。`;
                                 if (/登入狀態已失效|登入憑證不存在|重新載入帳號/.test(detail)) {
-                                    this.accountMessage = '本裝置的雲端登入憑證已失效，請重新載入帳號並輸入密碼。';
+                                    const expiredAccountName = this.currentAccountName || '';
+                                    this.clearActiveAccountSession(false);
+                                    this.accountNameInput = expiredAccountName;
+                                    this.accountPasswordInput = '';
+                                    this.accountPasswordConfirmInput = '';
+                                    this.accountPasswordSetupPending = false;
+                                    this.accountManagerView = 'login';
+                                    this.accountMessage = '本裝置的雲端登入憑證已失效，請重新輸入密碼載入帳號。本機資料仍會保留。';
                                     this.showAccountManager = true;
                                 }
                                 this.saveData(false);
@@ -4414,7 +4562,7 @@ html {
                     <p class="text-base font-medium text-slate-500 mt-2">跨 ETF 總資產管理與策略評估</p>
                     <div class="mt-3 flex flex-wrap items-center gap-2 text-sm font-bold text-slate-600">
                         <span class="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5"><i class="fa-solid fa-user-circle text-blue-600"></i>帳號：<span x-text="currentAccountName || '尚未選擇'"></span></span>
-                        <button @click="accountNameInput = ''; accountMessage = ''; showLegacyMigration = false; showAccountConflict = false; showAccountManager = true" class="rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-blue-700 hover:bg-blue-100">帳號管理／切換</button>
+                        <button @click="showLegacyMigration = false; showAccountConflict = false; showAccountManagerScreen(currentAccountId ? 'overview' : 'home'); showAccountManager = true" class="rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-blue-700 hover:bg-blue-100">帳號管理／切換</button>
                     </div>
                 </div>
                 <div class="flex flex-col gap-2 w-full sm:w-auto items-end">
