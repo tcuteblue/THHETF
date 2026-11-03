@@ -4551,8 +4551,10 @@ html {
 
             <header class="mb-8 relative flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
-                    <h1 class="text-3xl sm:text-4xl font-black text-blue-900 flex items-center gap-2 tracking-tight">
-                        <i class="fa-solid fa-wallet text-blue-600 drop-shadow-sm"></i> ETF 存股管家
+                    <h1 class="text-3xl sm:text-4xl font-black text-blue-900 flex flex-wrap items-center gap-2 tracking-tight">
+                        <i class="fa-solid fa-wallet text-blue-600 drop-shadow-sm"></i>
+                        <span>ETF 存股管家</span>
+                        <span x-show="advancedModeEnabled" x-cloak class="inline-flex items-center justify-center rounded-full border border-indigo-200 bg-indigo-600 text-white px-2.5 py-1 text-xs sm:text-sm font-black tracking-wide whitespace-nowrap align-middle">進階模式</span>
                     </h1>
                     <p class="text-base font-medium text-slate-500 mt-2">跨 ETF 總資產管理與策略評估</p>
                     <div class="mt-3 flex flex-wrap items-center gap-2 text-sm font-bold text-slate-600">
@@ -4561,10 +4563,6 @@ html {
                     </div>
                 </div>
                 <div class="flex flex-col gap-2 w-full sm:w-auto items-end">
-                    <!-- 總覽頁右上角模式標籤；與總覽頁標題同屬一般頁面版面，不使用浮動定位。 -->
-                    <span class="inline-flex items-center justify-center self-end rounded-full border px-3 py-1.5 text-xs sm:text-sm font-black tracking-wide whitespace-nowrap shrink-0"
-                          :class="advancedModeEnabled ? 'border-indigo-200 bg-indigo-600 text-white' : 'border-slate-300 bg-slate-700 text-white'"
-                          x-text="advancedModeEnabled ? '進階模式' : '一般模式'"></span>
                     <div x-show="!isStandalone && !globalSettings.hideInstallBtn" class="flex flex-row gap-2 w-full sm:w-auto items-center">
                         <button @click="installApp()" class="w-full sm:w-auto px-4 py-2 h-10 bg-white border border-slate-200 rounded-xl shadow-sm text-blue-500 font-bold text-base hover:text-blue-700 hover:bg-blue-50 hover:-translate-y-1 transition-all flex justify-center items-center">
                             <i class="fa-solid fa-download mr-2"></i> 安裝 APP
@@ -4781,9 +4779,7 @@ html {
                     <div class="w-full lg:flex-1 min-w-0">
                         <h1 class="w-full text-3xl sm:text-4xl font-black text-blue-900 flex flex-wrap items-center gap-3"><div class="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center text-xl shadow-inner shrink-0"><i class="fa-solid fa-layer-group"></i></div><span x-text="activeETFName"></span>
                             <!-- ETF 個別頁及主控台／深度報告等子頁共用此標籤，只顯示一次。 -->
-                            <span class="ml-auto inline-flex items-center justify-center rounded-full border px-3 py-1.5 text-xs sm:text-sm font-black tracking-wide whitespace-nowrap shrink-0"
-                                  :class="advancedModeEnabled ? 'border-indigo-200 bg-indigo-600 text-white' : 'border-slate-300 bg-slate-700 text-white'"
-                                  x-text="advancedModeEnabled ? '進階模式' : '一般模式'"></span>
+                            <span x-show="advancedModeEnabled" x-cloak class="ml-auto inline-flex items-center justify-center rounded-full border border-indigo-200 bg-indigo-600 text-white px-3 py-1.5 text-xs sm:text-sm font-black tracking-wide whitespace-nowrap shrink-0">進階模式</span>
                         </h1>
                     </div>
 
