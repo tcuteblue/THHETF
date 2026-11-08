@@ -2894,8 +2894,9 @@ html {
                                 dailyTotalCost += (currentShares[code] || 0) * (currentAvgCost[code] || 0);
                             }
                             const unrealizedProfit = Math.round(dailyTotalValue - dailyTotalCost);
+                            const unrealizedROI = dailyTotalCost > 0 ? Number(((unrealizedProfit / dailyTotalCost) * 100).toFixed(2)) : null;
                             const cumulativeProfit = Math.round(realizedProfit + dividendNet + unrealizedProfit);
-                            timeline.push({ time: d, value: Math.round(dailyTotalValue), cost: Math.round(dailyTotalCost), unrealizedProfit, realizedProfit: Math.round(realizedProfit), dividendNet: Math.round(dividendNet), profit: cumulativeProfit, etfValues: etfValues });
+                            timeline.push({ time: d, value: Math.round(dailyTotalValue), cost: Math.round(dailyTotalCost), unrealizedProfit, unrealizedROI, realizedProfit: Math.round(realizedProfit), dividendNet: Math.round(dividendNet), profit: cumulativeProfit, etfValues: etfValues });
                         }
                         
                         this.homeTimelineData = timeline;
@@ -2931,6 +2932,8 @@ html {
                                 rightPriceScale: { visible: true, borderColor: '#cbd5e1' },
                                 leftPriceScale: { visible: true, borderColor: '#cbd5e1', scaleMargins: { top: 0.12, bottom: 0.12 } }
                             });
+                            // 未實現報酬率使用獨立百分比刻度，避免與金額損益共用刻度而被壓扁。
+                            chart.priceScale('roi').applyOptions({ visible: true, borderVisible: true, borderColor: '#cbd5e1', scaleMargins: { top: 0.12, bottom: 0.12 } });
                             this.homeChartInstance = chart;
                             
                             let targetDate = new Date();
@@ -2950,10 +2953,15 @@ html {
                                 const costSeries = chart.addLineSeries({ color: '#f59e0b', lineWidth: 2, lineStyle: 2, title: '持有部位成本', priceScaleId: 'right' });
                                 const totalProfitSeries = chart.addLineSeries({ color: '#8b5cf6', lineWidth: 2, title: '累積總損益', priceScaleId: 'left' });
                                 const unrealizedSeries = chart.addLineSeries({ color: '#10b981', lineWidth: 2, title: '未實現損益', priceScaleId: 'left' });
+                                const unrealizedROISeries = chart.addLineSeries({
+                                    color: '#ec4899', lineWidth: 2, lineStyle: 2, title: '未實現報酬率', priceScaleId: 'roi',
+                                    priceFormat: { type: 'custom', minMove: 0.01, formatter: value => `${Number(value).toFixed(2)}%` }
+                                });
                                 areaSeries.setData(filteredData.map(d => ({ time: d.time, value: d.value })));
                                 costSeries.setData(filteredData.map(d => ({ time: d.time, value: d.cost })));
                                 totalProfitSeries.setData(filteredData.map(d => ({ time: d.time, value: d.profit })));
                                 unrealizedSeries.setData(filteredData.map(d => ({ time: d.time, value: d.unrealizedProfit })));
+                                unrealizedROISeries.setData(filteredData.filter(d => d.unrealizedROI !== null && Number.isFinite(d.unrealizedROI)).map(d => ({ time: d.time, value: d.unrealizedROI })));
                             } else {
                                 let codes = Object.keys(this.etfs);
                                 let colors = ['rgba(59, 130, 246,', 'rgba(16, 185, 129,', 'rgba(245, 158, 11,', 'rgba(139, 92, 246,', 'rgba(236, 72, 153,', 'rgba(14, 165, 233,'];
@@ -2980,7 +2988,8 @@ html {
                                 const item = homeDataByDate.get(date);
                                 if (!item) return '';
                                 if (this.homeChartMode === 'total') {
-                                    return `${date}\n總市值：${this.formatChartNumber(item.value)} 元\n持有部位成本：${this.formatChartNumber(item.cost)} 元\n累積總損益：${this.formatChartNumber(item.profit)} 元\n未實現損益：${this.formatChartNumber(item.unrealizedProfit)} 元`;
+                                    const roiText = item.unrealizedROI === null || !Number.isFinite(item.unrealizedROI) ? '—' : `${item.unrealizedROI > 0 ? '+' : ''}${item.unrealizedROI.toFixed(2)}%`;
+                                    return `${date}\n總市值：${this.formatChartNumber(item.value)} 元\n持有部位成本：${this.formatChartNumber(item.cost)} 元\n累積總損益：${this.formatChartNumber(item.profit)} 元\n未實現損益：${this.formatChartNumber(item.unrealizedProfit)} 元\n未實現報酬率：${roiText}`;
                                 }
                                 const holdingLines = Object.keys(this.etfs).map(code => `${code}：${this.formatChartNumber(item.etfValues?.[code] || 0)} 元`);
                                 return `${date}\n總市值：${this.formatChartNumber(item.value)} 元\n各 ETF 市值：\n${holdingLines.join('\n')}`;
@@ -4781,41 +4790,46 @@ html {
                 <button @click="cloudBackup(false)" :disabled="isCloudSyncing !== ''" class="mt-2 px-3 py-1.5 rounded-lg bg-white border border-amber-300 text-amber-800 hover:bg-amber-100 disabled:opacity-50">立即重試雲端備份</button>
             </div>
 
-            <div class="bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-600 rounded-3xl shadow-[0_20px_50px_-12px_rgba(59,130,246,0.5)] border border-white/20 p-8 mb-8 text-white relative overflow-hidden group transition-transform hover:-translate-y-1 duration-300">
-                <button @click="fetchHomePrices()" :disabled="isFetchingHome" class="absolute top-5 right-5 z-20 px-3 py-1.5 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg shadow-sm text-white font-bold text-sm transition-all flex items-center gap-1.5 backdrop-blur-md hover:scale-105 disabled:opacity-60">
+            <div class="bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-600 rounded-3xl shadow-[0_20px_50px_-12px_rgba(59,130,246,0.5)] border border-white/20 p-4 sm:p-7 mb-8 text-white relative overflow-hidden group transition-transform hover:-translate-y-1 duration-300">
+                <button @click="fetchHomePrices()" :disabled="isFetchingHome" class="absolute top-4 right-4 sm:top-5 sm:right-5 z-20 px-3 py-1.5 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg shadow-sm text-white font-bold text-sm transition-all flex items-center gap-1.5 backdrop-blur-md hover:scale-105 disabled:opacity-60">
                     <i class="fa-solid fa-rotate-right" :class="{'animate-spin': isFetchingHome}"></i> 更新股價
                 </button>
 
-                <div class="absolute -right-6 -bottom-6 text-9xl text-white/10 group-hover:scale-110 transition-transform duration-500"><i class="fa-solid fa-chart-pie"></i></div>
-                <div class="absolute top-0 left-0 w-full h-full bg-gradient-to-t from-black/10 to-transparent"></div>
+                <div class="absolute -right-6 -bottom-6 text-9xl text-white/10 group-hover:scale-110 transition-transform duration-500 pointer-events-none"><i class="fa-solid fa-chart-pie"></i></div>
+                <div class="absolute top-0 left-0 w-full h-full bg-gradient-to-t from-black/10 to-transparent pointer-events-none"></div>
 
                 <div class="relative z-10 pt-2">
-                    <div class="text-sm sm:text-base text-blue-100 font-bold mb-1 tracking-wider drop-shadow-sm">目前所有 ETF 總市值</div>
-                    <div class="text-5xl md:text-6xl font-black tracking-tight mb-5 drop-shadow-md" x-text="formatMoney(totalNetWorth) + ' 元'"></div>
+                    <div class="text-sm sm:text-base text-blue-100 font-bold mb-1 tracking-wider drop-shadow-sm">目前所有 ETF 總市值（元）</div>
+                    <div class="text-4xl sm:text-6xl font-black tracking-tight mb-5 drop-shadow-md pr-28 sm:pr-36" x-text="formatMoney(totalNetWorth)"></div>
 
-                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full max-w-4xl">
-                        <div class="bg-white/10 backdrop-blur-md p-4 rounded-2xl border border-white/20 shadow-sm">
-                            <div class="text-sm text-blue-100 font-bold mb-1">目前持有成本</div>
-                            <div class="text-2xl sm:text-3xl font-black tracking-tight text-white" x-text="formatMoney(totalGlobalCost) + ' 元'"></div>
+                    <div class="rounded-2xl border border-white/25 bg-white/10 backdrop-blur-md shadow-inner overflow-hidden">
+                        <div class="px-4 sm:px-6 pt-5 pb-4 text-center">
+                            <div class="text-sm sm:text-base text-blue-100 font-bold tracking-wide mb-1">目前持有成本（元）</div>
+                            <div class="text-3xl sm:text-4xl font-black tracking-tight drop-shadow-sm" x-text="formatMoney(totalGlobalCost)"></div>
                             <div class="text-xs text-blue-100/75 mt-1">目前仍持有部位的原始成本</div>
                         </div>
-                        <div class="bg-white/10 backdrop-blur-md p-4 rounded-2xl border border-white/20 shadow-sm">
-                            <div class="text-sm text-blue-100 font-bold mb-1">未實現損益</div>
-                            <div class="text-2xl sm:text-3xl font-black tracking-tight" :class="totalGlobalUnrealizedProfit >= 0 ? 'text-red-200' : 'text-green-200'" x-text="(totalGlobalUnrealizedProfit > 0 ? '+ ' : (totalGlobalUnrealizedProfit < 0 ? '- ' : '')) + formatMoney(Math.abs(totalGlobalUnrealizedProfit)) + ' 元'"></div>
-                            <div class="text-xs text-blue-100/75 mt-1">目前持股帳面賺賠</div>
-                        </div>
-                        <div class="bg-white/10 backdrop-blur-md p-4 rounded-2xl border border-white/20 shadow-sm">
-                            <div class="text-sm text-blue-100 font-bold mb-1">未實現報酬率</div>
-                            <div class="text-2xl sm:text-3xl font-black tracking-tight" :class="totalGlobalUnrealizedProfit >= 0 ? 'text-red-200' : 'text-green-200'" x-text="totalGlobalUnrealizedROI !== null ? ((totalGlobalUnrealizedProfit > 0 ? '+' : '') + totalGlobalUnrealizedROI + '%') : '—'"></div>
-                            <div class="text-xs text-blue-100/75 mt-1">帳面損益 ÷ 目前持有成本</div>
-                        </div>
-                    </div>
 
-                    <div class="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl bg-white/10 border border-white/10 px-4 py-3 text-sm sm:text-base font-bold">
-                        <span class="text-blue-100">今日損益</span>
-                        <span :class="totalDailyProfit >= 0 ? 'text-red-200' : 'text-green-200'" x-text="(totalDailyProfit > 0 ? '▲ ' : (totalDailyProfit < 0 ? '▼ ' : '')) + formatMoney(Math.abs(totalDailyProfit)) + ' 元'"></span>
-                        <span class="text-blue-100">今日報酬率</span>
-                        <span :class="totalDailyProfitRate >= 0 ? 'text-red-200' : 'text-green-200'" x-text="(totalDailyProfitRate > 0 ? '+' : '') + totalDailyProfitRate + '%'"></span>
+                        <div class="mx-4 sm:mx-6 border-t border-white/25"></div>
+
+                        <div class="grid grid-cols-2 divide-x divide-white/25">
+                            <div class="px-3 sm:px-5 py-4 sm:py-5 text-center min-w-0">
+                                <div class="text-sm sm:text-base text-blue-100 font-bold mb-1">未實現損益（元）</div>
+                                <div class="text-2xl sm:text-3xl font-black tracking-tight whitespace-nowrap" :class="totalGlobalUnrealizedProfit >= 0 ? 'text-red-200' : 'text-green-200'" x-text="(totalGlobalUnrealizedProfit > 0 ? '+ ' : (totalGlobalUnrealizedProfit < 0 ? '- ' : '')) + formatMoney(Math.abs(totalGlobalUnrealizedProfit))"></div>
+                                <div class="mt-3 pt-2 border-t border-white/15 flex flex-wrap justify-center items-center gap-x-1.5 gap-y-1 text-xs sm:text-sm font-bold">
+                                    <span class="text-blue-100">今日</span>
+                                    <span :class="totalDailyProfit >= 0 ? 'text-red-200' : 'text-green-200'" x-text="(totalDailyProfit > 0 ? '▲ ' : (totalDailyProfit < 0 ? '▼ ' : '')) + formatMoney(Math.abs(totalDailyProfit)) + ' 元'"></span>
+                                </div>
+                            </div>
+
+                            <div class="px-3 sm:px-5 py-4 sm:py-5 text-center min-w-0">
+                                <div class="text-sm sm:text-base text-blue-100 font-bold mb-1">未實現報酬率</div>
+                                <div class="text-2xl sm:text-3xl font-black tracking-tight whitespace-nowrap" :class="totalGlobalUnrealizedProfit >= 0 ? 'text-red-200' : 'text-green-200'" x-text="totalGlobalUnrealizedROI !== null ? ((totalGlobalUnrealizedProfit > 0 ? '+' : '') + totalGlobalUnrealizedROI + '%') : '—'"></div>
+                                <div class="mt-3 pt-2 border-t border-white/15 flex flex-wrap justify-center items-center gap-x-1.5 gap-y-1 text-xs sm:text-sm font-bold">
+                                    <span class="text-blue-100">今日</span>
+                                    <span :class="totalDailyProfitRate >= 0 ? 'text-red-200' : 'text-green-200'" x-text="(totalDailyProfitRate > 0 ? '+' : '') + totalDailyProfitRate + '%'"></span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <details class="mt-4 rounded-2xl border border-white/20 bg-white/95 text-slate-700 shadow-lg overflow-hidden">
@@ -4856,7 +4870,7 @@ html {
                     </div>
 
                     <div class="bg-blue-50/50 border border-blue-100 rounded-xl p-3 mb-4 text-sm text-slate-600 leading-relaxed">
-                        💡 <strong>提示：</strong>本圖表依各檔 ETF 的「交易明細」與「歷史股價」逐日計算。藍線為<strong class="text-blue-600">總市值</strong>、橘色虛線為<strong class="text-amber-500">持有部位成本</strong>；紫線為<strong class="text-violet-600">累積總損益</strong>、綠線為<strong class="text-emerald-600">未實現損益</strong>。資產金額使用右側刻度，損益金額使用左側刻度。
+                        💡 <strong>提示：</strong>本圖表依各檔 ETF 的「交易明細」與「歷史股價」逐日計算。藍線為<strong class="text-blue-600">總市值</strong>、橘色虛線為<strong class="text-amber-500">持有部位成本</strong>；紫線為<strong class="text-violet-600">累積總損益</strong>、綠線為<strong class="text-emerald-600">未實現損益</strong>、粉紅虛線為<strong class="text-pink-600">未實現報酬率</strong>。未實現報酬率使用獨立百分比刻度，避免與金額混用。
                     </div>
 
                     <div class="flex flex-wrap items-center gap-x-4 gap-y-2 mb-4 text-xs sm:text-sm font-bold text-slate-600">
@@ -4864,6 +4878,7 @@ html {
                         <span class="inline-flex items-center gap-1.5"><i class="inline-block w-5 border-t-2 border-dashed border-amber-500"></i>持有部位成本</span>
                         <span class="inline-flex items-center gap-1.5"><i class="inline-block w-5 border-t-2 border-violet-500"></i>累積總損益</span>
                         <span class="inline-flex items-center gap-1.5"><i class="inline-block w-5 border-t-2 border-emerald-500"></i>未實現損益</span>
+                        <span class="inline-flex items-center gap-1.5"><i class="inline-block w-5 border-t-2 border-dashed border-pink-500"></i>未實現報酬率</span>
                     </div>
                     <div class="flex flex-wrap gap-1.5 mb-4">
                         <template x-for="r in ['1M', '3M', '6M', '1Y', 'YTD', 'MAX']" :key="r">
