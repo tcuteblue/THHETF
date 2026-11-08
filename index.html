@@ -817,6 +817,8 @@ html {
 
                     /* === 圖表繪製相關變數 === */
                     showHomeChart: false, homeChartMode: 'total', homeChartRange: '1Y', isHomeChartReady: false, isHomeChartLoading: false, homeTimelineData: [], homeChartInstance: null,
+                    // 總覽五條曲線可獨立開關，預設全部顯示；切換範圍或重繪時保留使用者選擇。
+                    homeChartSeriesVisibility: { value: true, cost: true, profit: true, unrealized: true, unrealizedROI: true }, homeChartSeries: {},
                     showDetailNetWorthChart: false, detailChartRange: '1Y', isDetailChartReady: false, isDetailChartLoading: false, detailTimelineData: [], detailChartInstance: null,
 
                     /* === 價格與技術指標 === */
@@ -2915,10 +2917,21 @@ html {
                     },
 
                     changeHomeChartRange(range) { this.homeChartRange = range; this.renderHomeChart(); },
+
+                    // 點選圖例即可獨立顯示／隱藏曲線，可同時開啟任意多條。
+                    toggleHomeChartSeries(key) {
+                        if (!Object.prototype.hasOwnProperty.call(this.homeChartSeriesVisibility, key)) return;
+                        this.homeChartSeriesVisibility[key] = !this.homeChartSeriesVisibility[key];
+                        const series = this.homeChartSeries && this.homeChartSeries[key];
+                        if (series && typeof series.applyOptions === 'function') {
+                            series.applyOptions({ visible: this.homeChartSeriesVisibility[key] });
+                        }
+                    },
                     
                     renderHomeChart() {
                         if (!this.showHomeChart || !this.isHomeChartReady || this.homeTimelineData.length === 0) return;
                         const container = document.getElementById('home-lwc-chart'); if (!container) return;
+                        this.homeChartSeries = {};
                         if (this.homeChartInstance) { this.homeChartInstance.remove(); this.homeChartInstance = null; }
                         container.innerHTML = '';
                         let chartWidth = container.clientWidth || (container.parentElement ? container.parentElement.clientWidth : window.innerWidth - 40);
@@ -2962,6 +2975,17 @@ html {
                                 totalProfitSeries.setData(filteredData.map(d => ({ time: d.time, value: d.profit })));
                                 unrealizedSeries.setData(filteredData.map(d => ({ time: d.time, value: d.unrealizedProfit })));
                                 unrealizedROISeries.setData(filteredData.filter(d => d.unrealizedROI !== null && Number.isFinite(d.unrealizedROI)).map(d => ({ time: d.time, value: d.unrealizedROI })));
+
+                                this.homeChartSeries = {
+                                    value: areaSeries,
+                                    cost: costSeries,
+                                    profit: totalProfitSeries,
+                                    unrealized: unrealizedSeries,
+                                    unrealizedROI: unrealizedROISeries
+                                };
+                                Object.entries(this.homeChartSeries).forEach(([key, series]) => {
+                                    series.applyOptions({ visible: this.homeChartSeriesVisibility[key] !== false });
+                                });
                             } else {
                                 let codes = Object.keys(this.etfs);
                                 let colors = ['rgba(59, 130, 246,', 'rgba(16, 185, 129,', 'rgba(245, 158, 11,', 'rgba(139, 92, 246,', 'rgba(236, 72, 153,', 'rgba(14, 165, 233,'];
@@ -2988,8 +3012,18 @@ html {
                                 const item = homeDataByDate.get(date);
                                 if (!item) return '';
                                 if (this.homeChartMode === 'total') {
-                                    const roiText = item.unrealizedROI === null || !Number.isFinite(item.unrealizedROI) ? '—' : `${item.unrealizedROI > 0 ? '+' : ''}${item.unrealizedROI.toFixed(2)}%`;
-                                    return `${date}\n總市值：${this.formatChartNumber(item.value)} 元\n持有部位成本：${this.formatChartNumber(item.cost)} 元\n累積總損益：${this.formatChartNumber(item.profit)} 元\n未實現損益：${this.formatChartNumber(item.unrealizedProfit)} 元\n未實現報酬率：${roiText}`;
+                                    const lines = [date];
+                                    const visible = this.homeChartSeriesVisibility || {};
+                                    if (visible.value !== false) lines.push(`總市值：${this.formatChartNumber(item.value)} 元`);
+                                    if (visible.cost !== false) lines.push(`持有部位成本：${this.formatChartNumber(item.cost)} 元`);
+                                    if (visible.profit !== false) lines.push(`累積總損益：${this.formatChartNumber(item.profit)} 元`);
+                                    if (visible.unrealized !== false) lines.push(`未實現損益：${this.formatChartNumber(item.unrealizedProfit)} 元`);
+                                    if (visible.unrealizedROI !== false) {
+                                        const roiText = item.unrealizedROI === null || !Number.isFinite(item.unrealizedROI) ? '—' : `${item.unrealizedROI > 0 ? '+' : ''}${item.unrealizedROI.toFixed(2)}%`;
+                                        lines.push(`未實現報酬率：${roiText}`);
+                                    }
+                                    if (lines.length === 1) lines.push('目前未選擇顯示曲線');
+                                    return lines.join('\n');
                                 }
                                 const holdingLines = Object.keys(this.etfs).map(code => `${code}：${this.formatChartNumber(item.etfValues?.[code] || 0)} 元`);
                                 return `${date}\n總市值：${this.formatChartNumber(item.value)} 元\n各 ETF 市值：\n${holdingLines.join('\n')}`;
@@ -4870,15 +4904,36 @@ html {
                     </div>
 
                     <div class="bg-blue-50/50 border border-blue-100 rounded-xl p-3 mb-4 text-sm text-slate-600 leading-relaxed">
-                        💡 <strong>提示：</strong>本圖表依各檔 ETF 的「交易明細」與「歷史股價」逐日計算。藍線為<strong class="text-blue-600">總市值</strong>、橘色虛線為<strong class="text-amber-500">持有部位成本</strong>；紫線為<strong class="text-violet-600">累積總損益</strong>、綠線為<strong class="text-emerald-600">未實現損益</strong>、粉紅虛線為<strong class="text-pink-600">未實現報酬率</strong>。未實現報酬率使用獨立百分比刻度，避免與金額混用。
+                        💡 <strong>提示：</strong>本圖表依各檔 ETF 的「交易明細」與「歷史股價」逐日計算。下方可自行選擇要顯示的曲線，五條曲線可以同時任意搭配；未實現報酬率使用獨立百分比刻度，避免與金額混用。
                     </div>
 
-                    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 mb-4 text-xs sm:text-sm font-bold text-slate-600">
-                        <span class="inline-flex items-center gap-1.5"><i class="inline-block w-5 border-t-2 border-blue-500"></i>總市值</span>
-                        <span class="inline-flex items-center gap-1.5"><i class="inline-block w-5 border-t-2 border-dashed border-amber-500"></i>持有部位成本</span>
-                        <span class="inline-flex items-center gap-1.5"><i class="inline-block w-5 border-t-2 border-violet-500"></i>累積總損益</span>
-                        <span class="inline-flex items-center gap-1.5"><i class="inline-block w-5 border-t-2 border-emerald-500"></i>未實現損益</span>
-                        <span class="inline-flex items-center gap-1.5"><i class="inline-block w-5 border-t-2 border-dashed border-pink-500"></i>未實現報酬率</span>
+                    <div x-show="homeChartMode === 'total'" class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-3">
+                        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                            <span class="text-xs font-black tracking-wide text-slate-500">曲線顯示（可同時選擇多條）</span>
+                            <span class="text-[11px] font-semibold text-slate-400">點選項目即可顯示／隱藏</span>
+                        </div>
+                        <div class="flex flex-wrap gap-2 text-xs sm:text-sm font-bold">
+                            <button type="button" @click="toggleHomeChartSeries('value')" :aria-pressed="homeChartSeriesVisibility.value" :class="homeChartSeriesVisibility.value ? 'border-blue-200 bg-blue-50 text-blue-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
+                                <span class="h-2.5 w-2.5 rounded-full bg-blue-500"></span>總市值
+                                <i class="fa-solid text-[10px]" :class="homeChartSeriesVisibility.value ? 'fa-eye' : 'fa-eye-slash'"></i>
+                            </button>
+                            <button type="button" @click="toggleHomeChartSeries('cost')" :aria-pressed="homeChartSeriesVisibility.cost" :class="homeChartSeriesVisibility.cost ? 'border-amber-200 bg-amber-50 text-amber-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
+                                <span class="h-0.5 w-3.5 border-t-2 border-dashed border-amber-500"></span>持有部位成本
+                                <i class="fa-solid text-[10px]" :class="homeChartSeriesVisibility.cost ? 'fa-eye' : 'fa-eye-slash'"></i>
+                            </button>
+                            <button type="button" @click="toggleHomeChartSeries('profit')" :aria-pressed="homeChartSeriesVisibility.profit" :class="homeChartSeriesVisibility.profit ? 'border-violet-200 bg-violet-50 text-violet-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
+                                <span class="h-0.5 w-3.5 border-t-2 border-violet-500"></span>累積總損益
+                                <i class="fa-solid text-[10px]" :class="homeChartSeriesVisibility.profit ? 'fa-eye' : 'fa-eye-slash'"></i>
+                            </button>
+                            <button type="button" @click="toggleHomeChartSeries('unrealized')" :aria-pressed="homeChartSeriesVisibility.unrealized" :class="homeChartSeriesVisibility.unrealized ? 'border-emerald-200 bg-emerald-50 text-emerald-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
+                                <span class="h-0.5 w-3.5 border-t-2 border-emerald-500"></span>未實現損益
+                                <i class="fa-solid text-[10px]" :class="homeChartSeriesVisibility.unrealized ? 'fa-eye' : 'fa-eye-slash'"></i>
+                            </button>
+                            <button type="button" @click="toggleHomeChartSeries('unrealizedROI')" :aria-pressed="homeChartSeriesVisibility.unrealizedROI" :class="homeChartSeriesVisibility.unrealizedROI ? 'border-pink-200 bg-pink-50 text-pink-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
+                                <span class="h-0.5 w-3.5 border-t-2 border-dashed border-pink-500"></span>未實現報酬率
+                                <i class="fa-solid text-[10px]" :class="homeChartSeriesVisibility.unrealizedROI ? 'fa-eye' : 'fa-eye-slash'"></i>
+                            </button>
+                        </div>
                     </div>
                     <div class="flex flex-wrap gap-1.5 mb-4">
                         <template x-for="r in ['1M', '3M', '6M', '1Y', 'YTD', 'MAX']" :key="r">
