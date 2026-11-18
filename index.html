@@ -820,7 +820,7 @@ html {
                     // 總覽五條曲線可獨立開關，預設全部顯示；切換範圍或重繪時保留使用者選擇。
                     homeChartSeriesVisibility: { value: true, cost: true, profit: true, unrealized: true, unrealizedROI: true }, homeChartSeries: {},
                     showDetailPerformanceChart: false, detailChartRange: '1Y', isDetailChartReady: false, isDetailChartLoading: false, detailTimelineData: [], detailChartInstance: null,
-                    detailChartSeriesVisibility: { value: true, cost: true, profit: true, unrealized: true, unrealizedROI: true }, detailChartSeries: {},
+                    detailChartSeriesVisibility: { value: true, cost: true, avgCost: true, profit: true, unrealized: true, unrealizedROI: true }, detailChartSeries: {},
 
                     /* === 價格與技術指標 === */
                     cond_k: false, cond_ma240: false, cond_ma2400: false, cond_pb: false, isBlueLight: false, isPanic: false, cond_cost90: false, cond_cost80: false, cond_discount: false,
@@ -3149,6 +3149,7 @@ html {
                                     profit: cumulativeProfit,
                                     unrealizedProfit,
                                     unrealizedROI,
+                                    avgCost: currentShares > 0 && Number.isFinite(currentAvgCost) ? Number(currentAvgCost.toFixed(4)) : null,
                                     realizedProfit: Math.round(realizedProfit),
                                     dividendNet: Math.round(dividendNet)
                                 });
@@ -3214,6 +3215,8 @@ html {
                                 leftPriceScale: { visible: true, borderColor: '#cbd5e1', scaleMargins: { top: 0.12, bottom: 0.12 } }
                             });
                             chart.priceScale('roi').applyOptions({ visible: true, borderVisible: true, borderColor: '#cbd5e1', scaleMargins: { top: 0.12, bottom: 0.12 } });
+                            // 每股平均成本與總額、報酬率單位不同，使用獨立刻度，避免共用金額軸造成失真。
+                            chart.priceScale('avgcost').applyOptions({ visible: true, borderVisible: true, borderColor: '#cbd5e1', scaleMargins: { top: 0.12, bottom: 0.12 } });
                             this.detailChartInstance = chart;
 
                             const now = new Date();
@@ -3232,6 +3235,10 @@ html {
                             const costSeries = chart.addLineSeries({ color: '#f59e0b', lineWidth: 2, lineStyle: 2, title: '持有部位成本', priceScaleId: 'right' });
                             const profitSeries = chart.addLineSeries({ color: '#8b5cf6', lineWidth: 2, title: '累積總損益', priceScaleId: 'left' });
                             const unrealizedSeries = chart.addLineSeries({ color: '#10b981', lineWidth: 2, title: '未實現損益', priceScaleId: 'left' });
+                            const avgCostSeries = chart.addLineSeries({
+                                color: '#06b6d4', lineWidth: 2, title: '平均成本（每股）', priceScaleId: 'avgcost',
+                                priceFormat: { type: 'custom', minMove: 0.01, formatter: value => `${Number(value).toFixed(2)}` }
+                            });
                             const roiSeries = chart.addLineSeries({
                                 color: '#ec4899', lineWidth: 2, lineStyle: 2, title: '未實現報酬率', priceScaleId: 'roi',
                                 priceFormat: { type: 'custom', minMove: 0.01, formatter: value => `${Number(value).toFixed(2)}%` }
@@ -3240,9 +3247,10 @@ html {
                             costSeries.setData(filteredData.map(d => ({ time: d.time, value: d.cost })));
                             profitSeries.setData(filteredData.map(d => ({ time: d.time, value: d.profit })));
                             unrealizedSeries.setData(filteredData.map(d => ({ time: d.time, value: d.unrealizedProfit })));
+                            avgCostSeries.setData(filteredData.filter(d => d.avgCost !== null && Number.isFinite(d.avgCost) && d.avgCost > 0).map(d => ({ time: d.time, value: d.avgCost })));
                             roiSeries.setData(filteredData.filter(d => d.unrealizedROI !== null && Number.isFinite(d.unrealizedROI)).map(d => ({ time: d.time, value: d.unrealizedROI })));
 
-                            this.detailChartSeries = { value: valueSeries, cost: costSeries, profit: profitSeries, unrealized: unrealizedSeries, unrealizedROI: roiSeries };
+                            this.detailChartSeries = { value: valueSeries, cost: costSeries, avgCost: avgCostSeries, profit: profitSeries, unrealized: unrealizedSeries, unrealizedROI: roiSeries };
                             Object.entries(this.detailChartSeries).forEach(([key, series]) => {
                                 series.applyOptions({ visible: this.detailChartSeriesVisibility[key] !== false });
                             });
@@ -3256,6 +3264,7 @@ html {
                                 const lines = [date];
                                 if (visible.value !== false) lines.push(`總市值：${this.formatChartNumber(item.value)} 元`);
                                 if (visible.cost !== false) lines.push(`持有部位成本：${this.formatChartNumber(item.cost)} 元`);
+                                if (visible.avgCost !== false) lines.push(`平均成本：${item.avgCost === null || !Number.isFinite(item.avgCost) ? '—' : `${item.avgCost.toFixed(2)} 元／股`}`);
                                 if (visible.profit !== false) lines.push(`累積總損益：${this.formatChartNumber(item.profit)} 元`);
                                 if (visible.unrealized !== false) lines.push(`未實現損益：${this.formatChartNumber(item.unrealizedProfit)} 元`);
                                 if (visible.unrealizedROI !== false) {
@@ -5312,6 +5321,9 @@ html {
                       </button>
                       <button type="button" @click="toggleDetailChartSeries('cost')" :aria-pressed="detailChartSeriesVisibility.cost" :class="detailChartSeriesVisibility.cost ? 'border-amber-200 bg-amber-50 text-amber-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
                           <span class="h-0.5 w-3.5 border-t-2 border-dashed border-amber-500"></span>持有部位成本 <i class="fa-solid text-[10px]" :class="detailChartSeriesVisibility.cost ? 'fa-eye' : 'fa-eye-slash'"></i>
+                      </button>
+                      <button type="button" @click="toggleDetailChartSeries('avgCost')" :aria-pressed="detailChartSeriesVisibility.avgCost" :class="detailChartSeriesVisibility.avgCost ? 'border-cyan-200 bg-cyan-50 text-cyan-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
+                          <span class="h-0.5 w-3.5 border-t-2 border-cyan-500"></span>平均成本（每股） <i class="fa-solid text-[10px]" :class="detailChartSeriesVisibility.avgCost ? 'fa-eye' : 'fa-eye-slash'"></i>
                       </button>
                       <button type="button" @click="toggleDetailChartSeries('profit')" :aria-pressed="detailChartSeriesVisibility.profit" :class="detailChartSeriesVisibility.profit ? 'border-violet-200 bg-violet-50 text-violet-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
                           <span class="h-0.5 w-3.5 border-t-2 border-violet-500"></span>累積總損益 <i class="fa-solid text-[10px]" :class="detailChartSeriesVisibility.profit ? 'fa-eye' : 'fa-eye-slash'"></i>
