@@ -818,7 +818,7 @@ html {
                     /* === 圖表繪製相關變數 === */
                     showHomeChart: false, homeChartLayer: 'price', homeChartMode: 'total', homeChartRange: '1Y', isHomeChartReady: false, isHomeChartLoading: false, homeTimelineData: [], homeChartInstance: null,
                     // 總覽五條曲線可獨立開關，預設全部顯示；切換範圍或重繪時保留使用者選擇。
-                    homeChartSeriesVisibility: { value: true, cost: true, avgPrice: true, profit: true, unrealized: true, unrealizedROI: true }, homeChartSeries: {},
+                    homeChartSeriesVisibility: { value: true, cost: true, profit: true, unrealized: true, unrealizedROI: true }, homeChartSeries: {},
                     showDetailPerformanceChart: false, detailChartLayer: 'price', detailChartRange: '1Y', isDetailChartReady: false, isDetailChartLoading: false, detailTimelineData: [], detailChartInstance: null,
                     detailChartSeriesVisibility: { value: true, cost: true, avgCost: true, avgPrice: true, profit: true, unrealized: true, unrealizedROI: true }, detailChartSeries: {},
 
@@ -2040,6 +2040,10 @@ html {
                     transactionActionClass(action) {
                         return ({ buy: 'bg-red-50 text-red-700 border-red-100', sell: 'bg-green-50 text-green-700 border-green-100', withdraw: 'bg-teal-50 text-teal-700 border-teal-100', dividend: 'bg-amber-50 text-amber-700 border-amber-100', stock_dividend: 'bg-emerald-50 text-emerald-700 border-emerald-100', sync: 'bg-purple-50 text-purple-700 border-purple-100' })[action] || 'bg-slate-50 text-slate-600 border-slate-100';
                     },
+                    // 僅辨識具有自動扣款 metadata 的買進，手動買進／單筆加碼不加標籤。
+                    isRecurringPurchase(txn) {
+                        return !!txn && txn.action === 'buy' && (txn.type === 'auto' || txn.autoPlanId != null || txn.autoOccurrenceKey != null || txn.autoScheduledDate != null);
+                    },
                     transactionDisplayPrice(txn) {
                         if (!txn || ['dividend', 'stock_dividend', 'sync'].includes(txn.action)) return '—';
                         const n = Number(txn.price);
@@ -2885,28 +2889,32 @@ html {
                                     const avgBook = currentShares[c] > 0 ? currentBookCost[c] / currentShares[c] : 0;
                                     realizedProfit += netProceeds - soldShares * avgBook;
                                     const ratio = currentShares[c] > 0 ? soldShares / currentShares[c] : 0;
-                                    currentPriceCost[c] *= (1-ratio); currentBookCost[c] *= (1-ratio);
+                                    // 第一層以買進成交額減去賣出成交額計算淨投入本金，不含手續費與證交稅。
+                                    currentPriceCost[c] -= amt;
+                                    // 第二層仍依加權平均持有成本，按賣出股數比例沖減成本。
+                                    currentBookCost[c] *= (1-ratio);
                                     currentShares[c] = Math.max(0, currentShares[c] - soldShares);
                                 } else if (t.action === 'dividend') {
                                     dividendNet += amt - (Number(t.wireFee) || 0);
                                 }
                                 txnIdx++;
                             }
-                            let dailyTotalValue = 0; let dailyTotalCost = 0; let dailyTotalShares = 0; let etfValues = {};
+                            let dailyTotalValue = 0; let dailyTotalCost = 0; let etfValues = {};
                             for (let code in this.etfs) {
                                 if (historyMap[code][d]) lastPrices[code] = historyMap[code][d];
                                 let val = (lastPrices[code] || 0) * (currentShares[code] || 0);
-                                etfValues[code] = val; dailyTotalValue += val; dailyTotalShares += currentShares[code] || 0;
-                                dailyTotalCost += currentShares[code] || 0 ? (currentBookCost[code] || 0) : 0;
+                                etfValues[code] = val; dailyTotalValue += val;
+                                dailyTotalCost += currentBookCost[code] || 0;
                             }
-                            const priceCost = Math.round(Object.keys(this.etfs).reduce((sum, code) => sum + (currentShares[code] || 0 ? (currentPriceCost[code] || 0) : 0), 0));
+                            // 第一層是買進總額減賣出總額；即使目前股數為零，也保留已實現價差結果。
+                            const priceCost = Math.round(Object.keys(this.etfs).reduce((sum, code) => sum + (currentPriceCost[code] || 0), 0));
                             const bookCost = Math.round(dailyTotalCost);
                             const unrealizedProfit = Math.round(dailyTotalValue - priceCost);
                             const unrealizedROI = priceCost > 0 ? Number(((unrealizedProfit / priceCost) * 100).toFixed(2)) : null;
                             const bookUnrealizedProfit = Math.round(dailyTotalValue - bookCost);
                             const bookUnrealizedROI = bookCost > 0 ? Number(((bookUnrealizedProfit / bookCost) * 100).toFixed(2)) : null;
                             const cumulativeProfit = Math.round(realizedProfit + dividendNet + bookUnrealizedProfit);
-                            timeline.push({ time: d, value: Math.round(dailyTotalValue), shares: dailyTotalShares, avgPrice: dailyTotalShares > 0 ? priceCost / dailyTotalShares : null, cost: bookCost, priceCost, unrealizedProfit, unrealizedROI, bookUnrealizedProfit, bookUnrealizedROI, realizedProfit: Math.round(realizedProfit), dividendNet: Math.round(dividendNet), profit: cumulativeProfit, etfValues: etfValues });
+                            timeline.push({ time: d, value: Math.round(dailyTotalValue), cost: bookCost, priceCost, unrealizedProfit, unrealizedROI, bookUnrealizedProfit, bookUnrealizedROI, realizedProfit: Math.round(realizedProfit), dividendNet: Math.round(dividendNet), profit: cumulativeProfit, etfValues: etfValues });
                         }
                         
                         this.homeTimelineData = timeline;
@@ -2928,7 +2936,7 @@ html {
 
                     // 點選圖例即可獨立顯示／隱藏曲線，可同時開啟任意多條。
                     toggleHomeChartSeries(key) {
-                        if (!Object.prototype.hasOwnProperty.call(this.homeChartSeriesVisibility, key)) return;
+                        if (!Object.prototype.hasOwnProperty.call(this.homeChartSeriesVisibility, key)) this.homeChartSeriesVisibility[key] = true;
                         this.homeChartSeriesVisibility[key] = !this.homeChartSeriesVisibility[key];
                         const series = this.homeChartSeries && this.homeChartSeries[key];
                         if (series && typeof series.applyOptions === 'function') {
@@ -2972,19 +2980,12 @@ html {
                             if (this.homeChartMode === 'total') {
                               if (this.homeChartLayer === 'price') {
                                 const areaSeries = chart.addAreaSeries({ lineColor: '#3b82f6', topColor: 'rgba(59, 130, 246, 0.24)', bottomColor: 'rgba(59, 130, 246, 0.02)', lineWidth: 2, title: '總市值', priceScaleId: 'right' });
-                                const avgPriceSeries = chart.addLineSeries({ color: '#06b6d4', lineWidth: 2, title: '平均買進價格（不含費用）', priceScaleId: 'right' });
-                                const totalProfitSeries = chart.addLineSeries({ color: '#8b5cf6', lineWidth: 2, title: '未實現損益', priceScaleId: 'left' });
-                                const unrealizedSeries = chart.addLineSeries({ color: '#10b981', lineWidth: 2, title: '未實現報酬率', priceScaleId: 'roi', priceFormat: { type: 'custom', minMove: 0.01, formatter: value => `${Number(value).toFixed(2)}%` } });
-                                const unrealizedROISeries = chart.addLineSeries({
-                                    color: '#ec4899', lineWidth: 2, lineStyle: 2, title: '未實現報酬率', priceScaleId: 'roi',
-                                    priceFormat: { type: 'custom', minMove: 0.01, formatter: value => `${Number(value).toFixed(2)}%` }
-                                });
+                                const priceGainSeries = chart.addLineSeries({ color: '#8b5cf6', lineWidth: 2, title: '累積價差損益', priceScaleId: 'left' });
+                                const priceGainROISeries = chart.addLineSeries({ color: '#ec4899', lineWidth: 2, lineStyle: 2, title: '累積價差報酬率', priceScaleId: 'roi', priceFormat: { type: 'custom', minMove: 0.01, formatter: value => `${Number(value).toFixed(2)}%` } });
                                 areaSeries.setData(filteredData.map(d => ({ time: d.time, value: d.value })));
-                                avgPriceSeries.setData(filteredData.filter(d => d.avgPrice !== null && Number.isFinite(d.avgPrice)).map(d => ({ time: d.time, value: d.avgPrice })));
-                                avgPriceSeries.applyOptions({ priceFormat: { type: 'custom', minMove: 0.0001, formatter: value => `${Number(value).toFixed(4)}` } });
-                                totalProfitSeries.setData(filteredData.map(d => ({ time: d.time, value: d.unrealizedProfit })));
-                                unrealizedSeries.setData(filteredData.filter(d => d.unrealizedROI !== null && Number.isFinite(d.unrealizedROI)).map(d => ({ time: d.time, value: d.unrealizedROI })));
-                                this.homeChartSeries = { value: areaSeries, avgPrice: avgPriceSeries, unrealized: totalProfitSeries, unrealizedROI: unrealizedSeries };
+                                priceGainSeries.setData(filteredData.map(d => ({ time: d.time, value: d.unrealizedProfit })));
+                                priceGainROISeries.setData(filteredData.filter(d => d.unrealizedROI !== null && Number.isFinite(d.unrealizedROI)).map(d => ({ time: d.time, value: d.unrealizedROI })));
+                                this.homeChartSeries = { value: areaSeries, unrealized: priceGainSeries, unrealizedROI: priceGainROISeries };
                                 Object.entries(this.homeChartSeries).forEach(([key, series]) => {
                                     series.applyOptions({ visible: this.homeChartSeriesVisibility[key] !== false });
                                 });
@@ -2993,29 +2994,40 @@ html {
                                 const costSeries = chart.addLineSeries({ color: '#f59e0b', lineWidth: 2, lineStyle: 2, title: '目前持有成本（含買進手續費）', priceScaleId: 'right' });
                                 const profitSeries = chart.addLineSeries({ color: '#8b5cf6', lineWidth: 2, title: '累積總損益', priceScaleId: 'left' });
                                 const unrealizedSeries = chart.addLineSeries({ color: '#10b981', lineWidth: 2, title: '未實現損益（含費用）', priceScaleId: 'left' });
-                                const avgPriceSeries = chart.addLineSeries({ color: '#06b6d4', lineWidth: 2, title: '平均買進價格（不含費用）', priceScaleId: 'avgcost', priceFormat: { type: 'custom', minMove: 0.0001, formatter: value => `${Number(value).toFixed(4)}` } });
-                            const roiSeries = chart.addLineSeries({ color: '#ec4899', lineWidth: 2, lineStyle: 2, title: '未實現報酬率（含費用）', priceScaleId: 'roi', priceFormat: { type: 'custom', minMove: 0.01, formatter: value => `${Number(value).toFixed(2)}%` } });
-                                valueSeries.setData(filteredData.map(d=>({time:d.time,value:d.value}))); costSeries.setData(filteredData.map(d=>({time:d.time,value:d.cost}))); profitSeries.setData(filteredData.map(d=>({time:d.time,value:d.profit}))); unrealizedSeries.setData(filteredData.map(d=>({time:d.time,value:d.bookUnrealizedProfit}))); roiSeries.setData(filteredData.filter(d=>d.bookUnrealizedROI!==null).map(d=>({time:d.time,value:d.bookUnrealizedROI})));
-                                this.homeChartSeries = { value:valueSeries, cost:costSeries, profit:profitSeries, unrealized:unrealizedSeries, unrealizedROI:roiSeries };
-                                Object.entries(this.homeChartSeries).forEach(([key, series])=>series.applyOptions({visible:this.homeChartSeriesVisibility[key]!==false}));
+                                const roiSeries = chart.addLineSeries({ color: '#ec4899', lineWidth: 2, lineStyle: 2, title: '未實現報酬率（含費用）', priceScaleId: 'roi', priceFormat: { type: 'custom', minMove: 0.01, formatter: value => `${Number(value).toFixed(2)}%` } });
+                                valueSeries.setData(filteredData.map(d => ({ time: d.time, value: d.value })));
+                                costSeries.setData(filteredData.map(d => ({ time: d.time, value: d.cost })));
+                                profitSeries.setData(filteredData.map(d => ({ time: d.time, value: d.profit })));
+                                unrealizedSeries.setData(filteredData.map(d => ({ time: d.time, value: d.bookUnrealizedProfit })));
+                                roiSeries.setData(filteredData.filter(d => d.bookUnrealizedROI !== null && Number.isFinite(d.bookUnrealizedROI)).map(d => ({ time: d.time, value: d.bookUnrealizedROI })));
+                                this.homeChartSeries = { value: valueSeries, cost: costSeries, profit: profitSeries, unrealized: unrealizedSeries, unrealizedROI: roiSeries };
+                                Object.entries(this.homeChartSeries).forEach(([key, series]) => series.applyOptions({ visible: this.homeChartSeriesVisibility[key] !== false }));
                               }
                             } else {
-                                let codes = Object.keys(this.etfs);
-                                let colors = ['rgba(59, 130, 246,', 'rgba(16, 185, 129,', 'rgba(245, 158, 11,', 'rgba(139, 92, 246,', 'rgba(236, 72, 153,', 'rgba(14, 165, 233,'];
-                                let stackSeriesData = []; let prevValues = new Array(filteredData.length).fill(0);
-                                
-                                for(let i=0; i<codes.length; i++) {
-                                    let c = codes[i]; let col = colors[i % colors.length];
-                                    let stackData = filteredData.map((d, idx) => {
-                                        let val = (d.etfValues[c] || 0) + prevValues[idx]; prevValues[idx] = val;
+                                const codes = Object.keys(this.etfs);
+                                const colors = ['rgba(59, 130, 246,', 'rgba(16, 185, 129,', 'rgba(245, 158, 11,', 'rgba(139, 92, 246,', 'rgba(236, 72, 153,', 'rgba(14, 165, 233,'];
+                                const stackSeriesData = [];
+                                let prevValues = new Array(filteredData.length).fill(0);
+                                // 保留原本堆疊順序與累積方式，只額外替每檔 ETF 保存獨立曲線控制。
+                                for (let i = 0; i < codes.length; i++) {
+                                    const code = codes[i];
+                                    const color = colors[i % colors.length];
+                                    const stackData = filteredData.map((d, idx) => {
+                                        const val = (d.etfValues[code] || 0) + prevValues[idx];
+                                        prevValues[idx] = val;
                                         return { time: d.time, value: val };
                                     });
-                                    stackSeriesData.push({ title: c, color: col, data: stackData });
+                                    stackSeriesData.push({ code, color, data: stackData });
                                 }
-                                for(let i = stackSeriesData.length - 1; i >= 0; i--) {
-                                    let s = stackSeriesData[i];
-                                    const series = chart.addAreaSeries({ lineColor: s.color+'1)', topColor: s.color+'0.8)', bottomColor: s.color+'0.2)', lineWidth: 1, title: s.title });
-                                    series.setData(s.data);
+                                this.homeChartSeries = {};
+                                for (let i = stackSeriesData.length - 1; i >= 0; i--) {
+                                    const item = stackSeriesData[i];
+                                    const series = chart.addAreaSeries({ lineColor: item.color + '1)', topColor: item.color + '0.8)', bottomColor: item.color + '0.2)', lineWidth: 1, title: item.code });
+                                    series.setData(item.data);
+                                    const key = `etf:${item.code}`;
+                                    if (!Object.prototype.hasOwnProperty.call(this.homeChartSeriesVisibility, key)) this.homeChartSeriesVisibility[key] = true;
+                                    series.applyOptions({ visible: this.homeChartSeriesVisibility[key] !== false });
+                                    this.homeChartSeries[key] = series;
                                 }
                             }
 
@@ -3029,9 +3041,8 @@ html {
                                     const visible = this.homeChartSeriesVisibility || {};
                                     if (this.homeChartLayer === 'price') {
                                         if (visible.value !== false) lines.push(`總市值：${this.formatChartNumber(item.value)} 元`);
-                                        if (visible.avgPrice !== false) lines.push(`平均買進價格：${item.avgPrice === null ? '—' : item.avgPrice.toFixed(4)}`);
-                                        if (visible.unrealized !== false) lines.push(`未實現損益（不含費用）：${this.formatChartNumber(item.unrealizedProfit)} 元`);
-                                        if (visible.unrealizedROI !== false) lines.push(`未實現報酬率（不含費用）：${item.unrealizedROI === null ? '—' : item.unrealizedROI.toFixed(2)+'%'}`);
+                                        if (visible.unrealized !== false) lines.push(`累積價差損益：${this.formatChartNumber(item.unrealizedProfit)} 元`);
+                                        if (visible.unrealizedROI !== false) lines.push(`累積價差報酬率：${item.unrealizedROI === null ? '—' : item.unrealizedROI.toFixed(2)+'%'}`);
                                     } else {
                                         if (visible.value !== false) lines.push(`總市值：${this.formatChartNumber(item.value)} 元`);
                                         if (visible.cost !== false) lines.push(`持有成本：${this.formatChartNumber(item.cost)} 元`);
@@ -3042,8 +3053,10 @@ html {
                                     if (lines.length === 1) lines.push('目前未選擇顯示曲線');
                                     return lines.join('\n');
                                 }
-                                const holdingLines = Object.keys(this.etfs).map(code => `${code}：${this.formatChartNumber(item.etfValues?.[code] || 0)} 元`);
-                                return `${date}\n總市值：${this.formatChartNumber(item.value)} 元\n各 ETF 市值：\n${holdingLines.join('\n')}`;
+                                const holdingLines = Object.keys(this.etfs)
+                                    .filter(code => this.homeChartSeriesVisibility[`etf:${code}`] !== false)
+                                    .map(code => `${code}：${this.formatChartNumber(item.etfValues?.[code] || 0)} 元`);
+                                return `${date}\n總市值：${this.formatChartNumber(item.value)} 元\n各 ETF 市值：\n${holdingLines.length ? holdingLines.join('\n') : '目前未選擇顯示曲線'}`;
                             });
                             chart.timeScale().fitContent();
                             if (window.ResizeObserver) { new ResizeObserver(entries => { if (entries[0].target === container && this.homeChartInstance && entries[0].contentRect.width > 0) { this.homeChartInstance.applyOptions({ width: Math.floor(entries[0].contentRect.width) }); } }).observe(container); }
@@ -3069,7 +3082,7 @@ html {
                             const baseAvgCost = Math.max(0, Number(this.baseAvgCost) || 0);
                             let currentShares = baseShares;
                             let currentAvgCost = baseAvgCost;
-                            let currentAvgPrice = baseAvgCost;
+                            let currentNetInvested = baseShares * baseAvgCost;
                             let realizedProfit = 0;
                             let dividendNet = 0;
                             let txnIndex = 0;
@@ -3128,27 +3141,25 @@ html {
                                     const amount = Number(t.amount) || 0;
 
                                     if (t.action === 'buy') {
-                                        const priceTotal = currentShares * currentAvgPrice + amount;
                                         const bookTotal = currentShares * currentAvgCost + amount + this.transactionCommission(t);
+                                        currentNetInvested += amount;
                                         currentShares += shares;
-                                        currentAvgPrice = currentShares > 0 ? priceTotal / currentShares : 0;
                                         currentAvgCost = currentShares > 0 ? bookTotal / currentShares : 0;
                                     } else if (t.action === 'sync') {
-                                        // 調帳只修正庫存與成本，不視為買賣，不產生已實現損益。
-                                        const priceTotal = currentShares * currentAvgPrice + amount;
+                                        // 調帳屬成本修正，不視為現金流；其成本差額同步修正第一層淨投入本金。
                                         const bookTotal = currentShares * currentAvgCost + amount;
+                                        currentNetInvested += amount;
                                         currentShares = Math.max(0, currentShares + shares);
-                                        currentAvgPrice = currentShares > 0 ? priceTotal / currentShares : 0;
                                         currentAvgCost = currentShares > 0 ? bookTotal / currentShares : 0;
                                     } else if (t.action === 'stock_dividend') {
                                         const totalCost = currentShares * currentAvgCost;
-                                        const priceTotal = currentShares * currentAvgPrice;
                                         currentShares += shares;
-                                        currentAvgPrice = currentShares > 0 ? priceTotal / currentShares : 0;
                                         currentAvgCost = currentShares > 0 ? totalCost / currentShares : 0;
                                     } else if (t.action === 'sell' || t.action === 'withdraw') {
                                         const soldShares = Math.min(Math.max(0, currentShares), Math.max(0, shares));
                                         realizedProfit += this.transactionNetCashIn(t) - soldShares * currentAvgCost;
+                                        // 第一層扣除賣出成交總額，不扣手續費與證交稅。
+                                        currentNetInvested -= amount;
                                         currentShares = Math.max(0, currentShares - soldShares);
                                     } else if (t.action === 'dividend') {
                                         dividendNet += this.transactionNetCashIn(t);
@@ -3161,8 +3172,9 @@ html {
 
                                 const marketValue = Math.round(lastPrice * currentShares);
                                 const holdingCost = Math.round(currentShares * currentAvgCost);
-                                const priceCost = Math.round(currentShares * currentAvgPrice);
+                                const priceCost = Math.round(currentNetInvested);
                                 const bookUnrealizedProfit = marketValue - holdingCost;
+                                // 買進減賣出後的價格差額，已包含先前賣出所實現的價差。
                                 const unrealizedProfit = marketValue - priceCost;
                                 const unrealizedROI = priceCost > 0 ? Number(((unrealizedProfit / priceCost) * 100).toFixed(2)) : null;
                                 const bookUnrealizedROI = holdingCost > 0 ? Number(((bookUnrealizedProfit / holdingCost) * 100).toFixed(2)) : null;
@@ -3176,7 +3188,7 @@ html {
                                     unrealizedProfit,
                                     unrealizedROI,
                                     avgCost: currentShares > 0 && Number.isFinite(currentAvgCost) ? Number(currentAvgCost.toFixed(4)) : null,
-                                    avgPrice: currentShares > 0 && Number.isFinite(currentAvgPrice) ? Number(currentAvgPrice.toFixed(4)) : null,
+                                    avgPrice: currentShares > 0 && Number.isFinite(currentNetInvested / currentShares) ? Number((currentNetInvested / currentShares).toFixed(4)) : null,
                                     realizedProfit: Math.round(realizedProfit),
                                     dividendNet: Math.round(dividendNet)
                                 });
@@ -3261,28 +3273,37 @@ html {
                             const valueSeries = chart.addAreaSeries({ lineColor: '#3b82f6', topColor: 'rgba(59, 130, 246, 0.28)', bottomColor: 'rgba(59, 130, 246, 0.02)', lineWidth: 2, title: '總市值', priceScaleId: 'right' });
                             const costSeries = chart.addLineSeries({ color: '#f59e0b', lineWidth: 2, lineStyle: 2, title: '持有部位成本（含買進手續費）', priceScaleId: 'right' });
                             const profitSeries = chart.addLineSeries({ color: '#8b5cf6', lineWidth: 2, title: '累積總損益', priceScaleId: 'left' });
-                            const unrealizedSeries = chart.addLineSeries({ color: '#10b981', lineWidth: 2, title: '未實現報酬率', priceScaleId: 'roi', priceFormat: { type: 'custom', minMove: 0.01, formatter: value => `${Number(value).toFixed(2)}%` } });
+                            const unrealizedSeries = chart.addLineSeries({ color: '#10b981', lineWidth: 2, title: this.detailChartLayer === 'price' ? '累積價差損益' : '未實現損益', priceScaleId: 'left' });
                             const avgCostSeries = chart.addLineSeries({
                                 color: '#06b6d4', lineWidth: 2, title: '平均持有成本（含買進手續費）', priceScaleId: 'avgcost',
                                 priceFormat: { type: 'custom', minMove: 0.01, formatter: value => `${Number(value).toFixed(2)}` }
                             });
-                            const avgPriceSeries = chart.addLineSeries({ color: '#06b6d4', lineWidth: 2, title: '平均買進價格（不含費用）', priceScaleId: 'avgcost', priceFormat: { type: 'custom', minMove: 0.0001, formatter: value => `${Number(value).toFixed(4)}` } });
+                            const avgPriceSeries = chart.addLineSeries({ color: '#06b6d4', lineWidth: 2, title: '平均投入價', priceScaleId: 'avgcost', priceFormat: { type: 'custom', minMove: 0.0001, formatter: value => `${Number(value).toFixed(4)}` } });
                             const roiSeries = chart.addLineSeries({
-                                color: '#ec4899', lineWidth: 2, lineStyle: 2, title: '未實現報酬率', priceScaleId: 'roi',
+                                color: '#ec4899', lineWidth: 2, lineStyle: 2,
+                                title: this.detailChartLayer === 'price' ? '累積價差報酬率' : '未實現報酬率',
+                                priceScaleId: 'roi',
                                 priceFormat: { type: 'custom', minMove: 0.01, formatter: value => `${Number(value).toFixed(2)}%` }
                             });
                             valueSeries.setData(filteredData.map(d => ({ time: d.time, value: d.value })));
                             costSeries.setData(filteredData.map(d => ({ time: d.time, value: d.cost })));
                             profitSeries.setData(filteredData.map(d => ({ time: d.time, value: d.profit })));
-                            unrealizedSeries.setData(filteredData.map(d => ({ time: d.time, value: d.unrealizedProfit })));
                             avgCostSeries.setData(filteredData.filter(d => d.avgCost !== null && Number.isFinite(d.avgCost) && d.avgCost > 0).map(d => ({ time: d.time, value: d.avgCost })));
-                            avgPriceSeries.setData(filteredData.filter(d => d.avgPrice !== null && Number.isFinite(d.avgPrice) && d.avgPrice > 0).map(d => ({ time: d.time, value: d.avgPrice })));
-                            if (this.detailChartLayer === 'price') { valueSeries.applyOptions({visible:true}); costSeries.applyOptions({visible:false}); profitSeries.applyOptions({visible:false}); unrealizedSeries.setData(filteredData.map(d=>({time:d.time,value:d.unrealizedProfit}))); avgCostSeries.applyOptions({visible:false}); avgPriceSeries.applyOptions({visible:true}); roiSeries.setData(filteredData.filter(d=>d.unrealizedROI!==null).map(d=>({time:d.time,value:d.unrealizedROI}))); } else { valueSeries.applyOptions({visible:true}); costSeries.applyOptions({visible:true}); profitSeries.applyOptions({visible:true}); unrealizedSeries.setData(filteredData.map(d=>({time:d.time,value:d.bookUnrealizedProfit}))); avgCostSeries.applyOptions({visible:true}); avgPriceSeries.applyOptions({visible:false}); roiSeries.setData(filteredData.filter(d=>d.bookUnrealizedROI!==null).map(d=>({time:d.time,value:d.bookUnrealizedROI}))); }
-                            roiSeries.setData(filteredData.filter(d => d.unrealizedROI !== null && Number.isFinite(d.unrealizedROI)).map(d => ({ time: d.time, value: d.unrealizedROI })));
+                            avgPriceSeries.setData(filteredData.filter(d => d.avgPrice !== null && Number.isFinite(d.avgPrice)).map(d => ({ time: d.time, value: d.avgPrice })));
+                            if (this.detailChartLayer === 'price') {
+                                unrealizedSeries.setData(filteredData.map(d => ({ time: d.time, value: d.unrealizedProfit })));
+                                roiSeries.setData(filteredData.filter(d => d.unrealizedROI !== null && Number.isFinite(d.unrealizedROI)).map(d => ({ time: d.time, value: d.unrealizedROI })));
+                            } else {
+                                unrealizedSeries.setData(filteredData.map(d => ({ time: d.time, value: d.bookUnrealizedProfit })));
+                                roiSeries.setData(filteredData.filter(d => d.bookUnrealizedROI !== null && Number.isFinite(d.bookUnrealizedROI)).map(d => ({ time: d.time, value: d.bookUnrealizedROI })));
+                            }
 
                             this.detailChartSeries = { value: valueSeries, cost: costSeries, avgCost: avgCostSeries, avgPrice: avgPriceSeries, profit: profitSeries, unrealized: unrealizedSeries, unrealizedROI: roiSeries };
+                            const activeSeriesKeys = this.detailChartLayer === 'price'
+                                ? new Set(['value', 'avgPrice', 'unrealized', 'unrealizedROI'])
+                                : new Set(['value', 'cost', 'avgCost', 'profit', 'unrealized', 'unrealizedROI']);
                             Object.entries(this.detailChartSeries).forEach(([key, series]) => {
-                                series.applyOptions({ visible: this.detailChartSeriesVisibility[key] !== false });
+                                series.applyOptions({ visible: activeSeriesKeys.has(key) && this.detailChartSeriesVisibility[key] !== false });
                             });
 
                             const dataByDate = new Map(filteredData.map(item => [item.time, item]));
@@ -3293,15 +3314,22 @@ html {
                                 const visible = this.detailChartSeriesVisibility || {};
                                 const lines = [date];
                                 if (visible.value !== false) lines.push(`總市值：${this.formatChartNumber(item.value)} 元`);
-                                if (visible.cost !== false) lines.push(`持有部位成本：${this.formatChartNumber(item.cost)} 元`);
-                                if (visible.avgCost !== false && this.detailChartLayer === 'accounting') lines.push(`平均持有成本（含手續費）：${item.avgCost === null || !Number.isFinite(item.avgCost) ? '—' : `${item.avgCost.toFixed(4)} 元／股`}`);
-                                if (visible.avgPrice !== false && this.detailChartLayer === 'price') lines.push(`平均買進價格（不含費用）：${item.avgPrice === null || !Number.isFinite(item.avgPrice) ? '—' : `${item.avgPrice.toFixed(4)} 元／股`}`);
-                                if (visible.profit !== false) lines.push(`累積總損益：${this.formatChartNumber(item.profit)} 元`);
-                                if (visible.unrealized !== false) lines.push(`未實現損益：${this.formatChartNumber(this.detailChartLayer === 'price' ? item.unrealizedProfit : item.bookUnrealizedProfit)} 元`);
-                                if (visible.unrealizedROI !== false) {
-                                    const roiValue = this.detailChartLayer === 'price' ? item.unrealizedROI : item.bookUnrealizedROI;
-                                    const roiText = roiValue === null || !Number.isFinite(roiValue) ? '—' : `${roiValue > 0 ? '+' : ''}${roiValue.toFixed(2)}%`;
-                                    lines.push(`未實現報酬率：${roiText}`);
+                                if (this.detailChartLayer === 'price') {
+                                    if (visible.avgPrice !== false) lines.push(`平均投入價：${item.avgPrice === null || !Number.isFinite(item.avgPrice) ? '—' : `${item.avgPrice.toFixed(4)} 元／股`}`);
+                                    if (visible.unrealized !== false) lines.push(`累積價差損益：${this.formatChartNumber(item.unrealizedProfit)} 元`);
+                                    if (visible.unrealizedROI !== false) {
+                                        const roiText = item.unrealizedROI === null || !Number.isFinite(item.unrealizedROI) ? '—' : `${item.unrealizedROI > 0 ? '+' : ''}${item.unrealizedROI.toFixed(2)}%`;
+                                        lines.push(`累積價差報酬率：${roiText}`);
+                                    }
+                                } else {
+                                    if (visible.cost !== false) lines.push(`目前持有成本：${this.formatChartNumber(item.cost)} 元`);
+                                    if (visible.avgCost !== false) lines.push(`平均持有成本（含手續費）：${item.avgCost === null || !Number.isFinite(item.avgCost) ? '—' : `${item.avgCost.toFixed(4)} 元／股`}`);
+                                    if (visible.profit !== false) lines.push(`累積總損益：${this.formatChartNumber(item.profit)} 元`);
+                                    if (visible.unrealized !== false) lines.push(`未實現損益（含費用）：${this.formatChartNumber(item.bookUnrealizedProfit)} 元`);
+                                    if (visible.unrealizedROI !== false) {
+                                        const roiText = item.bookUnrealizedROI === null || !Number.isFinite(item.bookUnrealizedROI) ? '—' : `${item.bookUnrealizedROI > 0 ? '+' : ''}${item.bookUnrealizedROI.toFixed(2)}%`;
+                                        lines.push(`未實現報酬率（含費用）：${roiText}`);
+                                    }
                                 }
                                 return lines.length > 1 ? lines.join('\n') : `${date}\n目前未選擇顯示曲線`;
                             });
@@ -3324,26 +3352,27 @@ html {
                        ========================================================= */
                     getHomeETFInfo(code, priceObj) {
                         const etf = this.etfs[code];
-                        if (!etf) return { shares:0, marketValue:0, currentCost:0, bookCost:0, unrealizedProfit:0, bookUnrealizedProfit:0, unrealizedROI:null, bookUnrealizedROI:null, realizedProfit:0, dividendGross:0, dividendFees:0, dividendNet:0, sellNetProceeds:0, cumulativeBuyIn:0, cumulativeProfit:0, profit:0, price:0 };
+                        if (!etf) return { shares:0, marketValue:0, currentCost:0, netInvested:0, bookCost:0, unrealizedProfit:0, bookUnrealizedProfit:0, unrealizedROI:null, bookUnrealizedROI:null, realizedProfit:0, dividendGross:0, dividendFees:0, dividendNet:0, sellNetProceeds:0, cumulativeBuyIn:0, cumulativeProfit:0, profit:0, price:0 };
                         const price = Math.max(0, Number(priceObj?.price) || 0);
                         let shares = Math.max(0, Number(etf.baseShares) || 0);
-                        let priceCost = shares * (Number(etf.baseAvgCost) || 0), bookCost = priceCost;
+                        let priceCost = shares * (Number(etf.baseAvgCost) || 0), netInvested = priceCost, bookCost = priceCost;
                         let cumulativeBuyIn = bookCost, realizedProfit = 0, dividendGross = 0, dividendFees = 0, sellNetProceeds = 0;
                         [...(etf.transactions || [])].sort((a,b)=>new Date(a.date)-new Date(b.date)).forEach(t => {
                             const q = Math.max(0, Number(t.shares)||0), amount = Number(t.amount)||0;
-                            if (t.action === 'buy') { priceCost += amount; bookCost += amount + this.transactionCommission(t); shares += q; cumulativeBuyIn += amount + this.transactionCommission(t); }
-                            else if (t.action === 'sync') { priceCost += amount; bookCost += amount; shares = Math.max(0, shares + (Number(t.shares)||0)); }
+                            if (t.action === 'buy') { priceCost += amount; netInvested += amount; bookCost += amount + this.transactionCommission(t); shares += q; cumulativeBuyIn += amount + this.transactionCommission(t); }
+                            else if (t.action === 'sync') { priceCost += amount; netInvested += amount; bookCost += amount; shares = Math.max(0, shares + (Number(t.shares)||0)); }
                             else if (t.action === 'stock_dividend') shares += q;
                             else if (t.action === 'sell' || t.action === 'withdraw') {
-                                const sold = Math.min(shares,q), pAvg = shares>0?priceCost/shares:0, bAvg=shares>0?bookCost/shares:0;
+                                const sold = Math.min(shares,q), priceAvg=shares>0?priceCost/shares:0, bAvg=shares>0?bookCost/shares:0;
                                 const proceeds=this.transactionNetCashIn(t); realizedProfit += proceeds-sold*bAvg; sellNetProceeds += proceeds;
-                                priceCost -= sold*pAvg; bookCost -= sold*bAvg; shares=Math.max(0,shares-sold);
+                                // currentCost 保留原本目前持有成本算法；netInvested 則按賣出成交額抵減。
+                                priceCost -= sold*priceAvg; netInvested -= amount; bookCost -= sold*bAvg; shares=Math.max(0,shares-sold);
                             } else if (t.action === 'dividend') { dividendGross += amount; dividendFees += this.transactionWireFee(t); }
                         });
-                        const marketValue=Math.round(shares*price), currentCost=Math.round(shares>0?priceCost:0), bookCostNow=Math.round(shares>0?bookCost:0);
-                        const unrealizedProfit=marketValue-currentCost, bookUnrealizedProfit=marketValue-bookCostNow;
+                        const marketValue=Math.round(shares*price), currentCost=Math.round(shares>0?priceCost:0), netInvestedAmount=Math.round(netInvested), bookCostNow=Math.round(shares>0?bookCost:0);
+                        const unrealizedProfit=marketValue-netInvestedAmount, bookUnrealizedProfit=marketValue-bookCostNow;
                         const dividendNet=dividendGross-dividendFees, cumulativeProfit=Math.round(realizedProfit+bookUnrealizedProfit+dividendNet);
-                        return { shares, marketValue, currentCost, bookCost:bookCostNow, avgPrice:shares>0?priceCost/shares:0, avgCost:shares>0?bookCost/shares:0, unrealizedProfit, bookUnrealizedProfit, unrealizedROI:currentCost>0?(unrealizedProfit/currentCost)*100:null, bookUnrealizedROI:bookCostNow>0?(bookUnrealizedProfit/bookCostNow)*100:null, realizedProfit:Math.round(realizedProfit), dividendGross:Math.round(dividendGross), dividendFees:Math.round(dividendFees), dividendNet:Math.round(dividendNet), sellNetProceeds:Math.round(sellNetProceeds), cumulativeBuyIn:Math.round(cumulativeBuyIn), cumulativeProfit, profit:cumulativeProfit, price };
+                        return { shares, marketValue, currentCost, netInvested:netInvestedAmount, bookCost:bookCostNow, avgPrice:shares>0?netInvested/shares:0, avgCost:shares>0?bookCost/shares:0, unrealizedProfit, bookUnrealizedProfit, unrealizedROI:netInvestedAmount>0?(unrealizedProfit/netInvestedAmount)*100:null, bookUnrealizedROI:bookCostNow>0?(bookUnrealizedProfit/bookCostNow)*100:null, realizedProfit:Math.round(realizedProfit), dividendGross:Math.round(dividendGross), dividendFees:Math.round(dividendFees), dividendNet:Math.round(dividendNet), sellNetProceeds:Math.round(sellNetProceeds), cumulativeBuyIn:Math.round(cumulativeBuyIn), cumulativeProfit, profit:cumulativeProfit, price };
                     },
 
                     get totalNetWorth() {
@@ -3893,8 +3922,9 @@ html {
                     // 取得目前的庫存總結狀態
                     get inventoryState() {
                         let shares = Math.max(0, Number(this.baseShares) || 0);
-                        // 舊版既有庫存只有一個均價，無法回溯拆分手續費；以原始均價同時作為兩種成本的起點，不臆測扣除費用。
+                        // priceCost 保留原本「目前仍持有部位成本」算法；netInvested 專供第一層平均投入價與價差績效使用。
                         let priceCost = shares * (Number(this.baseAvgCost) || 0);
+                        let netInvested = priceCost;
                         let bookCost = priceCost;
                         let cumulativeBuyIn = priceCost;
                         let realizedProfit = 0, dividendGross = 0, dividendFees = 0, sellNetProceeds = 0;
@@ -3903,11 +3933,12 @@ html {
                             if (t.action === 'buy') {
                                 const priceAddition = amt;
                                 const bookAddition = amt + this.transactionCommission(t); // ETF 買進不計證交稅
-                                priceCost += priceAddition; bookCost += bookAddition;
+                                priceCost += priceAddition; netInvested += priceAddition; bookCost += bookAddition;
                                 shares += s; cumulativeBuyIn += bookAddition;
                             } else if (t.action === 'sync') {
-                                // 調帳金額作為成本修正，同步調整兩種成本，不列入買進投入或現金流。
-                                priceCost += amt; bookCost += amt; shares = Math.max(0, shares + (Number(t.shares) || 0));
+                                // 調帳是成本修正，不列入實際買賣現金流；兩種第一層成本值同步調整。
+                                priceCost += amt; netInvested += amt; bookCost += amt;
+                                shares = Math.max(0, shares + (Number(t.shares) || 0));
                             } else if (t.action === 'stock_dividend') {
                                 shares += s;
                             } else if (t.action === 'sell' || t.action === 'withdraw') {
@@ -3917,19 +3948,25 @@ html {
                                 const netProceeds = this.transactionNetCashIn(t);
                                 realizedProfit += netProceeds - soldShares * bookAvg;
                                 sellNetProceeds += netProceeds;
-                                priceCost -= soldShares * priceAvg; bookCost -= soldShares * bookAvg;
+                                // 保留原本目前持有成本算法：依賣出股數比例移除成本。
+                                priceCost -= soldShares * priceAvg;
+                                // 新的平均投入價算法：用賣出成交總額抵減累計淨投入本金，不含賣出費用與稅。
+                                netInvested -= amt;
+                                // 第二層依賣出股數比例移除含買進手續費的成本。
+                                bookCost -= soldShares * bookAvg;
                                 shares = Math.max(0, shares - soldShares);
                             } else if (t.action === 'dividend') {
                                 dividendGross += amt; dividendFees += this.transactionWireFee(t);
                             }
                         });
-                        const avgPrice = shares > 0 ? priceCost / shares : 0;
+                        const avgPrice = shares > 0 ? netInvested / shares : 0;
                         const avgCost = shares > 0 ? bookCost / shares : 0;
-                        return { shares, avgPrice, avgCost, priceCost: Math.round(priceCost), totalCost: Math.round(bookCost), cumulativeBuyIn: Math.round(cumulativeBuyIn), realizedProfit: Math.round(realizedProfit), dividendGross: Math.round(dividendGross), dividendFees: Math.round(dividendFees), dividendNet: Math.round(dividendGross-dividendFees), sellNetProceeds: Math.round(sellNetProceeds) };
+                        return { shares, avgPrice, avgCost, priceCost: Math.round(priceCost), netInvested: Math.round(netInvested), totalCost: Math.round(bookCost), cumulativeBuyIn: Math.round(cumulativeBuyIn), realizedProfit: Math.round(realizedProfit), dividendGross: Math.round(dividendGross), dividendFees: Math.round(dividendFees), dividendNet: Math.round(dividendGross-dividendFees), sellNetProceeds: Math.round(sellNetProceeds) };
                     },
 
                     get currentTotalShares() { return this.inventoryState.shares; },
                     get currentTotalCost() { return this.inventoryState.priceCost; },
+                    get currentNetInvested() { return this.inventoryState.netInvested; },
                     get currentAvgPrice() { return this.currentTotalShares > 0 ? Number(this.inventoryState.avgPrice.toFixed(4)) : 0; },
                     get currentBookCost() { return this.inventoryState.totalCost; },
                     get currentBookAvgCost() { return this.currentTotalShares > 0 ? Number(this.inventoryState.avgCost.toFixed(4)) : 0; },
@@ -3944,9 +3981,9 @@ html {
                     get totalCashIn() { return this.transactions.reduce((sum, t) => sum + this.transactionNetCashIn(t), 0); },
                     get totalWithdrawn() { return this.transactions.filter(t => t.action === 'withdraw').reduce((sum, t) => sum + this.transactionNetCashIn(t), 0); },
                     get marketValueNum() { return this.currentPrice <= 0 ? 0 : Math.round(this.currentTotalShares * this.currentPrice); },
-                    get unrealizedProfit() { return Math.round(this.marketValueNum - this.currentTotalCost); },
-                    get unrealizedROI() { return this.currentTotalCost > 0 ? ((this.unrealizedProfit / this.currentTotalCost) * 100).toFixed(2) : null; },
-                    get profit() { return Math.round(this.realizedProfit + this.unrealizedProfit + this.dividendNet); },
+                    get unrealizedProfit() { return Math.round(this.marketValueNum - this.currentNetInvested); },
+                    get unrealizedROI() { return this.currentNetInvested > 0 ? ((this.unrealizedProfit / this.currentNetInvested) * 100).toFixed(2) : null; },
+                    get profit() { return Math.round(this.realizedProfit + (this.marketValueNum - this.currentBookCost) + this.dividendNet); },
                     get roi() { return this.cumulativeBuyIn <= 0 ? null : ((this.profit / this.cumulativeBuyIn) * 100).toFixed(2); },
 
                     get dailyProfit() { if (!this.prevClose || this.currentPrice <= 0) return 0; return Math.round(this.currentTotalShares * (this.currentPrice - this.prevClose)); },
@@ -4859,7 +4896,7 @@ html {
                                 <div class="rounded-xl bg-slate-50 p-3"><div class="text-xs font-bold text-slate-500">累計賣出淨收回</div><div class="text-lg font-black text-slate-800 mt-1" x-text="formatMoney(totalGlobalSellNet) + ' 元'"></div></div>
                                 <div class="rounded-xl bg-slate-50 p-3"><div class="text-xs font-bold text-slate-500">配息總額／匯費</div><div class="text-lg font-black text-slate-800 mt-1" x-text="formatMoney(totalGlobalDividendGross) + '／' + formatMoney(totalGlobalDividendFees) + ' 元'"></div></div>
                             </div>
-                            <p class="text-xs leading-relaxed text-slate-500 mt-3">這裡才彙整過去賣出及配息成果。累積總損益＝已實現損益＋目前未實現損益＋累積配息淨收入；調帳不視為實際買賣或現金流。</p>
+                            <p class="text-xs leading-relaxed text-slate-500 mt-3">完整帳務的累積總損益＝已實現損益＋目前未實現損益＋累積配息淨收入；調帳不視為實際買賣或現金流。</p>
                         </div>
                     </details>
                 </div>
@@ -4881,7 +4918,7 @@ html {
                     </div>
 
                     <div class="bg-blue-50/50 border border-blue-100 rounded-xl p-3 mb-4 text-sm text-slate-600 leading-relaxed">
-                        💡 <strong>提示：</strong>本圖表依各檔 ETF 的「交易明細」與「歷史股價」逐日計算。下方可自行選擇要顯示的曲線，第一層呈現不含費用的價格績效；第二層納入買進手續費、賣出費用及配息，報酬率使用獨立百分比刻度。
+                        💡 <strong>提示：</strong>本圖表依各檔 ETF 的「交易明細」與「歷史股價」逐日計算。下方可自行選擇要顯示的曲線，第一層以買進成交總額減去賣出成交總額計算累積價差，不含手續費與證交稅；第二層納入實際交易費用及配息，報酬率使用獨立百分比刻度。
                     </div>
 
                     <div x-show="homeChartMode === 'total'" class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-3">
@@ -4890,26 +4927,49 @@ html {
                             <span class="text-[11px] font-semibold text-slate-400">點選項目即可顯示／隱藏</span>
                         </div>
                         <div class="flex flex-wrap gap-2 text-xs sm:text-sm font-bold">
-                            <button type="button" @click="toggleHomeChartSeries('value')" :aria-pressed="homeChartSeriesVisibility.value" :class="homeChartSeriesVisibility.value ? 'border-blue-200 bg-blue-50 text-blue-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
+                            <button type="button" @click="toggleHomeChartSeries('value')" :aria-pressed="homeChartSeriesVisibility.value !== false" :class="homeChartSeriesVisibility.value !== false ? 'border-blue-200 bg-blue-50 text-blue-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
                                 <span class="h-2.5 w-2.5 rounded-full bg-blue-500"></span>總市值
-                                <i class="fa-solid text-[10px]" :class="homeChartSeriesVisibility.value ? 'fa-eye' : 'fa-eye-slash'"></i>
+                                <i class="fa-solid text-[10px]" :class="homeChartSeriesVisibility.value !== false ? 'fa-eye' : 'fa-eye-slash'"></i>
                             </button>
-                            <button type="button" @click="toggleHomeChartSeries('cost')" :aria-pressed="homeChartSeriesVisibility.cost" :class="homeChartSeriesVisibility.cost ? 'border-amber-200 bg-amber-50 text-amber-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
-                                <span class="h-0.5 w-3.5 border-t-2 border-dashed border-amber-500"></span>持有部位成本
-                                <i class="fa-solid text-[10px]" :class="homeChartSeriesVisibility.cost ? 'fa-eye' : 'fa-eye-slash'"></i>
+                            <button x-show="homeChartLayer === 'price'" type="button" @click="toggleHomeChartSeries('unrealized')" :aria-pressed="homeChartSeriesVisibility.unrealized !== false" :class="homeChartSeriesVisibility.unrealized !== false ? 'border-violet-200 bg-violet-50 text-violet-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
+                                <span class="h-0.5 w-3.5 border-t-2 border-violet-500"></span>累積價差損益
+                                <i class="fa-solid text-[10px]" :class="homeChartSeriesVisibility.unrealized !== false ? 'fa-eye' : 'fa-eye-slash'"></i>
                             </button>
-                            <button type="button" @click="toggleHomeChartSeries('profit')" :aria-pressed="homeChartSeriesVisibility.profit" :class="homeChartSeriesVisibility.profit ? 'border-violet-200 bg-violet-50 text-violet-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
+                            <button x-show="homeChartLayer === 'price'" type="button" @click="toggleHomeChartSeries('unrealizedROI')" :aria-pressed="homeChartSeriesVisibility.unrealizedROI !== false" :class="homeChartSeriesVisibility.unrealizedROI !== false ? 'border-pink-200 bg-pink-50 text-pink-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
+                                <span class="h-0.5 w-3.5 border-t-2 border-dashed border-pink-500"></span>累積價差報酬率
+                                <i class="fa-solid text-[10px]" :class="homeChartSeriesVisibility.unrealizedROI !== false ? 'fa-eye' : 'fa-eye-slash'"></i>
+                            </button>
+                            <button x-show="homeChartLayer === 'accounting'" type="button" @click="toggleHomeChartSeries('cost')" :aria-pressed="homeChartSeriesVisibility.cost !== false" :class="homeChartSeriesVisibility.cost !== false ? 'border-amber-200 bg-amber-50 text-amber-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
+                                <span class="h-0.5 w-3.5 border-t-2 border-dashed border-amber-500"></span>目前持有成本
+                                <i class="fa-solid text-[10px]" :class="homeChartSeriesVisibility.cost !== false ? 'fa-eye' : 'fa-eye-slash'"></i>
+                            </button>
+                            <button x-show="homeChartLayer === 'accounting'" type="button" @click="toggleHomeChartSeries('profit')" :aria-pressed="homeChartSeriesVisibility.profit !== false" :class="homeChartSeriesVisibility.profit !== false ? 'border-violet-200 bg-violet-50 text-violet-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
                                 <span class="h-0.5 w-3.5 border-t-2 border-violet-500"></span>累積總損益
-                                <i class="fa-solid text-[10px]" :class="homeChartSeriesVisibility.profit ? 'fa-eye' : 'fa-eye-slash'"></i>
+                                <i class="fa-solid text-[10px]" :class="homeChartSeriesVisibility.profit !== false ? 'fa-eye' : 'fa-eye-slash'"></i>
                             </button>
-                            <button type="button" @click="toggleHomeChartSeries('unrealized')" :aria-pressed="homeChartSeriesVisibility.unrealized" :class="homeChartSeriesVisibility.unrealized ? 'border-emerald-200 bg-emerald-50 text-emerald-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
+                            <button x-show="homeChartLayer === 'accounting'" type="button" @click="toggleHomeChartSeries('unrealized')" :aria-pressed="homeChartSeriesVisibility.unrealized !== false" :class="homeChartSeriesVisibility.unrealized !== false ? 'border-emerald-200 bg-emerald-50 text-emerald-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
                                 <span class="h-0.5 w-3.5 border-t-2 border-emerald-500"></span>未實現損益
-                                <i class="fa-solid text-[10px]" :class="homeChartSeriesVisibility.unrealized ? 'fa-eye' : 'fa-eye-slash'"></i>
+                                <i class="fa-solid text-[10px]" :class="homeChartSeriesVisibility.unrealized !== false ? 'fa-eye' : 'fa-eye-slash'"></i>
                             </button>
-                            <button type="button" @click="toggleHomeChartSeries('unrealizedROI')" :aria-pressed="homeChartSeriesVisibility.unrealizedROI" :class="homeChartSeriesVisibility.unrealizedROI ? 'border-pink-200 bg-pink-50 text-pink-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
+                            <button x-show="homeChartLayer === 'accounting'" type="button" @click="toggleHomeChartSeries('unrealizedROI')" :aria-pressed="homeChartSeriesVisibility.unrealizedROI !== false" :class="homeChartSeriesVisibility.unrealizedROI !== false ? 'border-pink-200 bg-pink-50 text-pink-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
                                 <span class="h-0.5 w-3.5 border-t-2 border-dashed border-pink-500"></span>未實現報酬率
-                                <i class="fa-solid text-[10px]" :class="homeChartSeriesVisibility.unrealizedROI ? 'fa-eye' : 'fa-eye-slash'"></i>
+                                <i class="fa-solid text-[10px]" :class="homeChartSeriesVisibility.unrealizedROI !== false ? 'fa-eye' : 'fa-eye-slash'"></i>
                             </button>
+                        </div>
+                    </div>
+                    <div x-show="homeChartMode === 'stacked'" x-cloak class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-3">
+                        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                            <span class="text-xs font-black tracking-wide text-slate-500">ETF 曲線顯示</span>
+                            <span class="text-[11px] font-semibold text-slate-400">每檔 ETF 可個別顯示／隱藏</span>
+                        </div>
+                        <div class="flex flex-wrap gap-2 text-xs sm:text-sm font-bold">
+                            <template x-for="(code, index) in Object.keys(etfs)" :key="code">
+                                <button type="button" @click="toggleHomeChartSeries('etf:' + code)" :aria-pressed="homeChartSeriesVisibility['etf:' + code] !== false" :class="homeChartSeriesVisibility['etf:' + code] !== false ? 'border-slate-300 bg-white text-slate-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
+                                    <span class="h-2.5 w-2.5 rounded-full" :style="'background-color:' + ['#3b82f6','#10b981','#f59e0b','#8b5cf6','#ec4899','#0ea5e9'][index % 6]"></span>
+                                    <span x-text="code"></span>
+                                    <i class="fa-solid text-[10px]" :class="homeChartSeriesVisibility['etf:' + code] !== false ? 'fa-eye' : 'fa-eye-slash'"></i>
+                                </button>
+                            </template>
                         </div>
                     </div>
                     <div class="flex flex-wrap gap-1.5 mb-4">
@@ -4964,11 +5024,12 @@ html {
                                 <div class="text-sm text-slate-500 font-bold mb-1">目前持有市值</div>
                                 <div class="font-black text-slate-800 text-2xl tracking-tight" x-text="formatMoney(getHomeETFInfo(code, homePrices[code]).marketValue)"></div>
                                 <div class="text-xs text-slate-400 font-semibold mt-1" x-text="'持有成本 ' + formatMoney(getHomeETFInfo(code, homePrices[code]).currentCost) + ' 元'"></div>
+                                <div class="text-xs text-slate-400 font-semibold mt-1" x-text="'淨投入本金 ' + formatMoney(getHomeETFInfo(code, homePrices[code]).netInvested) + ' 元'"></div>
                             </div>
                             <div>
-                                <div class="text-sm text-slate-500 font-bold mb-1">未實現損益</div>
+                                <div class="text-sm text-slate-500 font-bold mb-1">累積價差損益</div>
                                 <div class="font-black text-2xl tracking-tight" :class="getHomeETFInfo(code, homePrices[code]).unrealizedProfit >= 0 ? 'text-red-500' : 'text-green-500'" x-text="(getHomeETFInfo(code, homePrices[code]).unrealizedProfit > 0 ? '+ ' : (getHomeETFInfo(code, homePrices[code]).unrealizedProfit < 0 ? '- ' : '')) + formatMoney(Math.abs(getHomeETFInfo(code, homePrices[code]).unrealizedProfit))"></div>
-                                <div class="text-xs text-slate-400 font-semibold mt-1" x-text="getHomeETFInfo(code, homePrices[code]).unrealizedROI !== null ? getHomeETFInfo(code, homePrices[code]).unrealizedROI.toFixed(2) + '% 報酬率' : '尚無持有成本'"></div>
+                                <div class="text-xs text-slate-400 font-semibold mt-1" x-text="getHomeETFInfo(code, homePrices[code]).unrealizedROI !== null ? getHomeETFInfo(code, homePrices[code]).unrealizedROI.toFixed(2) + '% 報酬率' : '尚無可計算的淨投入本金'"></div>
                             </div>
                         </div>
                     </div>
@@ -5140,8 +5201,8 @@ html {
       <div class="text-4xl sm:text-5xl font-black text-slate-800 tracking-tight" x-text="currentTotalShares > 0 ? formatMoney(currentTotalShares) : '0'"></div>
     </div>
     <div class="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-center transition-all hover:shadow-md">
-      <div class="text-base sm:text-lg font-bold text-slate-500 mb-2">目前持股平均成交價 (不含費用)</div>
-      <div class="text-4xl sm:text-5xl font-black text-slate-800 tracking-tight" x-text="currentAvgPrice > 0 ? currentAvgPrice : '0'"></div>
+      <div class="text-base sm:text-lg font-bold text-slate-500 mb-2">平均投入價</div>
+      <div class="text-4xl sm:text-5xl font-black text-slate-800 tracking-tight" x-text="currentTotalShares > 0 ? currentAvgPrice : '0'"></div>
     </div>
     <div class="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col hover:-translate-y-0.5 transition-all">
       <div class="p-3 sm:p-4 flex-1 flex flex-col justify-center border-b border-slate-100">
@@ -5153,18 +5214,18 @@ html {
         </div>
       </div>
       <div class="p-3 sm:p-4 flex-1 flex flex-col justify-center bg-slate-50/50 rounded-b-2xl">
-        <div class="text-base sm:text-lg font-bold text-slate-500 mb-1">目前持有價格成本（不含費用） (元)</div>
-        <div class="text-3xl sm:text-4xl font-black text-slate-800 tracking-tight" x-text="currentTotalCost > 0 ? formatMoney(currentTotalCost) : '0'"></div>
+        <div class="text-base sm:text-lg font-bold text-slate-500 mb-1">目前持有部位成本（元）</div>
+        <div class="text-3xl sm:text-4xl font-black text-slate-800 tracking-tight" x-text="formatMoney(currentTotalCost)"></div>
       </div>
     </div>
     <div class="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col hover:-translate-y-0.5 transition-all">
       <div class="p-3 sm:p-4 flex-1 flex flex-col justify-center border-b border-slate-100">
-        <div class="text-base sm:text-lg font-bold text-slate-500 mb-1">未實現損益 (元)</div>
+        <div class="text-base sm:text-lg font-bold text-slate-500 mb-1">累積價差損益（元）</div>
         <div class="text-3xl sm:text-4xl font-black tracking-tight" :class="unrealizedProfit >= 0 ? 'text-red-500' : 'text-green-500'" x-text="unrealizedProfit > 0 ? '+ ' + formatMoney(unrealizedProfit) : (unrealizedProfit < 0 ? '- ' + formatMoney(Math.abs(unrealizedProfit)) : '0')"></div>
       </div>
       <div class="p-3 sm:p-4 flex-1 grid grid-cols-2 bg-slate-50/50 rounded-b-2xl items-center justify-center divide-x divide-slate-200">
         <div class="flex flex-col items-center justify-center text-center px-1 min-w-0">
-          <span class="font-bold text-slate-500 text-xs sm:text-sm mb-0.5 whitespace-nowrap">未實現報酬率</span>
+          <span class="font-bold text-slate-500 text-xs sm:text-sm mb-0.5 whitespace-nowrap">累積價差報酬率</span>
           <span class="text-lg sm:text-xl font-black tracking-tighter" :class="unrealizedProfit >= 0 ? 'text-red-600' : 'text-green-600'" x-text="unrealizedROI !== null ? ((unrealizedProfit > 0 ? '+' : '') + unrealizedROI + '%') : '—'"></span>
         </div>
         <div class="flex flex-col items-center justify-center text-center px-1 min-w-0">
@@ -5314,31 +5375,30 @@ html {
               <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
                   <div><h3 class="text-xl font-black text-slate-800 flex items-center gap-2"><i class="fa-solid fa-chart-area text-blue-500"></i> 個別 ETF 持股績效趨勢</h3><div class="mt-2 inline-flex rounded-lg bg-slate-100 p-1"><button @click="detailChartLayer='price'; renderDetailPerformanceChart()" class="rounded-md px-3 py-1.5 text-xs font-bold" :class="detailChartLayer==='price'?'bg-white text-blue-700 shadow':'text-slate-500'">第一層｜價格績效</button><button @click="detailChartLayer='accounting'; renderDetailPerformanceChart()" class="rounded-md px-3 py-1.5 text-xs font-bold" :class="detailChartLayer==='accounting'?'bg-white text-blue-700 shadow':'text-slate-500'">第二層｜完整帳務</button></div></div>
               </div>
-              <div class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-3">
+              <div x-show="detailChartLayer === 'price'" class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-3">
                   <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-                      <span class="text-xs font-black tracking-wide text-slate-500">曲線顯示（可同時選擇多條）</span>
+                      <span class="text-xs font-black tracking-wide text-slate-500">第一層曲線顯示（可同時選擇多條）</span>
                       <span class="text-[11px] font-semibold text-slate-400">點選項目即可顯示／隱藏</span>
                   </div>
                   <div class="flex flex-wrap gap-2 text-xs sm:text-sm font-bold">
-                      <button type="button" @click="toggleDetailChartSeries('value')" :aria-pressed="detailChartSeriesVisibility.value" :class="detailChartSeriesVisibility.value ? 'border-blue-200 bg-blue-50 text-blue-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
-                          <span class="h-2.5 w-2.5 rounded-full bg-blue-500"></span>總市值 <i class="fa-solid text-[10px]" :class="detailChartSeriesVisibility.value ? 'fa-eye' : 'fa-eye-slash'"></i>
-                      </button>
-                      <button type="button" @click="toggleDetailChartSeries('cost')" :aria-pressed="detailChartSeriesVisibility.cost" :class="detailChartSeriesVisibility.cost ? 'border-amber-200 bg-amber-50 text-amber-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
-                          <span class="h-0.5 w-3.5 border-t-2 border-dashed border-amber-500"></span>持有部位成本 <i class="fa-solid text-[10px]" :class="detailChartSeriesVisibility.cost ? 'fa-eye' : 'fa-eye-slash'"></i>
-                      </button>
-                      <button type="button" @click="toggleDetailChartSeries('avgPrice')" :aria-pressed="detailChartSeriesVisibility.avgPrice" :class="detailChartSeriesVisibility.avgPrice ? 'border-cyan-200 bg-cyan-50 text-cyan-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px"><span class="h-0.5 w-3.5 border-t-2 border-cyan-500"></span>平均買進價格（不含費用） <i class="fa-solid text-[10px]" :class="detailChartSeriesVisibility.avgPrice ? 'fa-eye' : 'fa-eye-slash'"></i></button>
-                      <button type="button" @click="toggleDetailChartSeries('avgCost')" :aria-pressed="detailChartSeriesVisibility.avgCost" :class="detailChartSeriesVisibility.avgCost ? 'border-cyan-200 bg-cyan-50 text-cyan-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
-                          <span class="h-0.5 w-3.5 border-t-2 border-cyan-500"></span>平均成本（每股） <i class="fa-solid text-[10px]" :class="detailChartSeriesVisibility.avgCost ? 'fa-eye' : 'fa-eye-slash'"></i>
-                      </button>
-                      <button type="button" @click="toggleDetailChartSeries('profit')" :aria-pressed="detailChartSeriesVisibility.profit" :class="detailChartSeriesVisibility.profit ? 'border-violet-200 bg-violet-50 text-violet-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
-                          <span class="h-0.5 w-3.5 border-t-2 border-violet-500"></span>累積總損益 <i class="fa-solid text-[10px]" :class="detailChartSeriesVisibility.profit ? 'fa-eye' : 'fa-eye-slash'"></i>
-                      </button>
-                      <button type="button" @click="toggleDetailChartSeries('unrealized')" :aria-pressed="detailChartSeriesVisibility.unrealized" :class="detailChartSeriesVisibility.unrealized ? 'border-emerald-200 bg-emerald-50 text-emerald-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
-                          <span class="h-0.5 w-3.5 border-t-2 border-emerald-500"></span>未實現損益 <i class="fa-solid text-[10px]" :class="detailChartSeriesVisibility.unrealized ? 'fa-eye' : 'fa-eye-slash'"></i>
-                      </button>
-                      <button type="button" @click="toggleDetailChartSeries('unrealizedROI')" :aria-pressed="detailChartSeriesVisibility.unrealizedROI" :class="detailChartSeriesVisibility.unrealizedROI ? 'border-pink-200 bg-pink-50 text-pink-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
-                          <span class="h-0.5 w-3.5 border-t-2 border-dashed border-pink-500"></span>未實現報酬率 <i class="fa-solid text-[10px]" :class="detailChartSeriesVisibility.unrealizedROI ? 'fa-eye' : 'fa-eye-slash'"></i>
-                      </button>
+                      <button type="button" @click="toggleDetailChartSeries('value')" :aria-pressed="detailChartSeriesVisibility.value !== false" :class="detailChartSeriesVisibility.value !== false ? 'border-blue-200 bg-blue-50 text-blue-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition"><span class="h-2.5 w-2.5 rounded-full bg-blue-500"></span>總市值 <i class="fa-solid text-[10px]" :class="detailChartSeriesVisibility.value !== false ? 'fa-eye' : 'fa-eye-slash'"></i></button>
+                      <button type="button" @click="toggleDetailChartSeries('avgPrice')" :aria-pressed="detailChartSeriesVisibility.avgPrice !== false" :class="detailChartSeriesVisibility.avgPrice !== false ? 'border-cyan-200 bg-cyan-50 text-cyan-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition"><span class="h-0.5 w-3.5 border-t-2 border-cyan-500"></span>平均投入價 <i class="fa-solid text-[10px]" :class="detailChartSeriesVisibility.avgPrice !== false ? 'fa-eye' : 'fa-eye-slash'"></i></button>
+                      <button type="button" @click="toggleDetailChartSeries('unrealized')" :aria-pressed="detailChartSeriesVisibility.unrealized !== false" :class="detailChartSeriesVisibility.unrealized !== false ? 'border-violet-200 bg-violet-50 text-violet-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition"><span class="h-0.5 w-3.5 border-t-2 border-violet-500"></span>累積價差損益 <i class="fa-solid text-[10px]" :class="detailChartSeriesVisibility.unrealized !== false ? 'fa-eye' : 'fa-eye-slash'"></i></button>
+                      <button type="button" @click="toggleDetailChartSeries('unrealizedROI')" :aria-pressed="detailChartSeriesVisibility.unrealizedROI !== false" :class="detailChartSeriesVisibility.unrealizedROI !== false ? 'border-pink-200 bg-pink-50 text-pink-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition"><span class="h-0.5 w-3.5 border-t-2 border-dashed border-pink-500"></span>累積價差報酬率 <i class="fa-solid text-[10px]" :class="detailChartSeriesVisibility.unrealizedROI !== false ? 'fa-eye' : 'fa-eye-slash'"></i></button>
+                  </div>
+              </div>
+              <div x-show="detailChartLayer === 'accounting'" class="mb-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-3">
+                  <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                      <span class="text-xs font-black tracking-wide text-slate-500">第二層曲線顯示（可同時選擇多條）</span>
+                      <span class="text-[11px] font-semibold text-slate-400">點選項目即可顯示／隱藏</span>
+                  </div>
+                  <div class="flex flex-wrap gap-2 text-xs sm:text-sm font-bold">
+                      <button type="button" @click="toggleDetailChartSeries('value')" :aria-pressed="detailChartSeriesVisibility.value !== false" :class="detailChartSeriesVisibility.value !== false ? 'border-blue-200 bg-blue-50 text-blue-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition"><span class="h-2.5 w-2.5 rounded-full bg-blue-500"></span>總市值 <i class="fa-solid text-[10px]" :class="detailChartSeriesVisibility.value !== false ? 'fa-eye' : 'fa-eye-slash'"></i></button>
+                      <button type="button" @click="toggleDetailChartSeries('cost')" :aria-pressed="detailChartSeriesVisibility.cost !== false" :class="detailChartSeriesVisibility.cost !== false ? 'border-amber-200 bg-amber-50 text-amber-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition"><span class="h-0.5 w-3.5 border-t-2 border-dashed border-amber-500"></span>目前持有成本 <i class="fa-solid text-[10px]" :class="detailChartSeriesVisibility.cost !== false ? 'fa-eye' : 'fa-eye-slash'"></i></button>
+                      <button type="button" @click="toggleDetailChartSeries('avgCost')" :aria-pressed="detailChartSeriesVisibility.avgCost !== false" :class="detailChartSeriesVisibility.avgCost !== false ? 'border-cyan-200 bg-cyan-50 text-cyan-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition"><span class="h-0.5 w-3.5 border-t-2 border-cyan-500"></span>平均持有成本 <i class="fa-solid text-[10px]" :class="detailChartSeriesVisibility.avgCost !== false ? 'fa-eye' : 'fa-eye-slash'"></i></button>
+                      <button type="button" @click="toggleDetailChartSeries('profit')" :aria-pressed="detailChartSeriesVisibility.profit !== false" :class="detailChartSeriesVisibility.profit !== false ? 'border-violet-200 bg-violet-50 text-violet-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition"><span class="h-0.5 w-3.5 border-t-2 border-violet-500"></span>累積總損益 <i class="fa-solid text-[10px]" :class="detailChartSeriesVisibility.profit !== false ? 'fa-eye' : 'fa-eye-slash'"></i></button>
+                      <button type="button" @click="toggleDetailChartSeries('unrealized')" :aria-pressed="detailChartSeriesVisibility.unrealized !== false" :class="detailChartSeriesVisibility.unrealized !== false ? 'border-emerald-200 bg-emerald-50 text-emerald-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition"><span class="h-0.5 w-3.5 border-t-2 border-emerald-500"></span>未實現損益 <i class="fa-solid text-[10px]" :class="detailChartSeriesVisibility.unrealized !== false ? 'fa-eye' : 'fa-eye-slash'"></i></button>
+                      <button type="button" @click="toggleDetailChartSeries('unrealizedROI')" :aria-pressed="detailChartSeriesVisibility.unrealizedROI !== false" :class="detailChartSeriesVisibility.unrealizedROI !== false ? 'border-pink-200 bg-pink-50 text-pink-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition"><span class="h-0.5 w-3.5 border-t-2 border-dashed border-pink-500"></span>未實現報酬率 <i class="fa-solid text-[10px]" :class="detailChartSeriesVisibility.unrealizedROI !== false ? 'fa-eye' : 'fa-eye-slash'"></i></button>
                   </div>
               </div>
               <div class="flex flex-wrap gap-1.5 mb-4">
@@ -6021,7 +6081,10 @@ html {
                       <button type="button" @click="openTransactionEditor(txn.id)" class="w-full text-left bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200 shadow-sm hover:border-blue-300 hover:shadow-md transition-all focus:outline-none focus:ring-2 focus:ring-blue-300">
                         <div class="flex items-center justify-between gap-3 mb-3">
                           <span class="font-bold text-slate-700" x-text="txn.date || '日期未設定'"></span>
-                          <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs sm:text-sm font-black shrink-0" :class="transactionActionClass(txn.action)" x-text="transactionActionName(txn.action)"></span>
+                          <div class="inline-flex items-center gap-1.5 shrink-0">
+                            <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs sm:text-sm font-black" :class="transactionActionClass(txn.action)" x-text="transactionActionName(txn.action)"></span>
+                            <span x-show="isRecurringPurchase(txn)" x-cloak class="inline-flex items-center rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-xs sm:text-sm font-black text-blue-700">定期定額</span>
+                          </div>
                         </div>
                         <div class="grid grid-cols-3 gap-2">
                           <div class="min-w-0">
