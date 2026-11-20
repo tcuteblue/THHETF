@@ -3037,7 +3037,7 @@ html {
                                 const costSeries = chart.addLineSeries({ lastValueVisible: false, color: '#f59e0b', lineWidth: 2, lineStyle: 2, title: '目前持有成本（含買進手續費）', priceScaleId: 'right' });
                                 const profitSeries = chart.addLineSeries({ lastValueVisible: false, color: '#8b5cf6', lineWidth: 2, title: '累積總損益', priceScaleId: 'left' });
                                 const unrealizedSeries = chart.addLineSeries({ lastValueVisible: false, color: '#10b981', lineWidth: 2, title: '未實現損益（含費用）', priceScaleId: 'left' });
-                                const avgPriceSeries = chart.addLineSeries({ lastValueVisible: false, color: '#06b6d4', lineWidth: 2, title: '平均單價（不含費用）', priceScaleId: 'avgcost', priceFormat: { type: 'custom', minMove: 0.0001, formatter: value => `${Number(value).toFixed(4)}` } });
+                                const avgPriceSeries = chart.addLineSeries({ lastValueVisible: false, color: '#06b6d4', lineWidth: 2, title: '平均單價（不含費用）', priceScaleId: 'avgcost', priceFormat: { type: 'custom', minMove: 0.01, formatter: value => `${Number(value).toFixed(2)}` } });
                             const roiSeries = chart.addLineSeries({ lastValueVisible: false, color: '#ec4899', lineWidth: 2, lineStyle: 2, title: '未實現損益率（含費用）', priceScaleId: 'roi', priceFormat: { type: 'custom', minMove: 0.01, formatter: value => `${Number(value).toFixed(2)}%` } });
                                 valueSeries.setData(filteredData.map(d=>({time:d.time,value:d.value}))); costSeries.setData(filteredData.map(d=>({time:d.time,value:d.cost}))); profitSeries.setData(filteredData.map(d=>({time:d.time,value:d.profit}))); unrealizedSeries.setData(filteredData.map(d=>({time:d.time,value:d.bookUnrealizedProfit}))); roiSeries.setData(filteredData.filter(d=>d.bookUnrealizedROI!==null).map(d=>({time:d.time,value:d.bookUnrealizedROI})));
                                 this.homeChartSeries = { value:valueSeries, cost:costSeries, profit:profitSeries, unrealized:unrealizedSeries, unrealizedROI:roiSeries };
@@ -3309,7 +3309,7 @@ html {
                                 color: '#06b6d4', lineWidth: 2, title: '平均成本（含買進手續費）', priceScaleId: 'avgcost',
                                 priceFormat: { type: 'custom', minMove: 0.01, formatter: value => `${Number(value).toFixed(2)}` }
                             });
-                            const avgPriceSeries = chart.addLineSeries({ lastValueVisible: false, color: '#06b6d4', lineWidth: 2, title: '平均單價（不含費用）', priceScaleId: 'avgcost', priceFormat: { type: 'custom', minMove: 0.0001, formatter: value => `${Number(value).toFixed(4)}` } });
+                            const avgPriceSeries = chart.addLineSeries({ lastValueVisible: false, color: '#06b6d4', lineWidth: 2, title: '平均單價（不含費用）', priceScaleId: 'avgcost', priceFormat: { type: 'custom', minMove: 0.01, formatter: value => `${Number(value).toFixed(2)}` } });
                             const roiSeries = chart.addLineSeries({ lastValueVisible: false,
                                 color: '#ec4899', lineWidth: 2, lineStyle: 2, title: '未實現損益率', priceScaleId: 'roi',
                                 priceFormat: { type: 'custom', minMove: 0.01, formatter: value => `${Number(value).toFixed(2)}%` }
@@ -3338,7 +3338,7 @@ html {
                                 if (visible.value !== false) lines.push(`總市值：${this.formatChartNumber(item.value)} 元`);
                                 if (visible.cost !== false) lines.push(`持有部位成本：${this.formatChartNumber(item.cost)} 元`);
                                 if (visible.avgCost !== false && this.detailChartLayer === 'accounting') lines.push(`平均持有成本（含手續費）：${item.avgCost === null || !Number.isFinite(item.avgCost) ? '—' : `${item.avgCost.toFixed(4)} 元／股`}`);
-                                if (visible.avgPrice !== false && this.detailChartLayer === 'price') lines.push(`平均單價（不含費用）：${item.avgPrice === null || !Number.isFinite(item.avgPrice) ? '—' : `${item.avgPrice.toFixed(4)} 元／股`}`);
+                                if (visible.avgPrice !== false && this.detailChartLayer === 'price') lines.push(`平均單價（不含費用）：${item.avgPrice === null || !Number.isFinite(item.avgPrice) ? '—' : `${item.avgPrice.toFixed(2)} 元／股`}`);
                                 if (visible.profit !== false) lines.push(`累積總損益：${this.formatChartNumber(item.profit)} 元`);
                                 if (visible.unrealized !== false) lines.push(`未實現損益：${this.formatChartNumber(this.detailChartLayer === 'price' ? item.unrealizedProfit : item.bookUnrealizedProfit)} 元`);
                                 if (visible.unrealizedROI !== false) {
@@ -4911,10 +4911,10 @@ html {
                         </div>
                     </div>
 
-                    <details class="mt-4 rounded-2xl border border-white/20 bg-white/95 text-slate-700 shadow-lg overflow-hidden">
-                        <summary class="cursor-pointer list-none px-4 py-3.5 flex items-center justify-between gap-3 font-black text-slate-700 hover:bg-white transition">
-                            <span class="flex items-center gap-2"><i class="fa-solid fa-chart-column text-blue-600"></i> 完整投資歷程與損益分析</span>
-                            <span class="text-xs sm:text-sm font-bold text-slate-400">點擊展開 <i class="fa-solid fa-chevron-down ml-1"></i></span>
+                    <details class="mt-4 rounded-2xl border border-blue-200 bg-white/95 text-slate-700 shadow-lg overflow-hidden">
+                        <summary class="group relative cursor-pointer list-none px-4 py-3.5 flex items-center justify-center gap-3 bg-blue-50/70 text-base sm:text-lg font-bold text-blue-700 hover:bg-blue-100 active:bg-blue-100 transition-all">
+                            <span class="flex items-center justify-center gap-2 text-center"><i class="fa-solid fa-chart-column text-blue-600"></i>完整投資歷程與損益分析</span>
+                            <i class="fa-solid fa-chevron-down absolute right-4 text-sm text-blue-500 transition-transform group-open:rotate-180"></i>
                         </summary>
                         <div class="px-4 pb-4 pt-1 border-t border-slate-100">
                             <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
@@ -5209,15 +5209,15 @@ html {
     </div>
     <div class="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-center transition-all hover:shadow-md">
       <div class="text-base sm:text-lg font-bold text-slate-500 mb-2">平均單價(元)</div>
-      <div class="text-4xl sm:text-5xl font-black text-slate-800 tracking-tight" x-text="currentAvgPrice > 0 ? currentAvgPrice : '0'"></div>
+      <div class="text-4xl sm:text-5xl font-black text-slate-800 tracking-tight" x-text="currentAvgPrice > 0 ? currentAvgPrice.toFixed(2) : '0.00'"></div>
     </div>
     <div class="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col hover:-translate-y-0.5 transition-all">
       <div class="p-3 sm:p-4 flex-1 flex flex-col justify-center border-b border-slate-100">
         <div class="text-base sm:text-lg font-bold text-slate-500 mb-1">目前市值(元)</div>
         <div class="text-3xl sm:text-4xl font-black text-blue-600 tracking-tight" x-text="marketValueNum > 0 ? formatMoney(marketValueNum) : '0'"></div>
-        <div class="mt-1.5 flex items-center justify-start gap-1 text-sm sm:text-base font-bold text-slate-500 whitespace-nowrap overflow-hidden">
-          <span class="shrink-0">總投資配置比重：</span>
-          <span x-text="totalNetWorth > 0 ? ((marketValueNum / totalNetWorth) * 100).toFixed(2) : '0.00'"></span> %
+        <div class="mt-1.5 flex flex-wrap items-center justify-start gap-x-1 gap-y-0.5 text-xs sm:text-sm font-bold text-slate-500 leading-snug min-w-0">
+          <span>總投資配置比重：</span>
+          <span class="inline-flex items-center whitespace-nowrap" ><span x-text="totalNetWorth > 0 ? ((marketValueNum / totalNetWorth) * 100).toFixed(2) : '0.00'"></span>%</span>
         </div>
       </div>
       <div class="p-3 sm:p-4 flex-1 flex flex-col justify-center bg-slate-50/50 rounded-b-2xl">
@@ -5239,10 +5239,10 @@ html {
     </div>
   </div>
 
-  <details class="mb-6 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-    <summary class="cursor-pointer list-none px-4 py-3.5 flex items-center justify-between gap-3 font-black text-slate-700 hover:bg-slate-50">
-      <span class="flex items-center gap-2"><i class="fa-solid fa-clock-rotate-left text-blue-600"></i> 完整投資歷程與損益分析</span>
-      <span class="text-xs sm:text-sm text-slate-400">點擊展開 <i class="fa-solid fa-chevron-down ml-1"></i></span>
+  <details class="mb-6 bg-white rounded-2xl border border-blue-200 shadow-sm overflow-hidden">
+    <summary class="group relative cursor-pointer list-none px-4 py-3.5 flex items-center justify-center gap-3 bg-blue-50/70 text-base sm:text-lg font-bold text-blue-700 hover:bg-blue-100 active:bg-blue-100 transition-all">
+      <span class="flex items-center justify-center gap-2 text-center"><i class="fa-solid fa-clock-rotate-left text-blue-600"></i>完整投資歷程與損益分析</span>
+      <i class="fa-solid fa-chevron-down absolute right-4 text-sm text-blue-500 transition-transform group-open:rotate-180"></i>
     </summary>
     <div class="border-t border-slate-100 p-4">
       <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
