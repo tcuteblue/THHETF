@@ -739,6 +739,7 @@ html {
                     baseRetirementMV: 0, baseRetirementDate: '', swrRate: 4.0, customLockDate: '',
                     manualAction: 'buy', manualAmount: null, manualDate: '', manualPrice: null, manualShares: null,
                     isFullscreenHistory: false, expandedYears: [new Date().getFullYear().toString()],
+                    isTransactionMultiSelect: false, selectedTransactionIds: [],
                     showTransactionEditor: false,
                     transactionEditorMode: 'add',
                     transactionDraftPreviousAction: 'buy',
@@ -804,7 +805,8 @@ html {
                 
                     /* === 彈出視窗控制變數 === */
                     showMsgBox: false, msgBoxText: '', reloadOnClose: false,
-                    showConfirmBox: false, confirmBoxText: '', pendingDeleteId: null, pendingDeleteType: '',
+                    showConfirmBox: false, confirmBoxText: '', pendingDeleteId: null, pendingDeleteIds: [], pendingDeleteType: '',
+                    pendingBatchRecurringValue: null,
                     showAddETFModal: false, newETFCode: '',
                     showInfoBox: false, infoBoxTitle: '', infoBoxContent: '', showSWRBox: false,
                     isIOS: false, isStandalone: false, showIOSInstallDialog: false, deferredPrompt: null,
@@ -2275,6 +2277,8 @@ html {
 
                     // 交易明細在清單中唯讀；只有開啟編輯視窗並按下儲存才會修改正式資料。
                     openNewTransactionEditor() {
+                        this.isTransactionMultiSelect = false;
+                        this.selectedTransactionIds = [];
                         this.transactionEditorMode = 'add';
                         this.transactionDraftPreviousAction = 'buy';
                         this.editingTransactionId = null;
@@ -3550,6 +3554,7 @@ html {
 
                     goToDetail(code) {
                         try { history.pushState({ view: 'detail', code: code }, '', ''); } catch (e) {}
+                        this.isTransactionMultiSelect = false; this.selectedTransactionIds = [];
                         this.activeETF = code; let data = this.etfs[code];
                         this.baseShares = data.baseShares || 0; this.baseAvgCost = data.baseAvgCost || 0; this.startDate = data.startDate || '';
                         this.lastCheckDate = data.lastCheckDate || new Date().getTime(); this.investmentPlans = data.investmentPlans || []; this.skippedAutoOccurrences = Array.isArray(data.skippedAutoOccurrences) ? data.skippedAutoOccurrences : [];
@@ -3574,7 +3579,7 @@ html {
                     },
 
                     goHome() { 
-                        this.saveData(false); this.currentView = 'home'; this.activeETF = null; 
+                        this.saveData(false); this.isTransactionMultiSelect = false; this.selectedTransactionIds = []; this.currentView = 'home'; this.activeETF = null; 
                         window.scrollTo({ top: 0, behavior: 'smooth' }); this.fetchHomePrices(); 
                     },
                     
@@ -4624,6 +4629,65 @@ html {
                         return arr;
                     },
 
+                    // 交易明細多選：所有統計只計入目前 ETF 中實際勾選的買進交易。
+                    get selectedTransactions() {
+                        const ids = new Set((this.selectedTransactionIds || []).map(String));
+                        return (this.transactions || []).filter(t => t && t.id != null && ids.has(String(t.id)));
+                    },
+                    get selectedTransactionCount() { return this.selectedTransactions.length; },
+                    get selectedBuyTransactions() { return this.selectedTransactions.filter(t => t.action === 'buy'); },
+                    get selectedBuyCount() { return this.selectedBuyTransactions.length; },
+                    get selectedBuyGrossAmount() {
+                        return this.selectedBuyTransactions.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+                    },
+                    get selectedBuyActualAmount() {
+                        return this.selectedBuyTransactions.reduce((sum, t) => sum + (Number(this.transactionActualAmount(t)) || 0), 0);
+                    },
+                    get selectedBuyShares() {
+                        return this.selectedBuyTransactions.reduce((sum, t) => sum + (Number(t.shares) || 0), 0);
+                    },
+                    toggleTransactionMultiSelect() {
+                        this.isTransactionMultiSelect = !this.isTransactionMultiSelect;
+                        this.selectedTransactionIds = [];
+                    },
+                    isTransactionSelected(id) {
+                        return id != null && (this.selectedTransactionIds || []).includes(String(id));
+                    },
+                    toggleTransactionSelection(id) {
+                        if (id == null) return;
+                        const key = String(id);
+                        const ids = new Set((this.selectedTransactionIds || []).map(String));
+                        if (ids.has(key)) ids.delete(key); else ids.add(key);
+                        this.selectedTransactionIds = Array.from(ids);
+                    },
+                    selectAllTransactions() {
+                        this.selectedTransactionIds = (this.transactions || []).filter(t => t && t.id != null).map(t => String(t.id));
+                    },
+                    clearTransactionSelection() { this.selectedTransactionIds = []; },
+                    requestBatchRecurringChange(value) {
+                        const selected = this.selectedTransactions;
+                        const buyRows = selected.filter(t => t.action === 'buy');
+                        if (!selected.length) return this.showMsg('請先勾選要批次修改的交易明細。');
+                        if (!buyRows.length) return this.showMsg('定投標記只適用於買進交易；目前選取的明細沒有買進交易。');
+                        const desired = !!value;
+                        const changedCount = buyRows.filter(t => this.isRecurringTransaction(t) !== desired).length;
+                        if (!changedCount) return this.showMsg(desired ? '選取的買進交易都已標記為定投，沒有需要修改的資料。' : '選取的買進交易都已取消定投標記，沒有需要修改的資料。');
+                        this.pendingBatchRecurringValue = desired;
+                        this.pendingDeleteType = 'batchRecurring';
+                        const skipped = selected.length - buyRows.length;
+                        this.confirmBoxText = `確定將 ${changedCount} 筆買進交易${desired ? '標記為定投' : '取消定投標記'}嗎？${skipped ? `\n另有 ${skipped} 筆非買進交易不會修改。` : ''}\n只有定投標記會變更，交易金額、股數及費用都會保留。`;
+                        this.showConfirmBox = true;
+                    },
+                    requestBatchDeleteTransactions() {
+                        const selected = this.selectedTransactions;
+                        if (!selected.length) return this.showMsg('請先勾選要刪除的交易明細。');
+                        this.pendingDeleteIds = selected.map(t => String(t.id));
+                        const autoCount = selected.filter(t => t && (t.autoOccurrenceKey || t.autoPlanId != null || t.type === 'auto')).length;
+                        this.pendingDeleteType = 'selected';
+                        this.confirmBoxText = `⚠️ 確定要永久刪除已選取的 ${selected.length} 筆交易明細嗎？${autoCount ? `\n其中 ${autoCount} 筆為自動扣款紀錄，刪除後該次計畫會標記為已取消，不會自動補回。` : ''}\n刪除後會重新計算庫存股數、成本及損益，且無法復原。`;
+                        this.showConfirmBox = true;
+                    },
+
                     addTransaction() { this.openNewTransactionEditor(); },
 
                     /* =========================================================
@@ -4691,8 +4755,40 @@ html {
                             this.transactions = this.transactions.filter(t => t.id !== this.pendingDeleteId);
                             delete this.transactionSavedSnapshot[String(this.pendingDeleteId)];
                             this.showTransactionEditor = false;
+                            this.selectedTransactionIds = (this.selectedTransactionIds || []).filter(id => String(id) !== String(this.pendingDeleteId));
                             this.saveData(this.transactions.length !== priorCount);
-                        } 
+                        }
+                        else if (this.pendingDeleteType === 'batchRecurring') {
+                            const desired = !!this.pendingBatchRecurringValue;
+                            const targets = this.selectedTransactions.filter(t => t.action === 'buy');
+                            let changed = 0;
+                            targets.forEach(txn => {
+                                if (this.isRecurringTransaction(txn) !== desired) {
+                                    txn.isRecurring = desired;
+                                    changed++;
+                                    this.transactionSavedSnapshot[String(txn.id)] = JSON.parse(JSON.stringify(txn));
+                                }
+                            });
+                            if (changed) this.saveData(true);
+                            const skipped = this.selectedTransactions.length - targets.length;
+                            this.pendingBatchRecurringValue = null;
+                            this.showMsg(`✅ 已${desired ? '標記' : '取消'} ${changed} 筆買進交易的定投狀態。${skipped ? `\n另有 ${skipped} 筆非買進交易已略過。` : ''}${changed ? '' : '\n資料沒有變更。'}`);
+                        }
+                        else if (this.pendingDeleteType === 'selected') {
+                            const ids = new Set((this.pendingDeleteIds || []).map(String));
+                            const removed = this.transactions.filter(t => t && t.id != null && ids.has(String(t.id)));
+                            const removedIds = new Set(removed.map(t => String(t.id)));
+                            this.suppressDeletedAutoOccurrences(removed);
+                            this.transactions = this.transactions.filter(t => !t || t.id == null || !removedIds.has(String(t.id)));
+                            removedIds.forEach(id => { delete this.transactionSavedSnapshot[id]; });
+                            this.selectedTransactionIds = [];
+                            this.isTransactionMultiSelect = false;
+                            this.pendingDeleteIds = [];
+                            this.saveData(removed.length > 0);
+                            this.showMsg(removed.length
+                                ? `🗑️ 已批次刪除 ${removed.length} 筆交易明細。\n系統已重新計算庫存股數、成本及損益。`
+                                : '找不到原先選取的交易明細，沒有刪除任何資料。');
+                        }
                         else if (this.pendingDeleteType === 'all') { 
                             const hadTransactions = this.transactions.length > 0;
                             this.suppressDeletedAutoOccurrences(this.transactions);
@@ -4784,7 +4880,7 @@ html {
                     closeInfoBox() { this.showInfoBox = false; },
                     showMsg(text, reload = false) { this.msgBoxText = text; this.reloadOnClose = reload; this.showMsgBox = true; },
                     closeMsgBox() { this.showMsgBox = false; if (this.reloadOnClose) window.location.reload(); },
-                    closeConfirmBox() { this.showConfirmBox = false; this.pendingDeleteId = null; this.pendingDeleteType = ''; this.pendingDeleteFrom = ''; this.pendingDeleteTo = ''; },
+                    closeConfirmBox() { this.showConfirmBox = false; this.pendingDeleteId = null; this.pendingDeleteIds = []; this.pendingBatchRecurringValue = null; this.pendingDeleteType = ''; this.pendingDeleteFrom = ''; this.pendingDeleteTo = ''; },
                     formatMoney(num) { return isNaN(num) || num == null ? '0' : Number(num).toLocaleString('zh-TW', { maximumFractionDigits: 0 }); },
                     formatPriceTimestamp(timestamp) {
                         const d = new Date(Number(timestamp));
@@ -6053,7 +6149,8 @@ html {
           <span class="text-sm font-bold text-slate-400 bg-white px-3 py-1.5 rounded shadow-sm border" x-text="'共 ' + transactions.length + ' 筆'"></span>
         </h3>
 
-        <p class="text-sm font-bold text-blue-600 mb-4 bg-blue-50 p-3 rounded-xl border border-blue-100"><i class="fa-solid fa-circle-info mr-1"></i>明細清單為唯讀摘要。點擊單筆交易才可編輯或刪除；修改內容需按「儲存」才會生效。</p>
+        <p x-show="!isTransactionMultiSelect" class="text-sm font-bold text-blue-600 mb-4 bg-blue-50 p-3 rounded-xl border border-blue-100"><i class="fa-solid fa-circle-info mr-1"></i>明細清單為唯讀摘要。點擊單筆交易可編輯或刪除；修改內容需按「儲存」才會生效。需要統計或批次管理時，請開啟右上方「多選」。</p>
+        <p x-show="isTransactionMultiSelect" x-cloak class="text-sm font-bold text-indigo-700 mb-4 bg-indigo-50 p-3 rounded-xl border border-indigo-100"><i class="fa-solid fa-list-check mr-1"></i>多選模式：點擊交易卡片或勾選框選取明細。可統計所選買進金額與股數、批次修改定投標記，或批次刪除；不會批次修改交易日期、金額或股數。</p>
 
 
         <div :class="isFullscreenHistory ? 'fixed inset-0 z-[110] bg-slate-50 flex flex-col pb-0' : 'relative mt-2'">
@@ -6062,9 +6159,46 @@ html {
             <div class="flex justify-between items-center mb-3 shrink-0" :class="isFullscreenHistory ? 'pt-[env(safe-area-inset-top,0.5rem)]' : ''">
               <h3 x-show="isFullscreenHistory" class="font-black text-slate-800 text-lg flex items-center gap-2" x-cloak><i class="fa-solid fa-list-check text-blue-500"></i> 交易明細清單</h3>
               <div x-show="!isFullscreenHistory"></div>
-              <button @click="isFullscreenHistory = !isFullscreenHistory; $nextTick(() => { const list = document.getElementById('txnList'); if(list) list.scrollTop = list.scrollHeight; });" class="px-3 py-1.5 bg-slate-800 text-white text-sm font-bold rounded-lg shadow-sm hover:bg-slate-700 transition flex items-center gap-1.5">
-                <i class="fa-solid" :class="isFullscreenHistory ? 'fa-compress' : 'fa-expand'"></i><span x-text="isFullscreenHistory ? '收合列表' : '展開列表'"></span>
-              </button>
+              <div class="flex items-center gap-2">
+                <button @click="toggleTransactionMultiSelect()" class="px-3 py-1.5 text-sm font-bold rounded-lg shadow-sm transition flex items-center gap-1.5" :class="isTransactionMultiSelect ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-white text-blue-700 border border-blue-200 hover:bg-blue-50'">
+                  <i class="fa-solid" :class="isTransactionMultiSelect ? 'fa-check' : 'fa-list-check'"></i><span x-text="isTransactionMultiSelect ? '完成多選' : '多選' "></span>
+                </button>
+                <button @click="isFullscreenHistory = !isFullscreenHistory; $nextTick(() => { const list = document.getElementById('txnList'); if(list) list.scrollTop = list.scrollHeight; });" class="px-3 py-1.5 bg-slate-800 text-white text-sm font-bold rounded-lg shadow-sm hover:bg-slate-700 transition flex items-center gap-1.5">
+                  <i class="fa-solid" :class="isFullscreenHistory ? 'fa-compress' : 'fa-expand'"></i><span x-text="isFullscreenHistory ? '收合列表' : '展開列表'"></span>
+                </button>
+              </div>
+            </div>
+
+            <div x-show="isTransactionMultiSelect" x-cloak class="mb-3 shrink-0 rounded-xl border border-blue-200 bg-blue-50 p-3 space-y-3">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div class="font-black text-blue-900" x-text="'已選取 ' + selectedTransactionCount + ' 筆明細' "></div>
+                  <div class="text-xs text-blue-700 mt-0.5">金額與股數統計只計入已選取的買進交易</div>
+                </div>
+                <div class="flex gap-2">
+                  <button type="button" @click="selectAllTransactions()" class="px-3 py-1.5 rounded-lg bg-white border border-blue-200 text-blue-700 text-xs sm:text-sm font-bold hover:bg-blue-100">全選明細</button>
+                  <button type="button" @click="clearTransactionSelection()" class="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 text-xs sm:text-sm font-bold hover:bg-slate-100">清除選取</button>
+                </div>
+              </div>
+              <div class="grid grid-cols-3 gap-2">
+                <div class="rounded-lg bg-white/90 border border-blue-100 p-2 min-w-0">
+                  <div class="text-[11px] sm:text-xs text-slate-500">買進成交金額</div>
+                  <div class="font-black text-slate-900 text-sm sm:text-base tabular-nums break-words" x-text="formatMoney(selectedBuyGrossAmount) + ' 元'"></div>
+                </div>
+                <div class="rounded-lg bg-white/90 border border-blue-100 p-2 min-w-0">
+                  <div class="text-[11px] sm:text-xs text-slate-500">實際買進支出</div>
+                  <div class="font-black text-blue-800 text-sm sm:text-base tabular-nums break-words" x-text="formatMoney(selectedBuyActualAmount) + ' 元'"></div>
+                </div>
+                <div class="rounded-lg bg-white/90 border border-blue-100 p-2 min-w-0">
+                  <div class="text-[11px] sm:text-xs text-slate-500">買進股數合計</div>
+                  <div class="font-black text-slate-900 text-sm sm:text-base tabular-nums break-words" x-text="formatMoney(selectedBuyShares) + ' 股'"></div>
+                </div>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <button type="button" @click="requestBatchRecurringChange(true)" :disabled="selectedBuyCount === 0" class="rounded-lg bg-indigo-600 px-3 py-2.5 text-sm font-black text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"><i class="fa-solid fa-repeat mr-1"></i>批次標記定投</button>
+                <button type="button" @click="requestBatchRecurringChange(false)" :disabled="selectedBuyCount === 0" class="rounded-lg bg-white border border-indigo-200 px-3 py-2.5 text-sm font-black text-indigo-700 hover:bg-indigo-50 disabled:opacity-40 disabled:cursor-not-allowed"><i class="fa-solid fa-rotate-left mr-1"></i>批次取消定投</button>
+                <button type="button" @click="requestBatchDeleteTransactions()" :disabled="selectedTransactionCount === 0" class="rounded-lg bg-red-600 px-3 py-2.5 text-sm font-black text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed"><i class="fa-solid fa-trash-can mr-1"></i>批次刪除</button>
+              </div>
             </div>
 
             <div id="txnList" class="space-y-4 overflow-y-auto pr-2 custom-scrollbar bg-slate-100/50 p-3 rounded-xl border border-slate-200/60 shadow-inner" :class="isFullscreenHistory ? 'flex-1 min-h-0' : 'max-h-[500px]'">
@@ -6085,9 +6219,14 @@ html {
 
                   <div x-show="expandedYears.includes(group.year)" x-transition class="mt-3 space-y-3 pl-2 sm:pl-4 border-l-2 border-indigo-100 ml-4">
                     <template x-for="txn in group.txns" :key="txn.id">
-                      <button type="button" @click="openTransactionEditor(txn.id)" class="w-full text-left bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200 shadow-sm hover:border-blue-300 hover:shadow-md transition-all focus:outline-none focus:ring-2 focus:ring-blue-300">
+                      <div role="button" tabindex="0" @click="isTransactionMultiSelect ? toggleTransactionSelection(txn.id) : openTransactionEditor(txn.id)" @keydown.enter.prevent="isTransactionMultiSelect ? toggleTransactionSelection(txn.id) : openTransactionEditor(txn.id)" @keydown.space.prevent="isTransactionMultiSelect ? toggleTransactionSelection(txn.id) : openTransactionEditor(txn.id)" :aria-pressed="isTransactionMultiSelect ? isTransactionSelected(txn.id) : null" class="w-full text-left p-3.5 sm:p-4 rounded-xl border shadow-sm hover:border-blue-300 hover:shadow-md transition-all focus:outline-none focus:ring-2 focus:ring-blue-300 cursor-pointer" :class="isTransactionMultiSelect && isTransactionSelected(txn.id) ? 'border-blue-400 bg-blue-50/70 ring-2 ring-blue-100' : 'border-slate-200 bg-white'">
                         <div class="flex items-center justify-between gap-3 mb-3">
-                          <span class="font-bold text-slate-700" x-text="txn.date || '日期未設定'"></span>
+                          <div class="flex items-center gap-2 min-w-0">
+                            <span x-show="isTransactionMultiSelect" x-cloak class="shrink-0 flex items-center justify-center">
+                              <input type="checkbox" :checked="isTransactionSelected(txn.id)" @click.stop @change.stop="toggleTransactionSelection(txn.id)" class="h-5 w-5 rounded border-blue-300 text-blue-600 focus:ring-blue-500">
+                            </span>
+                            <span class="font-bold text-slate-700" x-text="txn.date || '日期未設定'"></span>
+                          </div>
                           <span class="flex items-center gap-1.5 shrink-0">
                             <span x-show="isRecurringTransaction(txn)" class="inline-flex items-center rounded-full border border-indigo-100 bg-indigo-50 px-2 py-1 text-xs font-black text-indigo-700">定投</span>
                             <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs sm:text-sm font-black" :class="transactionActionClass(txn.action)">
@@ -6113,8 +6252,8 @@ html {
                             <div class="font-black text-slate-800 tabular-nums break-words" x-text="transactionActualAmount(txn) === null ? '—' : formatMoney(transactionActualAmount(txn))"></div>
                           </div>
                         </div>
-                        <div class="mt-2 flex justify-end text-xs text-slate-400"><i class="fa-regular fa-pen-to-square mr-1"></i>點擊查看／編輯</div>
-                      </button>
+                        <div class="mt-2 flex justify-end text-xs" :class="isTransactionMultiSelect ? 'text-blue-600 font-bold' : 'text-slate-400'"><i class="fa-solid mr-1" :class="isTransactionMultiSelect ? 'fa-check-circle' : 'fa-pen-to-square'"></i><span x-text="isTransactionMultiSelect ? (isTransactionSelected(txn.id) ? '已選取' : '點擊勾選') : '點擊查看／編輯'"></span></div>
+                      </div>
                     </template>
                   </div>
                 </div>
