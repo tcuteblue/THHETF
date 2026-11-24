@@ -555,7 +555,7 @@ html {
                 </div>
                 <div class="space-y-4">
                     <div>
-                        <label class="mb-1.5 block text-sm font-bold text-slate-600">日期</label>
+                        <label class="mb-1.5 block text-sm font-bold text-slate-600" x-text="transactionDraft.action === 'dividend' ? '配息發放日（依投信公告）' : (transactionDraft.action === 'withdraw' ? '賣出成交日' : '交易日期')"></label>
                         <input type="date" x-model="transactionDraft.date" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 font-semibold">
                     </div>
                     <div>
@@ -572,6 +572,14 @@ html {
                     <label x-show="transactionDraft.action === 'buy'" x-cloak class="flex items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2.5 text-sm font-bold text-indigo-800">
                         <input type="checkbox" x-model="transactionDraft.isRecurring" class="h-4 w-4 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500">
                         標示為定期定額
+                    </label>
+                    <label x-show="transactionDraft.action === 'buy'" x-cloak class="flex items-start gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2.5 text-sm font-bold text-emerald-800">
+                        <input type="checkbox" x-model="transactionDraft.dividendReinvestment" class="mt-0.5 h-4 w-4 rounded border-emerald-300 text-emerald-600">
+                        <span>配息再投入（僅抵回尚未補回的超額配息額度）<small class="block font-medium text-emerald-700" x-text="'目前待抵回：' + formatMoney(retirementBudgetLedger.pendingDividendReinvestment || 0) + ' 元；一般單筆加碼不會自動抵回。'"></small></span>
+                    </label>
+                    <label x-show="transactionDraft.action === 'withdraw' && gkStatus.state !== 'unlocked' && gkStatus.state !== 'missing' && (transactionDraft.retirementAdjustment || Math.abs(Number(gkStatus.suggestedMultiplier || 1) - Number(gkStatus.adoptedMultiplier || 1)) > 0.0001)" x-cloak class="flex items-start gap-2 rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2.5 text-sm font-bold text-indigo-800">
+                        <input type="checkbox" x-model="transactionDraft.adoptDynamicAdjustment" class="mt-0.5 h-4 w-4 rounded border-indigo-300 text-indigo-600">
+                        <span>採納本次動態預算建議（下個月生效）<small class="block font-medium text-indigo-700" x-text="'整體目前可用額度：' + formatMoney(retirementBudgetLedger.availableBalance || 0) + ' 元；前期結轉：' + formatMoney(retirementBudgetLedger.currentMonthCarryForward || 0) + ' 元；本月新增預算：' + formatMoney(retirementBudgetLedger.currentMonthBudget || 0) + ' 元；本月已計入提領：' + formatMoney(retirementBudgetLedger.currentMonthUsed || 0) + ' 元；市場訊號建議未來月預算：' + formatMoney(gkStatus.recommendedMonthly || 0) + ' 元。只有這筆提領成功儲存才會記錄採納。'"></small></span>
                     </label>
                     <template x-if="['buy','sell','withdraw'].includes(transactionDraft.action)">
                         <div class="space-y-4">
@@ -613,7 +621,7 @@ html {
                             <div>
                                 <label class="mb-1.5 block text-sm font-bold text-slate-600">匯費（元）</label>
                                 <input type="text" inputmode="numeric" min="0" step="1" x-model="transactionDraft.wireFee" @input="markTransactionDraftFeeManual('wireFee', $event)" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 font-bold">
-                                <p class="mt-1 text-xs text-slate-500">新配息預設 10 元；可依實際入帳調整。</p>
+                                <p class="mt-1 text-xs text-slate-500">新配息預設 10 元；日期請填投信公告的配息發放日，不必查銀行實際入帳日。</p>
                             </div>
                             <div class="rounded-xl bg-emerald-50 p-3 text-emerald-900">
                                 <div class="flex items-center justify-between gap-3"><span class="text-sm font-bold">扣除匯費後的配息收入</span><strong class="text-xl" x-text="formatMoney(Math.max(0, Number(transactionDraft.amount || 0) - Number(transactionDraft.wireFee || 0))) + ' 元'"></strong></div>
@@ -736,10 +744,10 @@ html {
                     showBaseInventoryEditor: false, showInvestmentPlanEditor: false,
                     showClearTransactionsModal: false, clearTransactionsMode: 'range', clearDateFrom: '', clearDateTo: '',
                     pendingDeleteFrom: '', pendingDeleteTo: '', 
-                    baseRetirementMV: 0, baseRetirementDate: '', swrRate: 4.0, customLockDate: '',
+                    baseRetirementMV: 0, baseRetirementDate: '', swrRate: 4.0, customLockDate: '', retirementRateDraft: 4.0, showRetirementBaseEditor: false,
                     manualAction: 'buy', manualAmount: null, manualDate: '', manualPrice: null, manualShares: null,
                     isFullscreenHistory: false, expandedYears: [new Date().getFullYear().toString()],
-                    isTransactionMultiSelect: false, selectedTransactionIds: [],
+                    isTransactionMultiSelect: false, selectedTransactionIds: [], transactionSelectionFilters: [],
                     showTransactionEditor: false,
                     transactionEditorMode: 'add',
                     transactionDraftPreviousAction: 'buy',
@@ -826,7 +834,7 @@ html {
                     // 總覽五條曲線可獨立開關，預設全部顯示；切換範圍或重繪時保留使用者選擇。
                     homeChartSeriesVisibility: { value: true, cost: true, avgPrice: true, profit: true, unrealized: true, unrealizedROI: true }, homeChartSeries: {},
                     showDetailPerformanceChart: false, detailChartLayer: 'price', detailChartRange: '1Y', isDetailChartReady: false, isDetailChartLoading: false, detailTimelineData: [], detailChartInstance: null,
-                    detailChartSeriesVisibility: { value: true, cost: true, avgCost: true, avgPrice: true, profit: true, unrealized: true, unrealizedROI: true }, detailChartSeries: {},
+                    detailChartSeriesVisibility: { shares: true, avgPrice: true, value: true, holdingCost: true, unrealized: true, unrealizedROI: true, cumulativeBuyIn: true, realizedProfit: true, sellNetProceeds: true, dividendGross: true, dividendFees: true, dividendNet: true, profit: true, accountingROI: true, annualizedROI: true }, detailChartSeries: {},
 
                     /* === 價格與技術指標 === */
                     cond_k: false, cond_ma240: false, cond_ma2400: false, cond_pb: false, isBlueLight: false, isPanic: false, cond_cost90: false, cond_cost80: false, cond_discount: false,
@@ -866,18 +874,22 @@ html {
                         this.checkGlobalReminders();
                     },
 
-                    // 產生護欄機制的解說內容
+                    // 產生全帳戶動態提領機制的解說內容
                     showGuardrailsInfo() {
-                        let minRate = (this.swrRate * 0.8).toFixed(1); 
-                        let maxRate = (this.swrRate * 1.2).toFixed(1);
-                        this.showInfo('運作原理與護欄機制', `
-                            <p><strong class="text-indigo-600 text-lg">⭐ 核心概念：護欄機制 (Guardrails)</strong><br>傳統 4% 固定提領在股災時會強迫你在低點賣出大量股票，容易引引發危機。動態提領則是設定提領率的上下限。</p>
-                            <p class="mt-2 text-slate-700">系統會將您的「基準預算」除以「每天最新的總市值」，算出實質提領率 <strong>(${minRate}% ~ ${maxRate}%)</strong>。</p>
+                        const plan = this.ensureRetirementPlan();
+                        const initialRate = Number(plan.initialRate || this.retirementRateDraft || 4);
+                        const minRate = (initialRate * 0.8).toFixed(1);
+                        const maxRate = (initialRate * 1.2).toFixed(1);
+                        this.showInfo('整體動態提領運作原理', `
+                            <p><strong class="text-indigo-600 text-lg">全部 ETF 共用一個退休資產池</strong><br>退休基準以指定日期各 ETF 的歷史持股及當日（或最近前一交易日）收盤價合併計算；目前護欄則以全部 ETF 的最新市值合計判斷。</p>
+                            <p class="mt-2 text-slate-700">初始年提領率 ${initialRate.toFixed(2)}% 保持固定。當整體市值變動使實質年提領率高於 ${maxRate}% 時，系統建議未來月份預算暫減 10%；低於 ${minRate}% 時，建議未來月份預算暫增 10%。</p>
                             <ul class="list-disc pl-5 mt-2 space-y-1 text-slate-600">
-                                <li>若逢大牛市，實質提領率跌破下限 <strong>(${minRate}%)</strong>，系統會亮綠燈，建議您加薪享受生活。</li>
-                                <li>若逢大熊市，實質提領率飆破上限 <strong>(${maxRate}%)</strong>，系統會亮紅燈，建議您減薪共體時艱。</li>
-                            </ul>
-                            <p><strong class="text-indigo-600 text-lg mt-4 block">🛡️ 防禦機制 (極度重要)：</strong><br>退休前務必準備 <strong>2~3 年生活費的現金緩衝墊</strong>。當遇到大股災，帳面重挫且提領率飆高時，絕對不要賣股票，改用這筆現金生活。</p>`
+                                <li>市場訊號只調整未來月份，不回溯修改已過月份的預算。</li>
+                                <li>只有儲存提領交易並勾選採納，調整才會從下個月生效。</li>
+                                <li>未用額度跨月、跨年度累積；超額提領形成負數，後續預算逐步補回。</li>
+                                <li>所有 ETF 配息都計入額度；超額配息須實際買進並標記「配息再投入」才抵回。</li>
+                                <li>系統不限制實際提領金額，僅提醒並照實計算。</li>
+                            </ul>`
                         );
                     },
 
@@ -943,7 +955,9 @@ html {
                     getPriceLayerSnapshot(code, throughDate, marketPrice) {
                         const etf = this.etfs && this.etfs[code];
                         if (!etf) return { shares: 0, cost: 0, realizedProfit: 0, marketValue: 0, cumulativeProfit: 0 };
-                        let shares = Math.max(0, Number(etf.baseShares) || 0);
+                        const baseDate = String(etf.startDate || '');
+                        const includeBaseInventory = !baseDate || baseDate <= throughDate;
+                        let shares = includeBaseInventory ? Math.max(0, Number(etf.baseShares) || 0) : 0;
                         let cost = shares * (Number(etf.baseAvgCost) || 0);
                         let realizedProfit = 0;
                         const rows = (Array.isArray(etf.transactions) ? etf.transactions : [])
@@ -2093,7 +2107,7 @@ html {
                     transactionActualAmount(txn) {
                         if (!txn) return null;
                         const amount = Number(txn.amount) || 0;
-                        if (txn.action === 'buy') return amount + (Number(txn.commission) || 0);
+                        if (txn.action === 'buy') return amount + (Number(txn.commission) || 0) + (Number(txn.tax) || 0);
                         if (txn.action === 'sell' || txn.action === 'withdraw') return amount - (Number(txn.commission) || 0) - (Number(txn.tax) || 0);
                         if (txn.action === 'dividend') return amount - (Number(txn.wireFee) || 0);
                         return null;
@@ -2285,7 +2299,7 @@ html {
                         this.transactionEditorError = '';
                         this.transactionEditorLegacyFees = false;
                         this.transactionEditorFeeManual = { commission: false, wireFee: false, tax: false };
-                        this.transactionDraft = { id: null, date: this.getLocalYMD(), action: 'buy', price: null, shares: null, amount: null, isRecurring: false, commission: 0, wireFee: 0, tax: 0, feePolicyVersion: 2, feeRecordVersion: 2, commissionManual: false, wireFeeManual: false, taxManual: false };
+                        this.transactionDraft = { id: null, date: this.getLocalYMD(), action: 'buy', price: null, shares: null, amount: null, isRecurring: false, dividendReinvestment: false, adoptDynamicAdjustment: false, commission: 0, wireFee: 0, tax: 0, feePolicyVersion: 2, feeRecordVersion: 2, commissionManual: false, wireFeeManual: false, taxManual: false };
                         this.showTransactionEditor = true;
                     },
                     openTransactionEditor(id) {
@@ -2293,6 +2307,8 @@ html {
                         if (!original) return;
                         const draft = JSON.parse(JSON.stringify(original));
                         draft.isRecurring = this.isRecurringTransaction(draft);
+                        draft.dividendReinvestment = draft.action === 'buy' && !!draft.dividendReinvestment;
+                        draft.adoptDynamicAdjustment = draft.action === 'withdraw' && !!draft.retirementAdjustment;
                         draft.commission = Math.max(0, Number(draft.commission) || 0);
                         draft.wireFee = Math.max(0, Number(draft.wireFee) || 0);
                         draft.tax = Math.max(0, Number(draft.tax) || 0);
@@ -2322,6 +2338,9 @@ html {
                         const nextAction = d.action || 'buy';
                         this.transactionDraftPreviousAction = nextAction;
                         if (nextAction !== 'buy') d.isRecurring = false;
+                        if (nextAction !== 'buy') d.dividendReinvestment = false;
+                        if (nextAction === 'withdraw' && previousAction !== 'withdraw') d.adoptDynamicAdjustment = this.shouldAdoptRetirementAdjustment(d.date || this.getLocalYMD());
+                        if (nextAction !== 'withdraw') d.adoptDynamicAdjustment = false;
                         this.transactionEditorError = '';
 
                         // 切換到不同交易類型時，清除不相干欄位，避免把買入總額誤當配息金額。
@@ -2503,8 +2522,46 @@ html {
                             }
                             d.wireFee = 0;
                         }
+                        d.dividendReinvestment = d.action === 'buy' && !!d.dividendReinvestment;
+                        const shouldAdoptDynamicAdjustment = d.action === 'withdraw' && !!d.adoptDynamicAdjustment;
+                        d.adoptDynamicAdjustment = false;
                         const transactionList = this.transactions.filter(t => !(this.transactionEditorMode === 'edit' && t.id === this.editingTransactionId));
                         d.id = this.transactionEditorMode === 'edit' ? this.editingTransactionId : (Date.now() + Math.random());
+                        if (d.action === 'withdraw') {
+                            const plan = this.ensureRetirementPlan();
+                            const month = String(d.date).slice(0, 7);
+                            const existingMonthEvent = this.getRetirementAdjustments().find(e => e.sourceMonth === month && String(e.sourceTransactionId) !== String(d.id));
+                            if (shouldAdoptDynamicAdjustment && plan.baseMarketValue > 0) {
+                                const previousEvent = (d.retirementAdjustment && d.retirementAdjustment.planId === plan.id && d.retirementAdjustment.sourceMonth === month) ? d.retirementAdjustment : null;
+                                if (month !== this.getLocalYMD().slice(0, 7) && !previousEvent) { this.transactionEditorError = '補登過去月份的提領不會採納目前市場訊號，避免回溯改變歷史預算。'; return; }
+                                if (existingMonthEvent) { this.transactionEditorError = `本月已由另一筆提領採納動態調整（${existingMonthEvent.sourceDate}），同一月份不重複採納。`; return; }
+                                const status = this.gkStatus;
+                                const multiplier = previousEvent ? Number(previousEvent.multiplier) : Number(status.suggestedMultiplier || 1);
+                                d.retirementAdjustment = {
+                                    planId: plan.id, sourceMonth: month,
+                                    effectiveFromMonth: this.addRetirementMonths(month, 1),
+                                    multiplier,
+                                    state: previousEvent ? previousEvent.state : status.state,
+                                    annualRate: previousEvent ? previousEvent.annualRate : Number(plan.initialRate || 4) * multiplier,
+                                    monthlyBudget: previousEvent ? previousEvent.monthlyBudget : Math.round(Number(plan.baseMarketValue || 0) * Number(plan.initialRate || 4) / 1200 * multiplier),
+                                    adoptedAt: previousEvent ? previousEvent.adoptedAt : new Date().toISOString()
+                                };
+                            } else {
+                                delete d.retirementAdjustment;
+                            }
+                            const ledgerBefore = this.getRetirementBudgetLedger(this.getLocalYMD());
+                            const activeMultiplier = this.getRetirementMultiplierForMonth(month);
+                            d.retirementBudgetSnapshot = plan.baseMarketValue > 0 ? {
+                                planId: plan.id,
+                                effectiveAnnualRate: Number(plan.initialRate || 4) * activeMultiplier,
+                                monthlyBudget: Math.round(Number(plan.baseMarketValue || 0) * Number(plan.initialRate || 4) / 1200 * activeMultiplier),
+                                availableBefore: Math.round(Number(ledgerBefore.availableBalance) || 0),
+                                recordedAt: new Date().toISOString()
+                            } : null;
+                        } else {
+                            delete d.retirementAdjustment;
+                            delete d.retirementBudgetSnapshot;
+                        }
                         const validation = this.validateTransactionEntry(d, [...transactionList, d]);
                         if (!validation.valid || !validation.complete) { this.transactionEditorError = validation.message || '資料尚未完整，請檢查輸入內容。'; return; }
                         if (this.transactionEditorMode === 'edit') {
@@ -3105,21 +3162,22 @@ html {
                                 const raw = String(value);
                                 return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : this.getLocalYMD(new Date(value));
                             };
-
                             const transactions = [...(this.transactions || [])]
                                 .filter(t => t && t.date)
                                 .sort((a, b) => normalizeDate(a.date).localeCompare(normalizeDate(b.date)));
-
-                            // 以既有庫存作為起始持股，後續再逐日套用真實交易。
                             const baseShares = Math.max(0, Number(this.baseShares) || 0);
                             const baseAvgCost = Math.max(0, Number(this.baseAvgCost) || 0);
                             let currentShares = baseShares;
                             let currentAvgCost = baseAvgCost;
                             let currentAvgPrice = baseAvgCost;
                             let realizedProfit = 0;
+                            let dividendGross = 0;
+                            let dividendFees = 0;
                             let dividendNet = 0;
+                            let cumulativeBuyIn = baseShares * baseAvgCost;
+                            let sellNetProceeds = 0;
                             let txnIndex = 0;
-
+                            const cashFlows = [];
                             const historyMap = {};
                             const priceDates = new Set();
                             (this.cachedHistoricalData || []).forEach(h => {
@@ -3135,52 +3193,44 @@ html {
                                 historyMap[today] = Number(this.currentPrice);
                                 priceDates.add(today);
                             }
-
                             const firstTxnDate = transactions.length ? normalizeDate(transactions[0].date) : '';
                             const initialDate = baseShares > 0 ? (normalizeDate(this.startDate) || firstTxnDate) : firstTxnDate;
+                            if (baseShares > 0 && baseShares * baseAvgCost > 0 && initialDate) {
+                                cashFlows.push({ date: initialDate, amount: -(baseShares * baseAvgCost) });
+                            }
                             const availablePriceDates = Array.from(priceDates).sort();
                             if (!availablePriceDates.length) {
-                                this.detailTimelineData = [];
-                                this.isDetailChartReady = false;
-                                this.isDetailChartLoading = false;
-                                return;
+                                this.detailTimelineData = []; this.isDetailChartReady = false; return;
                             }
                             const startDate = initialDate || availablePriceDates[0];
                             const firstPriceDate = availablePriceDates[0];
-
-                            // 僅在第一筆可用歷史報價之後建立時間軸；交易日即使沒有收盤價，也沿用最近一次可用價格。
                             const timelineDates = new Set(availablePriceDates.filter(d => d >= startDate));
                             transactions.forEach(t => {
                                 const d = normalizeDate(t.date);
                                 if (d >= startDate && d >= firstPriceDate && d <= today) timelineDates.add(d);
                             });
                             const sortedDates = Array.from(timelineDates).sort();
-                            if (!sortedDates.length) {
-                                this.detailTimelineData = [];
-                                this.isDetailChartReady = false;
-                                this.isDetailChartLoading = false;
-                                return;
-                            }
-
+                            if (!sortedDates.length) { this.detailTimelineData = []; this.isDetailChartReady = false; return; }
                             let lastPrice = 0;
                             const priorPriceDates = availablePriceDates.filter(d => d < sortedDates[0]);
                             if (priorPriceDates.length) lastPrice = Number(historyMap[priorPriceDates[priorPriceDates.length - 1]]) || 0;
-
                             const timeline = [];
-                            for (const date of sortedDates) {
+                            let lastAnnualizedROI = null;
+                            for (let i = 0; i < sortedDates.length; i++) {
+                                const date = sortedDates[i];
                                 while (txnIndex < transactions.length && normalizeDate(transactions[txnIndex].date) <= date) {
                                     const t = transactions[txnIndex];
                                     const shares = Number(t.shares) || 0;
                                     const amount = Number(t.amount) || 0;
-
                                     if (t.action === 'buy') {
                                         const priceTotal = currentShares * currentAvgPrice + amount;
-                                        const bookTotal = currentShares * currentAvgCost + amount + this.transactionCommission(t);
+                                        const bookTotal = currentShares * currentAvgCost + amount + this.transactionCommission(t) + this.transactionTax(t);
                                         currentShares += shares;
                                         currentAvgPrice = currentShares > 0 ? priceTotal / currentShares : 0;
                                         currentAvgCost = currentShares > 0 ? bookTotal / currentShares : 0;
+                                        cumulativeBuyIn += amount + this.transactionCommission(t) + this.transactionTax(t);
+                                        cashFlows.push({ date: normalizeDate(t.date), amount: -(amount + this.transactionCommission(t) + this.transactionTax(t)) });
                                     } else if (t.action === 'sync') {
-                                        // 調帳只修正庫存與成本，不視為買賣，不產生已實現損益。
                                         const priceTotal = currentShares * currentAvgPrice + amount;
                                         const bookTotal = currentShares * currentAvgCost + amount;
                                         currentShares = Math.max(0, currentShares + shares);
@@ -3194,17 +3244,22 @@ html {
                                         currentAvgCost = currentShares > 0 ? totalCost / currentShares : 0;
                                     } else if (t.action === 'sell' || t.action === 'withdraw') {
                                         const soldShares = Math.min(Math.max(0, currentShares), Math.max(0, shares));
-                                        realizedProfit += this.transactionNetCashIn(t) - soldShares * currentAvgCost;
+                                        const netCash = this.transactionNetCashIn(t);
+                                        realizedProfit += netCash - soldShares * currentAvgCost;
+                                        sellNetProceeds += netCash;
                                         currentShares = Math.max(0, currentShares - soldShares);
+                                        cashFlows.push({ date: normalizeDate(t.date), amount: netCash });
                                     } else if (t.action === 'dividend') {
-                                        dividendNet += this.transactionNetCashIn(t);
+                                        const net = this.transactionNetCashIn(t);
+                                        dividendGross += amount;
+                                        dividendFees += this.transactionWireFee(t);
+                                        dividendNet += net;
+                                        cashFlows.push({ date: normalizeDate(t.date), amount: net });
                                     }
                                     txnIndex++;
                                 }
-
                                 if (Object.prototype.hasOwnProperty.call(historyMap, date)) lastPrice = Number(historyMap[date]) || lastPrice;
                                 if (lastPrice <= 0) continue;
-
                                 const marketValue = Math.round(lastPrice * currentShares);
                                 const holdingCost = Math.round(currentShares * currentAvgCost);
                                 const priceCost = Math.round(currentShares * currentAvgPrice);
@@ -3213,27 +3268,34 @@ html {
                                 const unrealizedROI = priceCost > 0 ? Number(((unrealizedProfit / priceCost) * 100).toFixed(2)) : null;
                                 const bookUnrealizedROI = holdingCost > 0 ? Number(((bookUnrealizedProfit / holdingCost) * 100).toFixed(2)) : null;
                                 const cumulativeProfit = Math.round(realizedProfit + dividendNet + bookUnrealizedProfit);
+                                const accountingROI = cumulativeBuyIn > 0 ? Number((cumulativeProfit / cumulativeBuyIn * 100).toFixed(2)) : null;
+                                const nextDate = sortedDates[i + 1] || '';
+                                const isMonthEndPoint = !nextDate || nextDate.slice(0, 7) !== date.slice(0, 7);
+                                if (isMonthEndPoint) {
+                                    const flows = cashFlows.slice();
+                                    if (currentShares > 0 && marketValue > 0) flows.push({ date, amount: marketValue });
+                                    lastAnnualizedROI = this.calculateXIRR(flows);
+                                }
                                 timeline.push({
-                                    time: date,
-                                    value: marketValue,
-                                    cost: holdingCost,
-                                    priceCost, bookUnrealizedProfit, bookUnrealizedROI,
-                                    profit: cumulativeProfit,
-                                    unrealizedProfit,
-                                    unrealizedROI,
+                                    time: date, shares: currentShares, value: marketValue, holdingCost: priceCost,
+                                    cost: holdingCost, priceCost, bookUnrealizedProfit, bookUnrealizedROI,
+                                    profit: cumulativeProfit, unrealizedProfit, unrealizedROI,
                                     avgCost: currentShares > 0 && Number.isFinite(currentAvgCost) ? Number(currentAvgCost.toFixed(4)) : null,
                                     avgPrice: currentShares > 0 && Number.isFinite(currentAvgPrice) ? Number(currentAvgPrice.toFixed(4)) : null,
+                                    cumulativeBuyIn: Math.round(cumulativeBuyIn),
                                     realizedProfit: Math.round(realizedProfit),
-                                    dividendNet: Math.round(dividendNet)
+                                    sellNetProceeds: Math.round(sellNetProceeds),
+                                    dividendGross: Math.round(dividendGross),
+                                    dividendFees: Math.round(dividendFees),
+                                    dividendNet: Math.round(dividendNet),
+                                    accountingROI, annualizedROI: lastAnnualizedROI === null ? null : Number(lastAnnualizedROI)
                                 });
                             }
-
                             this.detailTimelineData = timeline;
                             this.isDetailChartReady = timeline.length > 0;
                         } catch (err) {
                             console.error('個別 ETF 持股績效資料計算失敗：', err);
-                            this.detailTimelineData = [];
-                            this.isDetailChartReady = false;
+                            this.detailTimelineData = []; this.isDetailChartReady = false;
                         } finally {
                             this.isDetailChartLoading = false;
                         }
@@ -3271,13 +3333,9 @@ html {
                         const container = document.getElementById('detail-lwc-chart');
                         if (!container) return;
                         this.detailChartSeries = {};
-                        if (this.detailChartInstance) {
-                            this.detailChartInstance.remove();
-                            this.detailChartInstance = null;
-                        }
+                        if (this.detailChartInstance) { this.detailChartInstance.remove(); this.detailChartInstance = null; }
                         container.innerHTML = '';
                         const chartWidth = container.clientWidth || (container.parentElement ? container.parentElement.clientWidth : window.innerWidth - 40);
-
                         try {
                             const chart = LightweightCharts.createChart(container, {
                                 width: Math.max(280, chartWidth), height: 370,
@@ -3287,11 +3345,8 @@ html {
                                 rightPriceScale: { visible: true, borderColor: '#cbd5e1' },
                                 leftPriceScale: { visible: true, borderColor: '#cbd5e1', scaleMargins: { top: 0.12, bottom: 0.12 } }
                             });
-                            chart.priceScale('roi').applyOptions({ visible: true, borderVisible: true, borderColor: '#cbd5e1', scaleMargins: { top: 0.12, bottom: 0.12 } });
-                            // 每股平均成本與總額、報酬率單位不同，使用獨立刻度，避免共用金額軸造成失真。
-                            chart.priceScale('avgcost').applyOptions({ visible: true, borderVisible: true, borderColor: '#cbd5e1', scaleMargins: { top: 0.12, bottom: 0.12 } });
+                            ['roi','avgcost','shares'].forEach(scale => chart.priceScale(scale).applyOptions({ visible: true, borderVisible: true, borderColor: '#cbd5e1', scaleMargins: { top: 0.12, bottom: 0.12 } }));
                             this.detailChartInstance = chart;
-
                             const now = new Date();
                             const targetDate = new Date(now);
                             if (this.detailChartRange === '1M') targetDate.setMonth(targetDate.getMonth() - 1);
@@ -3303,44 +3358,33 @@ html {
                             const targetStr = this.getLocalYMD(targetDate);
                             let filteredData = this.detailTimelineData.filter(d => d.time >= targetStr);
                             if (!filteredData.length) filteredData = this.detailTimelineData;
-
-                            const valueSeries = chart.addAreaSeries({ lastValueVisible: false, lineColor: '#3b82f6', topColor: 'rgba(59, 130, 246, 0.28)', bottomColor: 'rgba(59, 130, 246, 0.02)', lineWidth: 2, title: '目前市值', priceScaleId: 'right' });
-                            valueSeries.setData(filteredData.map(d => ({ time: d.time, value: d.value })));
-                            this.detailChartSeries = { value: valueSeries };
-
+                            const addLine = (key, title, color, field, scale='left', opts={}) => {
+                                const series = chart.addLineSeries({ lastValueVisible: false, color, lineWidth: 2, title, priceScaleId: scale, ...opts });
+                                series.setData(filteredData.filter(d => d[field] !== null && d[field] !== undefined && Number.isFinite(Number(d[field]))).map(d => ({ time: d.time, value: Number(d[field]) })));
+                                this.detailChartSeries[key] = series;
+                            };
+                            const pctFormat = { type: 'custom', minMove: 0.01, formatter: value => `${Number(value).toFixed(2)}%` };
+                            const unitFormat = { type: 'custom', minMove: 0.01, formatter: value => `${Number(value).toFixed(2)}` };
                             if (this.detailChartLayer === 'price') {
-                                // 第一層只建立不含費用的價格績效曲線。
-                                const avgPriceSeries = chart.addLineSeries({ lastValueVisible: false, color: '#06b6d4', lineWidth: 2, title: '平均單價', priceScaleId: 'avgcost', priceFormat: { type: 'custom', minMove: 0.01, formatter: value => `${Number(value).toFixed(2)}` } });
-                                const unrealizedSeries = chart.addLineSeries({ lastValueVisible: false, color: '#10b981', lineWidth: 2, title: '累積損益', priceScaleId: 'left' });
-                                const roiSeries = chart.addLineSeries({ lastValueVisible: false, color: '#ec4899', lineWidth: 2, lineStyle: 2, title: '累積損益率', priceScaleId: 'roi', priceFormat: { type: 'custom', minMove: 0.01, formatter: value => `${Number(value).toFixed(2)}%` } });
-                                avgPriceSeries.setData(filteredData.filter(d => d.avgPrice !== null && Number.isFinite(d.avgPrice) && d.avgPrice > 0).map(d => ({ time: d.time, value: d.avgPrice })));
-                                unrealizedSeries.setData(filteredData.map(d => ({ time: d.time, value: d.unrealizedProfit })));
-                                roiSeries.setData(filteredData.filter(d => d.unrealizedROI !== null && Number.isFinite(d.unrealizedROI)).map(d => ({ time: d.time, value: d.unrealizedROI })));
-                                this.detailChartSeries.avgPrice = avgPriceSeries;
-                                this.detailChartSeries.unrealized = unrealizedSeries;
-                                this.detailChartSeries.unrealizedROI = roiSeries;
+                                addLine('shares', '現有庫存', '#64748b', 'shares', 'shares', { priceFormat: { type: 'custom', minMove: 1, formatter: value => `${Math.round(value)} 股` } });
+                                addLine('avgPrice', '平均單價', '#06b6d4', 'avgPrice', 'avgcost', { priceFormat: unitFormat });
+                                const valueSeries = chart.addAreaSeries({ lastValueVisible: false, lineColor: '#3b82f6', topColor: 'rgba(59, 130, 246, 0.24)', bottomColor: 'rgba(59, 130, 246, 0.02)', lineWidth: 2, title: '目前市值', priceScaleId: 'right' });
+                                valueSeries.setData(filteredData.map(d => ({ time: d.time, value: d.value }))); this.detailChartSeries.value = valueSeries;
+                                addLine('holdingCost', '持有成本', '#f59e0b', 'holdingCost', 'right', { lineStyle: 2 });
+                                addLine('unrealized', '累積損益', '#10b981', 'unrealizedProfit', 'left');
+                                addLine('unrealizedROI', '累積損益率', '#ec4899', 'unrealizedROI', 'roi', { lineStyle: 2, priceFormat: pctFormat });
                             } else {
-                                // 第二層只建立完整帳務曲線，不提供第一層的平均單價。
-                                const costSeries = chart.addLineSeries({ lastValueVisible: false, color: '#f59e0b', lineWidth: 2, lineStyle: 2, title: '持有成本', priceScaleId: 'right' });
-                                const profitSeries = chart.addLineSeries({ lastValueVisible: false, color: '#8b5cf6', lineWidth: 2, title: '累積總損益', priceScaleId: 'left' });
-                                const unrealizedSeries = chart.addLineSeries({ lastValueVisible: false, color: '#10b981', lineWidth: 2, title: '未實現損益', priceScaleId: 'left' });
-                                const avgCostSeries = chart.addLineSeries({ lastValueVisible: false, color: '#06b6d4', lineWidth: 2, title: '平均成本', priceScaleId: 'avgcost', priceFormat: { type: 'custom', minMove: 0.01, formatter: value => `${Number(value).toFixed(2)}` } });
-                                const roiSeries = chart.addLineSeries({ lastValueVisible: false, color: '#ec4899', lineWidth: 2, lineStyle: 2, title: '未實現損益率', priceScaleId: 'roi', priceFormat: { type: 'custom', minMove: 0.01, formatter: value => `${Number(value).toFixed(2)}%` } });
-                                costSeries.setData(filteredData.map(d => ({ time: d.time, value: d.cost })));
-                                profitSeries.setData(filteredData.map(d => ({ time: d.time, value: d.profit })));
-                                unrealizedSeries.setData(filteredData.map(d => ({ time: d.time, value: d.bookUnrealizedProfit })));
-                                avgCostSeries.setData(filteredData.filter(d => d.avgCost !== null && Number.isFinite(d.avgCost) && d.avgCost > 0).map(d => ({ time: d.time, value: d.avgCost })));
-                                roiSeries.setData(filteredData.filter(d => d.bookUnrealizedROI !== null && Number.isFinite(d.bookUnrealizedROI)).map(d => ({ time: d.time, value: d.bookUnrealizedROI })));
-                                this.detailChartSeries.cost = costSeries;
-                                this.detailChartSeries.profit = profitSeries;
-                                this.detailChartSeries.unrealized = unrealizedSeries;
-                                this.detailChartSeries.avgCost = avgCostSeries;
-                                this.detailChartSeries.unrealizedROI = roiSeries;
+                                addLine('cumulativeBuyIn', '累計買進投入', '#3b82f6', 'cumulativeBuyIn', 'right');
+                                addLine('realizedProfit', '已實現損益', '#8b5cf6', 'realizedProfit', 'left');
+                                addLine('sellNetProceeds', '累計賣出淨收回', '#0f766e', 'sellNetProceeds', 'right');
+                                addLine('dividendGross', '累計配息總額', '#d97706', 'dividendGross', 'right');
+                                addLine('dividendFees', '累計配息匯費', '#64748b', 'dividendFees', 'right');
+                                addLine('dividendNet', '累積配息淨收入', '#059669', 'dividendNet', 'right');
+                                addLine('profit', '累積總損益', '#7c3aed', 'profit', 'left');
+                                addLine('accountingROI', '累積損益率', '#db2777', 'accountingROI', 'roi', { lineStyle: 2, priceFormat: pctFormat });
+                                addLine('annualizedROI', '年化損益率', '#0891b2', 'annualizedROI', 'roi', { lineStyle: 1, priceFormat: pctFormat });
                             }
-                            Object.entries(this.detailChartSeries).forEach(([key, series]) => {
-                                series.applyOptions({ visible: this.detailChartSeriesVisibility[key] !== false });
-                            });
-
+                            Object.entries(this.detailChartSeries).forEach(([key, series]) => series.applyOptions({ visible: this.detailChartSeriesVisibility[key] !== false }));
                             const dataByDate = new Map(filteredData.map(item => [item.time, item]));
                             this.attachChartInfoTooltip(chart, container, (param) => {
                                 const date = this.formatChartDate(param.time);
@@ -3348,39 +3392,33 @@ html {
                                 if (!item) return '';
                                 const visible = this.detailChartSeriesVisibility || {};
                                 const lines = [date];
-                                if (visible.value !== false) lines.push(`目前市值：${this.formatChartNumber(item.value)} 元`);
+                                const moneyLine = (key, name, value) => { if (visible[key] !== false) lines.push(`${name}：${this.formatChartNumber(value)} 元`); };
+                                const rateLine = (key, name, value) => { if (visible[key] !== false) lines.push(`${name}：${value === null || !Number.isFinite(Number(value)) ? '—' : `${Number(value) > 0 ? '+' : ''}${Number(value).toFixed(2)}%`}`); };
                                 if (this.detailChartLayer === 'price') {
-                                    if (visible.avgPrice !== false) lines.push(`平均單價：${item.avgPrice === null || !Number.isFinite(item.avgPrice) ? '—' : `${item.avgPrice.toFixed(2)} 元／股`}`);
-                                    if (visible.unrealized !== false) lines.push(`累積損益：${this.formatChartNumber(item.unrealizedProfit)} 元`);
-                                    if (visible.unrealizedROI !== false) {
-                                        const roiText = item.unrealizedROI === null || !Number.isFinite(item.unrealizedROI) ? '—' : `${item.unrealizedROI > 0 ? '+' : ''}${item.unrealizedROI.toFixed(2)}%`;
-                                        lines.push(`累積損益率：${roiText}`);
-                                    }
+                                    if (visible.shares !== false) lines.push(`現有庫存：${this.formatChartNumber(item.shares)} 股`);
+                                    if (visible.avgPrice !== false) lines.push(`平均單價：${item.avgPrice === null ? '—' : `${item.avgPrice.toFixed(2)} 元／股`}`);
+                                    moneyLine('value', '目前市值', item.value);
+                                    moneyLine('holdingCost', '持有成本', item.holdingCost);
+                                    moneyLine('unrealized', '累積損益', item.unrealizedProfit);
+                                    rateLine('unrealizedROI', '累積損益率', item.unrealizedROI);
                                 } else {
-                                    if (visible.cost !== false) lines.push(`持有成本：${this.formatChartNumber(item.cost)} 元`);
-                                    if (visible.avgCost !== false) lines.push(`平均成本：${item.avgCost === null || !Number.isFinite(item.avgCost) ? '—' : `${item.avgCost.toFixed(2)} 元／股`}`);
-                                    if (visible.profit !== false) lines.push(`累積總損益：${this.formatChartNumber(item.profit)} 元`);
-                                    if (visible.unrealized !== false) lines.push(`未實現損益：${this.formatChartNumber(item.bookUnrealizedProfit)} 元`);
-                                    if (visible.unrealizedROI !== false) {
-                                        const roiValue = item.bookUnrealizedROI;
-                                        const roiText = roiValue === null || !Number.isFinite(roiValue) ? '—' : `${roiValue > 0 ? '+' : ''}${roiValue.toFixed(2)}%`;
-                                        lines.push(`未實現損益率：${roiText}`);
-                                    }
+                                    moneyLine('cumulativeBuyIn', '累計買進投入', item.cumulativeBuyIn);
+                                    moneyLine('realizedProfit', '已實現損益', item.realizedProfit);
+                                    moneyLine('sellNetProceeds', '累計賣出淨收回', item.sellNetProceeds);
+                                    moneyLine('dividendGross', '累計配息總額', item.dividendGross);
+                                    moneyLine('dividendFees', '累計配息匯費', item.dividendFees);
+                                    moneyLine('dividendNet', '累積配息淨收入', item.dividendNet);
+                                    moneyLine('profit', '累積總損益', item.profit);
+                                    rateLine('accountingROI', '累積損益率', item.accountingROI);
+                                    rateLine('annualizedROI', '年化損益率', item.annualizedROI);
                                 }
                                 return lines.length > 1 ? lines.join('\n') : `${date}\n目前未選擇顯示曲線`;
                             });
-
                             chart.timeScale().fitContent();
-                            if (window.ResizeObserver) {
-                                new ResizeObserver(entries => {
-                                    if (entries[0].target === container && this.detailChartInstance && entries[0].contentRect.width > 0) {
-                                        this.detailChartInstance.applyOptions({ width: Math.floor(entries[0].contentRect.width) });
-                                    }
-                                }).observe(container);
-                            }
-                        } catch (err) {
-                            console.error('個別 ETF 持股績效圖繪製失敗：', err);
-                        }
+                            if (window.ResizeObserver) new ResizeObserver(entries => {
+                                if (entries[0].target === container && this.detailChartInstance && entries[0].contentRect.width > 0) this.detailChartInstance.applyOptions({ width: Math.floor(entries[0].contentRect.width) });
+                            }).observe(container);
+                        } catch (err) { console.error('個別 ETF 持股績效圖繪製失敗：', err); }
                     },
 
                     /* =========================================================
@@ -4072,52 +4110,228 @@ html {
                     },
 
                     /* =========================================================
-                       🛡️ 動態提領護欄大腦區塊
+                       🛡️ 全帳戶動態提領：共用退休資產池、歷史基準與額度結轉
                        ========================================================= */
-                    get gkStatus() {
-                        let rateDec = this.swrRate / 100;
-                        let r = this.marketValueNum > 0 ? ((this.baseRetirementMV * rateDec) / this.marketValueNum) : 0;
-                        let targetMonthly = (this.baseRetirementMV * rateDec) / 12;
-                        
-                        if (this.marketValueNum === 0) return { state: 'empty', title: '尚未建立庫存', desc: '請先累積資產，才能開始規劃退休提領。', color: 'text-slate-600', bg: 'bg-slate-50', border: 'border-slate-200', recommendedMonthly: 0, bonus: 0 };
-                        if (this.baseRetirementMV <= 0) return { state: 'unlocked', title: '🔒 鎖定基準以啟動護欄', desc: '請點擊上方按鈕，將目前的市值鎖定為提領基準，系統才能為您計算牛熊市加減薪！', color: 'text-slate-600', bg: 'bg-slate-50', border: 'border-slate-200', recommendedMonthly: Math.round((this.marketValueNum * rateDec) / 12), bonus: 0 };
-                        
-                        let upperLimit = rateDec * 1.2, lowerLimit = rateDec * 0.8, diff = Math.round(targetMonthly * 0.1);
-                        let currentRateStr = (r * 100).toFixed(2);
-                        
-                        // 動態計算目前的護欄上下限 % 數
-                        let lowerRateStr = (lowerLimit * 100).toFixed(1);
-                        let upperRateStr = (upperLimit * 100).toFixed(1);
-                        let rangeText = `（${lowerRateStr}% ~ ${upperRateStr}%）`;
-                        
-                        let dangerBadge = `<span class="inline-block text-base font-bold px-2 py-0.5 mx-1 rounded-lg shadow-sm border text-red-700 bg-red-100 border-red-300">實質提領 ${currentRateStr}%</span>`;
-                        let successBadge = `<span class="inline-block text-base font-bold px-2 py-0.5 mx-1 rounded-lg shadow-sm border text-emerald-700 bg-emerald-100 border-emerald-300">實質提領 ${currentRateStr}%</span>`;
-                        let normalBadge = `<span class="inline-block text-base font-bold px-2 py-0.5 mx-1 rounded-lg shadow-sm border text-blue-700 bg-blue-100 border-blue-300">實質提領 ${currentRateStr}%</span>`;
-                        
-                        if (r > upperLimit) return { state: 'danger', title: '🚨 熊市警戒！觸發保本護欄', desc: `目前 ${dangerBadge} 已飆升超越安全護欄範圍 ${rangeText}！建議縮減 10% 開支共體時艱。`, color: 'text-red-700', bg: 'bg-red-50', border: 'border-red-300', recommendedMonthly: Math.round(targetMonthly - diff), bonus: -diff };
-                        if (r < lowerLimit) return { state: 'success', title: '🎉 牛市紅利！觸發加薪護欄', desc: `目前 ${successBadge} 已低於安全護欄範圍 ${rangeText}！符合通膨加薪條件，犒賞自己吧！`, color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-300', recommendedMonthly: Math.round(targetMonthly + diff), bonus: diff };
-                        
-                        return { state: 'normal', title: '✅ 穩健區間 (維持現狀)', desc: `目前 ${normalBadge} 落在安全護欄範圍 ${rangeText} 內。維持原本的預算計畫即可。`, color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-300', recommendedMonthly: Math.round(targetMonthly), bonus: 0 };
-                    },
-
-                    lockRetirementBase(customDate) {
-                        if (this.marketValueNum <= 0) return this.showMsg("目前總市值為 0，無法鎖定基準！");
-                        const previousBase = { mv: Number(this.baseRetirementMV) || 0, date: this.baseRetirementDate || '', swr: Number(this.swrRate) || 0 };
-                        this.baseRetirementMV = this.marketValueNum;
-                        
-                        // 判斷是否有傳入自訂日期，若有則格式化，若無則抓取當下日期
-                        if (customDate) {
-                            this.baseRetirementDate = customDate.replace(/-/g, '/');
-                        } else {
-                            const pad = n => String(n).padStart(2, '0'); const key = this.getLocalYMD(new Date()); const [year, month, day] = key.split('-').map(Number);
-                            this.baseRetirementDate = `${year}/${pad(month)}/${pad(day)}`; 
+                    ensureRetirementPlan() {
+                        if (!this.globalSettings || typeof this.globalSettings !== 'object') this.globalSettings = {};
+                        if (!this.globalSettings.retirementPlan || typeof this.globalSettings.retirementPlan !== 'object') {
+                            this.globalSettings.retirementPlan = { id: '', baseMarketValue: 0, baseDate: '', priceDatesByETF: {}, initialRate: 4, createdAt: '', history: [], adjustments: [] };
                         }
-                        
-                        const changed = previousBase.mv !== (Number(this.baseRetirementMV) || 0)
-                            || previousBase.date !== (this.baseRetirementDate || '')
-                            || previousBase.swr !== (Number(this.swrRate) || 0);
-                        this.saveData(changed);
-                        this.showMsg(`✅ 成功於 ${this.baseRetirementDate} 鎖定當前市值為退休基準！\n系統將以此基準配合您設定的初始提領率，為您開啟護欄防護機制。`);
+                        const plan = this.globalSettings.retirementPlan;
+                        if (!Array.isArray(plan.history)) plan.history = [];
+                        if (!Array.isArray(plan.adjustments)) plan.adjustments = [];
+                        if (!plan.priceDatesByETF || typeof plan.priceDatesByETF !== 'object') plan.priceDatesByETF = {};
+                        return plan;
+                    },
+                    get retirementPlan() { return this.ensureRetirementPlan(); },
+                    addRetirementMonths(monthKey, offset) {
+                        const m = String(monthKey || '').match(/^(\d{4})-(\d{2})$/);
+                        if (!m) return '';
+                        const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1 + Number(offset || 0), 1));
+                        return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+                    },
+                    getRetirementAdjustments() {
+                        const plan = this.ensureRetirementPlan();
+                        if (!plan.id) return [];
+                        const rows = [];
+                        Object.keys(this.etfs || {}).forEach(code => {
+                            (this.etfs[code]?.transactions || []).forEach(txn => {
+                                const a = txn && txn.retirementAdjustment;
+                                if (txn?.action === 'withdraw' && a && a.planId === plan.id && a.effectiveFromMonth && Number.isFinite(Number(a.multiplier))) {
+                                    rows.push({ ...a, sourceTransactionId: txn.id, sourceDate: txn.date, code });
+                                }
+                            });
+                        });
+                        return rows.sort((a, b) => String(a.effectiveFromMonth).localeCompare(String(b.effectiveFromMonth)) || String(a.sourceDate).localeCompare(String(b.sourceDate)));
+                    },
+                    getRetirementMultiplierForMonth(monthKey, adjustmentRows = null) {
+                        let multiplier = 1;
+                        const events = Array.isArray(adjustmentRows) ? adjustmentRows : this.getRetirementAdjustments();
+                        for (const event of events) {
+                            if (String(event.effectiveFromMonth) <= String(monthKey)) multiplier = Math.max(0.01, Number(event.multiplier) || 1);
+                        }
+                        return multiplier;
+                    },
+                    shouldAdoptRetirementAdjustment(dateValue) {
+                        const plan = this.ensureRetirementPlan();
+                        if (!(Number(plan.baseMarketValue) > 0)) return false;
+                        const date = this.normalizeTransactionDate(dateValue) || this.getLocalYMD();
+                        const month = date.slice(0, 7);
+                        // 動態訊號以目前市場狀況產生，只允許當月提領採納，避免補登歷史交易時回溯改寫預算。
+                        if (month !== this.getLocalYMD().slice(0, 7)) return false;
+                        if (this.getRetirementAdjustments().some(e => e.sourceMonth === month)) return false;
+                        const status = this.gkStatus;
+                        return Math.abs(Number(status.suggestedMultiplier || 1) - this.getRetirementMultiplierForMonth(month)) > 0.0001;
+                    },
+                    get retirementPortfolioSnapshot() {
+                        let marketValue = 0, totalShares = 0;
+                        const missingCodes = [];
+                        Object.keys(this.etfs || {}).forEach(code => {
+                            const price = code === this.activeETF && Number(this.currentPrice) > 0
+                                ? { price: Number(this.currentPrice) }
+                                : (this.homePrices[code] || { price: 0 });
+                            const info = this.getHomeETFInfo(code, price);
+                            totalShares += Number(info.shares) || 0;
+                            if (info.shares > 0 && !(Number(price.price) > 0)) missingCodes.push(code);
+                            else marketValue += Number(info.marketValue) || 0;
+                        });
+                        return { marketValue: missingCodes.length ? null : Math.round(marketValue), partialMarketValue: Math.round(marketValue), totalShares, missingCodes };
+                    },
+                    get gkStatus() {
+                        const plan = this.ensureRetirementPlan();
+                        const portfolio = this.retirementPortfolioSnapshot;
+                        if (!(Number(plan.baseMarketValue) > 0)) return { state: 'unlocked', title: '尚未設定整體退休基準', desc: '請選擇基準日期及初始年提領率，系統會依全部 ETF 在該日的持股與歷史收盤價計算退休基準市值。', color: 'text-slate-600', bg: 'bg-slate-50', border: 'border-slate-200', suggestedMultiplier: 1, recommendedMonthly: 0, actualRate: null };
+                        if (portfolio.marketValue === null) return { state: 'missing', title: '目前行情資料不完整', desc: `以下 ETF 尚缺目前價格，整體市值暫時無法完整計算：${portfolio.missingCodes.join('、')}。請更新行情後再判斷牛熊市。`, color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200', suggestedMultiplier: this.getRetirementMultiplierForMonth(this.getLocalYMD().slice(0,7)), recommendedMonthly: 0, actualRate: null };
+                        const initialRate = Math.max(0, Number(plan.initialRate) || 0);
+                        const annualBase = Number(plan.baseMarketValue) * initialRate / 100;
+                        const baseMonthly = annualBase / 12;
+                        const actualRate = portfolio.marketValue > 0 ? annualBase / portfolio.marketValue * 100 : 0;
+                        const upper = initialRate * 1.2, lower = initialRate * 0.8;
+                        let state = 'normal', multiplier = 1, title = '穩健區間：維持原始預算', desc = `目前整體市值對應的實質年提領率為 ${actualRate.toFixed(2)}%，位於 ${lower.toFixed(1)}%～${upper.toFixed(1)}% 護欄範圍內。`;
+                        if (portfolio.marketValue <= 0 || actualRate > upper) {
+                            state = 'bear'; multiplier = 0.9; title = '熊市警戒：建議降低未來預算'; desc = `目前整體市值對應的實質年提領率為 ${actualRate.toFixed(2)}%，高於 ${upper.toFixed(1)}% 護欄上限。建議未來月份預算暫時減少 10%。`;
+                        } else if (actualRate < lower) {
+                            state = 'bull'; multiplier = 1.1; title = '牛市紅利：建議增加未來預算'; desc = `目前整體市值對應的實質年提領率為 ${actualRate.toFixed(2)}%，低於 ${lower.toFixed(1)}% 護欄下限。建議未來月份預算暫時增加 10%。`;
+                        }
+                        const adoptedMultiplier = this.getRetirementMultiplierForMonth(this.getLocalYMD().slice(0, 7));
+                        return { state, title, desc, color: state === 'bear' ? 'text-red-700' : (state === 'bull' ? 'text-emerald-700' : 'text-blue-700'), bg: state === 'bear' ? 'bg-red-50' : (state === 'bull' ? 'bg-emerald-50' : 'bg-blue-50'), border: state === 'bear' ? 'border-red-200' : (state === 'bull' ? 'border-emerald-200' : 'border-blue-200'), suggestedMultiplier: multiplier, adoptedMultiplier, actualRate, initialRate, baseMonthly: Math.round(baseMonthly), recommendedMonthly: Math.round(baseMonthly * multiplier), adoptedMonthly: Math.round(baseMonthly * adoptedMultiplier), suggestedAnnualRate: Number((initialRate * multiplier).toFixed(2)), adoptedAnnualRate: Number((initialRate * adoptedMultiplier).toFixed(2)), bonus: Math.round(baseMonthly * (multiplier - 1)) };
+                    },
+                    getRetirementBudgetLedger(asOfDate) {
+                        const plan = this.ensureRetirementPlan();
+                        if (!(Number(plan.baseMarketValue) > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(String(plan.baseDate || ''))) return { availableBalance: 0, totalBudget: 0, totalOut: 0, totalWithdrawals: 0, totalDividends: 0, currentMonthBudget: 0, currentMonthUsed: 0, pendingDividendReinvestment: 0, reinvestmentOffsets: {}, negativeBalance: 0 };
+                        const asOf = this.normalizeTransactionDate(asOfDate) || this.getLocalYMD();
+                        const startMonth = plan.baseDate.slice(0, 7), endMonth = asOf.slice(0, 7);
+                        if (endMonth < startMonth) return { availableBalance: 0, totalBudget: 0, totalOut: 0, totalWithdrawals: 0, totalDividends: 0, currentMonthBudget: 0, currentMonthUsed: 0, pendingDividendReinvestment: 0, reinvestmentOffsets: {}, negativeBalance: 0 };
+                        const rows = [];
+                        Object.keys(this.etfs || {}).forEach(code => (this.etfs[code]?.transactions || []).forEach((txn, index) => {
+                            if (!txn || !this.isValidDateString(String(txn.date || '')) || txn.date < plan.baseDate || txn.date > asOf) return;
+                            if (txn.action === 'withdraw' || txn.action === 'dividend' || (txn.action === 'buy' && txn.dividendReinvestment)) rows.push({ code, txn, index });
+                        }));
+                        rows.sort((a, b) => String(a.txn.date).localeCompare(String(b.txn.date)) || ((a.txn.action === 'buy' && a.txn.dividendReinvestment) ? 1 : 0) - ((b.txn.action === 'buy' && b.txn.dividendReinvestment) ? 1 : 0) || String(a.code).localeCompare(String(b.code)) || a.index - b.index);
+                        const rowsByMonth = new Map();
+                        rows.forEach(row => { const m = row.txn.date.slice(0,7); if (!rowsByMonth.has(m)) rowsByMonth.set(m, []); rowsByMonth.get(m).push(row); });
+                        let balance = 0, pendingDividend = 0, totalBudget = 0, totalOut = 0, totalWithdrawals = 0, totalDividends = 0;
+                        let currentMonthBudget = 0, currentMonthUsed = 0, currentMonthCarryForward = 0;
+                        const offsets = {};
+                        const currentMonth = asOf.slice(0,7);
+                        const adjustments = this.getRetirementAdjustments();
+                        const baseMonthly = Number(plan.baseMarketValue) * Number(plan.initialRate || 0) / 1200;
+                        for (let month = startMonth; month <= endMonth; month = this.addRetirementMonths(month, 1)) {
+                            if (month === currentMonth) currentMonthCarryForward = Math.round(balance);
+                            const multiplier = this.getRetirementMultiplierForMonth(month, adjustments);
+                            const credit = baseMonthly * multiplier;
+                            balance += credit; totalBudget += credit;
+                            // 月度預算可以讓可用額度轉正，但不代表超額配息已重新投入；
+                            // 待再投入金額必須等實際買進並勾選標記後才抵回。
+                            if (month === currentMonth) currentMonthBudget = Math.round(credit);
+                            const monthRows = rowsByMonth.get(month) || [];
+                            monthRows.forEach(({ txn, code }) => {
+                                const net = Math.max(0, Number(this.transactionNetCashIn(txn)) || 0);
+                                if (txn.action === 'withdraw') {
+                                    balance -= net; totalOut += net; totalWithdrawals += net;
+                                    if (month === currentMonth) currentMonthUsed += net;
+                                } else if (txn.action === 'dividend') {
+                                    const before = balance;
+                                    balance -= net; totalOut += net; totalDividends += net;
+                                    const newNegative = Math.max(0, -balance) - Math.max(0, -before);
+                                    if (newNegative > 0) pendingDividend += newNegative;
+                                    if (month === currentMonth) currentMonthUsed += net;
+                                } else if (txn.action === 'buy' && txn.dividendReinvestment) {
+                                    const actualBuy = Math.max(0, (Number(txn.amount) || 0) + this.transactionCommission(txn) + this.transactionTax(txn));
+                                    // 再投入可抵回尚未處理的超額配息，即使後續月份預算已使餘額轉正也一樣；
+                                    // 抵回額不得超過實際買進支出或尚未抵回的超額配息。
+                                    const offset = Math.min(actualBuy, pendingDividend);
+                                    if (offset > 0) { balance += offset; pendingDividend -= offset; offsets[String(txn.id)] = Math.round(offset); }
+                                }
+                            });
+                        }
+                        return { availableBalance: Math.round(balance), totalBudget: Math.round(totalBudget), totalOut: Math.round(totalOut), totalWithdrawals: Math.round(totalWithdrawals), totalDividends: Math.round(totalDividends), currentMonthBudget, currentMonthUsed: Math.round(currentMonthUsed), currentMonthCarryForward, pendingDividendReinvestment: Math.round(pendingDividend), reinvestmentOffsets: offsets, negativeBalance: Math.max(0, Math.round(-balance)), currentMonthMultiplier: this.getRetirementMultiplierForMonth(currentMonth, adjustments) };
+                    },
+                    get retirementBudgetLedger() { return this.getRetirementBudgetLedger(this.getLocalYMD()); },
+                    async lockRetirementBase(customDate) {
+                        const selectedDate = this.normalizeTransactionDate(customDate) || this.getLocalYMD();
+                        if (!this.isValidDateString(selectedDate) || selectedDate > this.getLocalYMD()) return this.showMsg('退休基準日必須是有效日期，且不可晚於今天。');
+                        const existing = this.ensureRetirementPlan();
+                        if (Number(existing.baseMarketValue) > 0 && !confirm('重新設定退休基準會保存目前基準及其調整紀錄，再以新日期重新計算。確定繼續嗎？')) return;
+                        const rate = Number(this.retirementRateDraft);
+                        if (!Number.isFinite(rate) || rate <= 0 || rate > 20) return this.showMsg('初始年提領率必須大於 0%，且不可高於 20%。');
+                        this.showMsg('正在檢查全部 ETF 的歷史收盤價並重建基準日持股，請稍候完成後再查看結果。');
+                        try {
+                            await this.silentFetchMissingHistory();
+                            let totalMV = 0, pricedCount = 0;
+                            const priceDatesByETF = {}, missing = [];
+                            for (const code of Object.keys(this.etfs || {})) {
+                                const etf = this.etfs[code] || {};
+                                const baseShares = Math.max(0, Number(etf.baseShares) || 0);
+                                if (baseShares > 0 && !this.isValidDateString(String(etf.startDate || ''))) {
+                                    missing.push(`${code}（既有庫存缺少起算日期）`); continue;
+                                }
+                                let cache = [];
+                                try { cache = JSON.parse(localStorage.getItem(`THH_History_V2_${code}`) || '[]'); } catch (e) { cache = []; }
+                                if (!Array.isArray(cache)) cache = [];
+                                const snapshotWithoutPrice = this.getPriceLayerSnapshot(code, selectedDate, 0);
+                                const validCacheDates = cache.filter(item => item && Number(item.close) > 0 && Number.isFinite(new Date(item.time).getTime())).map(item => this.getLocalYMD(new Date(item.time))).filter(Boolean).sort();
+                                // 若指定基準日前有持股、但快取起始日晚於基準日（或完全沒有快取），
+                                // 必須主動補抓基準日前的歷史行情，不能只依賴近期快取更新。
+                                if (snapshotWithoutPrice.shares > 0 && (!validCacheDates.length || validCacheDates[0] > selectedDate)) {
+                                    try {
+                                        const fromDate = this.addDaysToDateKey(selectedDate, -20) || selectedDate;
+                                        const fetched = await this.fetchHistoricalPricesFromSources(code, fromDate);
+                                        if (Array.isArray(fetched) && fetched.length) {
+                                            cache = this.mergeHistoricalPrices(cache, fetched);
+                                            localStorage.setItem(`THH_History_V2_${code}`, JSON.stringify(cache));
+                                        }
+                                    } catch (historyError) {
+                                        console.warn(`[退休基準] ${code} 的指定日期歷史行情補抓失敗。`, historyError);
+                                    }
+                                }
+                                const valid = cache.map(item => {
+                                    if (!item || !(Number(item.close) > 0)) return null;
+                                    const date = this.getLocalYMD(new Date(item.time));
+                                    return date && date <= selectedDate ? { date, close: Number(item.close) } : null;
+                                }).filter(Boolean).sort((a, b) => a.date.localeCompare(b.date));
+                                const quote = valid.length ? valid[valid.length - 1] : null;
+                                const snapshot = this.getPriceLayerSnapshot(code, selectedDate, quote ? quote.close : 0);
+                                if (snapshot.shares > 0 && !quote) { missing.push(`${code}（基準日前沒有可用歷史收盤價）`); continue; }
+                                if (snapshot.shares > 0 && quote) {
+                                    totalMV += snapshot.marketValue; pricedCount++;
+                                    priceDatesByETF[code] = quote.date;
+                                } else priceDatesByETF[code] = quote ? quote.date : '';
+                            }
+                            if (missing.length) return this.showMsg(`無法鎖定：部分 ETF 缺少必要的歷史資料，沒有採用今日價格代替。\n${missing.join('\n')}`);
+                            if (!(totalMV > 0) || pricedCount === 0) return this.showMsg('選定日期的全部 ETF 持股市值為 0，無法建立退休基準。');
+                            const oldSnapshot = Number(existing.baseMarketValue) > 0 ? { ...JSON.parse(JSON.stringify(existing)), history: undefined } : null;
+                            const history = [...(existing.history || [])];
+                            if (oldSnapshot) history.push(oldSnapshot);
+                            this.globalSettings.retirementPlan = {
+                                id: `retire-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+                                baseMarketValue: Math.round(totalMV), baseDate: selectedDate,
+                                priceDatesByETF, initialRate: rate, createdAt: new Date().toISOString(), history, adjustments: []
+                            };
+                            this.retirementRateDraft = rate;
+                            this.showRetirementBaseEditor = false;
+                            this.saveData(true);
+                            const dates = [...new Set(Object.values(priceDatesByETF).filter(Boolean))];
+                            this.showMsg(`✅ 已完成全部 ETF 退休基準鎖定。\n選定基準日：${selectedDate}\n整體基準市值：${this.formatMoney(totalMV)} 元\n採用行情日期：${dates.length === 1 ? dates[0] : `各 ETF 分別採用最近前一交易日（${dates.length} 個日期）`}\n原本基準已保存至歷史紀錄。`);
+                        } catch (error) {
+                            console.error('退休基準建立失敗：', error);
+                            this.showMsg(`❌ 歷史基準建立失敗：${String(error?.message || error)}。原本基準未變更。`);
+                        }
+                    },
+                    restoreRetirementBase(index) {
+                        const plan = this.ensureRetirementPlan();
+                        const target = plan.history[index];
+                        if (!target || !confirm(`確定恢復 ${target.baseDate || '未標示日期'} 的退休基準嗎？目前基準會先保存到歷史紀錄。`)) return;
+                        const history = [...plan.history];
+                        const current = { ...JSON.parse(JSON.stringify(plan)), history: undefined };
+                        history.splice(index, 1);
+                        history.push(current);
+                        const restored = { ...JSON.parse(JSON.stringify(target)), history };
+                        this.globalSettings.retirementPlan = restored;
+                        this.retirementRateDraft = Number(restored.initialRate) || 4;
+                        this.showRetirementBaseEditor = false;
+                        this.saveData(true);
+                        this.showMsg('✅ 已恢復選定的退休基準；相關歷史提領調整也已隨原基準一併恢復。');
                     },
 
                     /* =========================================================
@@ -4646,7 +4860,17 @@ html {
                         return arr;
                     },
 
-                    // 交易明細多選：所有統計只計入目前 ETF 中實際勾選的買進交易。
+                    // 交易明細多選：七種條件可複選；符合多個條件的同一筆明細只計算一次。
+                    transactionSelectionMatches(txn, filter) {
+                        if (!txn) return false;
+                        if (filter === 'recurring') return this.isRecurringTransaction(txn);
+                        if (filter === 'buy') return txn.action === 'buy';
+                        if (filter === 'sell_withdraw') return txn.action === 'sell' || txn.action === 'withdraw';
+                        if (filter === 'dividend') return txn.action === 'dividend';
+                        if (filter === 'stock_dividend') return txn.action === 'stock_dividend';
+                        if (filter === 'sync') return txn.action === 'sync';
+                        return false;
+                    },
                     get selectedTransactions() {
                         const ids = new Set((this.selectedTransactionIds || []).map(String));
                         return (this.transactions || []).filter(t => t && t.id != null && ids.has(String(t.id)));
@@ -4654,33 +4878,46 @@ html {
                     get selectedTransactionCount() { return this.selectedTransactions.length; },
                     get selectedBuyTransactions() { return this.selectedTransactions.filter(t => t.action === 'buy'); },
                     get selectedBuyCount() { return this.selectedBuyTransactions.length; },
-                    get selectedBuyGrossAmount() {
-                        return this.selectedBuyTransactions.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+                    get selectedWeightedAveragePrice() {
+                        const rows = this.selectedTransactions.filter(t => ['buy','sell','withdraw'].includes(t.action) && Number(t.shares) > 0 && Number(t.amount) >= 0);
+                        const shares = rows.reduce((sum, t) => sum + (Number(t.shares) || 0), 0);
+                        const amount = rows.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+                        return shares > 0 ? amount / shares : null;
                     },
-                    get selectedBuyActualAmount() {
-                        return this.selectedBuyTransactions.reduce((sum, t) => sum + (Number(this.transactionActualAmount(t)) || 0), 0);
-                    },
-                    get selectedBuyShares() {
-                        return this.selectedBuyTransactions.reduce((sum, t) => sum + (Number(t.shares) || 0), 0);
-                    },
+                    get selectedAllShares() { return this.selectedTransactions.reduce((sum, t) => sum + (Number(t.shares) || 0), 0); },
+                    get selectedGrossAmount() { return this.selectedTransactions.filter(t => ['buy','sell','withdraw','dividend'].includes(t.action)).reduce((sum, t) => sum + (Number(t.amount) || 0), 0); },
+                    get selectedActualAmount() { return this.selectedTransactions.reduce((sum, t) => { const v = this.transactionActualAmount(t); return sum + (Number.isFinite(Number(v)) ? Number(v) : 0); }, 0); },
                     toggleTransactionMultiSelect() {
                         this.isTransactionMultiSelect = !this.isTransactionMultiSelect;
                         this.selectedTransactionIds = [];
+                        this.transactionSelectionFilters = [];
                     },
-                    isTransactionSelected(id) {
-                        return id != null && (this.selectedTransactionIds || []).includes(String(id));
-                    },
+                    isTransactionSelected(id) { return id != null && (this.selectedTransactionIds || []).includes(String(id)); },
                     toggleTransactionSelection(id) {
                         if (id == null) return;
-                        const key = String(id);
-                        const ids = new Set((this.selectedTransactionIds || []).map(String));
+                        this.transactionSelectionFilters = [];
+                        const key = String(id), ids = new Set((this.selectedTransactionIds || []).map(String));
                         if (ids.has(key)) ids.delete(key); else ids.add(key);
                         this.selectedTransactionIds = Array.from(ids);
                     },
-                    selectAllTransactions() {
-                        this.selectedTransactionIds = (this.transactions || []).filter(t => t && t.id != null).map(t => String(t.id));
+                    toggleTransactionSelectionFilter(filter) {
+                        const valid = ['all','recurring','buy','sell_withdraw','dividend','stock_dividend','sync'];
+                        if (!valid.includes(filter)) return;
+                        const current = new Set(this.transactionSelectionFilters || []);
+                        if (filter === 'all') {
+                            this.transactionSelectionFilters = current.has('all') ? [] : ['all'];
+                        } else {
+                            current.delete('all');
+                            if (current.has(filter)) current.delete(filter); else current.add(filter);
+                            this.transactionSelectionFilters = valid.filter(k => current.has(k) && k !== 'all');
+                        }
+                        const filters = this.transactionSelectionFilters || [];
+                        const rows = (this.transactions || []).filter(txn => txn && txn.id != null && (filters.includes('all') || filters.some(f => this.transactionSelectionMatches(txn, f))));
+                        this.selectedTransactionIds = rows.map(t => String(t.id));
                     },
-                    clearTransactionSelection() { this.selectedTransactionIds = []; },
+                    isTransactionFilterActive(filter) { return (this.transactionSelectionFilters || []).includes(filter); },
+                    selectAllTransactions() { this.transactionSelectionFilters = ['all']; this.selectedTransactionIds = (this.transactions || []).filter(t => t && t.id != null).map(t => String(t.id)); },
+                    clearTransactionSelection() { this.selectedTransactionIds = []; this.transactionSelectionFilters = []; },
                     requestBatchRecurringChange(value) {
                         const selected = this.selectedTransactions;
                         const buyRows = selected.filter(t => t.action === 'buy');
@@ -5503,23 +5740,30 @@ html {
                       <span class="text-[11px] font-semibold text-slate-400">點選項目即可顯示／隱藏</span>
                   </div>
                   <div class="flex flex-wrap gap-2 text-xs sm:text-sm font-bold">
-                      <button type="button" @click="toggleDetailChartSeries('value')" :aria-pressed="detailChartSeriesVisibility.value" :class="detailChartSeriesVisibility.value ? 'border-blue-200 bg-blue-50 text-blue-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
-                          <span class="h-2.5 w-2.5 rounded-full bg-blue-500"></span>目前市值 <i class="fa-solid text-[10px]" :class="detailChartSeriesVisibility.value ? 'fa-eye' : 'fa-eye-slash'"></i>
-                      </button>
-                      <button x-show="detailChartLayer === 'accounting'" type="button" @click="toggleDetailChartSeries('cost')" :aria-pressed="detailChartSeriesVisibility.cost" :class="detailChartSeriesVisibility.cost ? 'border-amber-200 bg-amber-50 text-amber-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
-                          <span class="h-0.5 w-3.5 border-t-2 border-dashed border-amber-500"></span>持有成本 <i class="fa-solid text-[10px]" :class="detailChartSeriesVisibility.cost ? 'fa-eye' : 'fa-eye-slash'"></i>
-                      </button>
-                      <button x-show="detailChartLayer === 'price'" type="button" @click="toggleDetailChartSeries('avgPrice')" :aria-pressed="detailChartSeriesVisibility.avgPrice" :class="detailChartSeriesVisibility.avgPrice ? 'border-cyan-200 bg-cyan-50 text-cyan-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px"><span class="h-0.5 w-3.5 border-t-2 border-cyan-500"></span>平均單價 <i class="fa-solid text-[10px]" :class="detailChartSeriesVisibility.avgPrice ? 'fa-eye' : 'fa-eye-slash'"></i></button>
-                      <button x-show="detailChartLayer === 'accounting'" type="button" @click="toggleDetailChartSeries('avgCost')" :aria-pressed="detailChartSeriesVisibility.avgCost" :class="detailChartSeriesVisibility.avgCost ? 'border-cyan-200 bg-cyan-50 text-cyan-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px"><span class="h-0.5 w-3.5 border-t-2 border-cyan-500"></span>平均成本 <i class="fa-solid text-[10px]" :class="detailChartSeriesVisibility.avgCost ? 'fa-eye' : 'fa-eye-slash'"></i></button>
-                      <button x-show="detailChartLayer === 'accounting'" type="button" @click="toggleDetailChartSeries('profit')" :aria-pressed="detailChartSeriesVisibility.profit" :class="detailChartSeriesVisibility.profit ? 'border-violet-200 bg-violet-50 text-violet-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
-                          <span class="h-0.5 w-3.5 border-t-2 border-violet-500"></span>累積總損益 <i class="fa-solid text-[10px]" :class="detailChartSeriesVisibility.profit ? 'fa-eye' : 'fa-eye-slash'"></i>
-                      </button>
-                      <button type="button" @click="toggleDetailChartSeries('unrealized')" :aria-pressed="detailChartSeriesVisibility.unrealized" :class="detailChartSeriesVisibility.unrealized ? 'border-emerald-200 bg-emerald-50 text-emerald-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
-                          <span class="h-0.5 w-3.5 border-t-2 border-emerald-500"></span><span x-text="detailChartLayer === 'price' ? '累積損益' : '未實現損益'"></span> <i class="fa-solid text-[10px]" :class="detailChartSeriesVisibility.unrealized ? 'fa-eye' : 'fa-eye-slash'"></i>
-                      </button>
-                      <button type="button" @click="toggleDetailChartSeries('unrealizedROI')" :aria-pressed="detailChartSeriesVisibility.unrealizedROI" :class="detailChartSeriesVisibility.unrealizedROI ? 'border-pink-200 bg-pink-50 text-pink-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'" class="inline-flex items-center gap-2 rounded-full border px-3 py-2 transition hover:-translate-y-px">
-                          <span class="h-0.5 w-3.5 border-t-2 border-dashed border-pink-500"></span><span x-text="detailChartLayer === 'price' ? '累積損益率' : '未實現損益率'"></span> <i class="fa-solid text-[10px]" :class="detailChartSeriesVisibility.unrealizedROI ? 'fa-eye' : 'fa-eye-slash'"></i>
-                      </button>
+                      <div class="flex flex-wrap gap-2 mb-3">
+                    <template x-if="detailChartLayer === 'price'">
+                      <div class="flex flex-wrap gap-2">
+                        <button type="button" @click="toggleDetailChartSeries('shares')" :class="detailChartSeriesVisibility.shares ? 'bg-slate-100 text-slate-800 border-slate-300' : 'bg-white text-slate-400 border-slate-200'" class="rounded-full border px-3 py-2 text-xs font-bold">現有庫存</button>
+                        <button type="button" @click="toggleDetailChartSeries('avgPrice')" :class="detailChartSeriesVisibility.avgPrice ? 'bg-cyan-50 text-cyan-700 border-cyan-200' : 'bg-white text-slate-400 border-slate-200'" class="rounded-full border px-3 py-2 text-xs font-bold">平均單價</button>
+                        <button type="button" @click="toggleDetailChartSeries('value')" :class="detailChartSeriesVisibility.value ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-white text-slate-400 border-slate-200'" class="rounded-full border px-3 py-2 text-xs font-bold">目前市值</button>
+                        <button type="button" @click="toggleDetailChartSeries('holdingCost')" :class="detailChartSeriesVisibility.holdingCost ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-white text-slate-400 border-slate-200'" class="rounded-full border px-3 py-2 text-xs font-bold">持有成本</button>
+                        <button type="button" @click="toggleDetailChartSeries('unrealized')" :class="detailChartSeriesVisibility.unrealized ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white text-slate-400 border-slate-200'" class="rounded-full border px-3 py-2 text-xs font-bold">累積損益</button>
+                        <button type="button" @click="toggleDetailChartSeries('unrealizedROI')" :class="detailChartSeriesVisibility.unrealizedROI ? 'bg-pink-50 text-pink-700 border-pink-200' : 'bg-white text-slate-400 border-slate-200'" class="rounded-full border px-3 py-2 text-xs font-bold">累積損益率</button>
+                      </div>
+                    </template>
+                    <template x-if="detailChartLayer === 'accounting'">
+                      <div class="flex flex-wrap gap-2">
+                        <button type="button" @click="toggleDetailChartSeries('cumulativeBuyIn')" :class="detailChartSeriesVisibility.cumulativeBuyIn ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-white text-slate-400 border-slate-200'" class="rounded-full border px-3 py-2 text-xs font-bold">累計買進投入</button>
+                        <button type="button" @click="toggleDetailChartSeries('realizedProfit')" :class="detailChartSeriesVisibility.realizedProfit ? 'bg-violet-50 text-violet-700 border-violet-200' : 'bg-white text-slate-400 border-slate-200'" class="rounded-full border px-3 py-2 text-xs font-bold">已實現損益</button>
+                        <button type="button" @click="toggleDetailChartSeries('sellNetProceeds')" :class="detailChartSeriesVisibility.sellNetProceeds ? 'bg-teal-50 text-teal-700 border-teal-200' : 'bg-white text-slate-400 border-slate-200'" class="rounded-full border px-3 py-2 text-xs font-bold">累計賣出淨收回</button>
+                        <button type="button" @click="toggleDetailChartSeries('dividendGross')" :class="detailChartSeriesVisibility.dividendGross ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-white text-slate-400 border-slate-200'" class="rounded-full border px-3 py-2 text-xs font-bold">累計配息總額</button>
+                        <button type="button" @click="toggleDetailChartSeries('dividendFees')" :class="detailChartSeriesVisibility.dividendFees ? 'bg-slate-100 text-slate-700 border-slate-300' : 'bg-white text-slate-400 border-slate-200'" class="rounded-full border px-3 py-2 text-xs font-bold">累計配息匯費</button>
+                        <button type="button" @click="toggleDetailChartSeries('dividendNet')" :class="detailChartSeriesVisibility.dividendNet ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white text-slate-400 border-slate-200'" class="rounded-full border px-3 py-2 text-xs font-bold">累積配息淨收入</button>
+                        <button type="button" @click="toggleDetailChartSeries('profit')" :class="detailChartSeriesVisibility.profit ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-white text-slate-400 border-slate-200'" class="rounded-full border px-3 py-2 text-xs font-bold">累積總損益</button>
+                        <button type="button" @click="toggleDetailChartSeries('accountingROI')" :class="detailChartSeriesVisibility.accountingROI ? 'bg-pink-50 text-pink-700 border-pink-200' : 'bg-white text-slate-400 border-slate-200'" class="rounded-full border px-3 py-2 text-xs font-bold">累積損益率</button>
+                        <button type="button" @click="toggleDetailChartSeries('annualizedROI')" :class="detailChartSeriesVisibility.annualizedROI ? 'bg-cyan-50 text-cyan-700 border-cyan-200' : 'bg-white text-slate-400 border-slate-200'" class="rounded-full border px-3 py-2 text-xs font-bold">年化損益率</button>
+                      </div>
+                    </template>
                   </div>
               </div>
               <div class="flex flex-wrap gap-1.5 mb-4">
@@ -5762,149 +6006,103 @@ html {
 </div>
 
 <div x-show="currentView === 'detail' && activeTab === 'withdraw'" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-2" x-transition:enter-end="opacity-100 translate-y-0" x-cloak>
-  <div class="bg-white rounded-3xl shadow-sm border border-slate-200 p-6 md:p-8 max-w-3xl mx-auto mb-10 overflow-hidden">
-    <div class="flex flex-row items-center justify-between mb-8 border-b border-indigo-100 pb-5 gap-3">
-      <h2 class="text-xl sm:text-2xl font-black text-indigo-900 flex items-center gap-2 sm:gap-3"><div class="w-10 h-10 sm:w-12 sm:h-12 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center text-lg sm:text-xl shadow-inner shrink-0"><i class="fa-solid fa-compass"></i></div>動態提領導航儀</h2>
-      <button @click="showGuardrailsInfo()" class="px-3 py-1.5 h-12 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 font-bold rounded-xl border border-indigo-200 flex flex-col items-center justify-center text-sm shadow-sm transition-all hover:-translate-y-0.5 shrink-0 leading-tight"><span>運作</span><span>原理</span></button>
+  <div class="bg-white rounded-3xl shadow-sm border border-slate-200 p-6 md:p-8 max-w-4xl mx-auto mb-10 overflow-hidden">
+    <div class="flex items-center justify-between mb-6 border-b border-indigo-100 pb-5 gap-3">
+      <h2 class="text-xl sm:text-2xl font-black text-indigo-900 flex items-center gap-2"><div class="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center"><i class="fa-solid fa-compass"></i></div>動態提領導航儀</h2>
+      <button @click="showGuardrailsInfo()" class="px-3 py-2 bg-indigo-50 text-indigo-600 font-bold rounded-xl border border-indigo-200 text-sm">運作原理</button>
     </div>
-
-    <div class="bg-slate-50 p-6 rounded-2xl border border-slate-200 shadow-inner mb-8">
-      <div class="flex items-center justify-between mb-4 border-b border-slate-200 pb-4">
-        <div class="text-base font-bold text-slate-600">本檔 ETF 總市值</div>
-        <div class="text-3xl sm:text-4xl font-black text-slate-800 tracking-tight" x-text="formatMoney(marketValueNum) + ' 元'"></div>
-      </div>
-
-      <div class="flex flex-col items-center gap-4 w-full" x-data="{ 
-        backupBaseMV: 0, 
-        backupBaseDate: '',
-        backupSWR: 0,
-        isTestMode: false,
-        realMV: 0,
-        realDate: '',
-        realSWR: 0,
-        mDate: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()),
-        mValue: 10000000,
-        mSWR: 4.0
-      }">
-        
-        <template x-if="!isTestMode">
-          <div class="w-full flex flex-col items-center gap-4">
-            
-            <template x-if="baseRetirementMV <= 0">
-              <div class="w-full flex flex-col items-center gap-3">
-                <div class="text-lg font-bold text-slate-400">尚未鎖定退休基準</div>
-                
-                <div class="w-full grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  
-                  <div class="flex flex-col items-center gap-1.5 bg-slate-100/80 p-3.5 rounded-xl border border-slate-200 shadow-inner">
-                    <label class="block text-xs font-black text-slate-500 uppercase tracking-wider">設定鎖定基準日</label>
-                    <input type="date" x-model="customLockDate" class="w-full px-3 py-1.5 rounded-lg border border-slate-300 bg-white font-bold text-slate-700 text-center outline-none focus:border-blue-500 text-base shadow-sm">
-                  </div>
-
-                  <div class="flex flex-col items-center gap-1.5 bg-slate-100/80 p-3.5 rounded-xl border border-slate-200 shadow-inner">
-                    <label class="block text-xs font-black text-slate-500 uppercase tracking-wider">設定初始提領率</label>
-                    <div class="flex items-center gap-2">
-                      <input type="number" step="0.1" x-model.number="swrRate" class="w-24 px-3 py-1.5 rounded-lg border border-slate-300 bg-white font-black text-slate-700 text-center outline-none focus:border-blue-500 text-base shadow-sm">
-                      <span class="font-black text-slate-600">%</span>
-                    </div>
-                  </div>
-                </div>
-                
-                <button @click="lockRetirementBase(customLockDate);" class="w-full sm:w-auto px-6 py-3 mt-2 bg-blue-600 text-white font-black rounded-xl shadow-md hover:bg-blue-700 transition-all text-base hover:-translate-y-0.5 active:translate-y-0">
-                  <i class="fa-solid fa-lock mr-1"></i> 以選定日期與當前市值鎖定
-                </button>
-              </div>
-            </template>
-
-            <template x-if="baseRetirementMV > 0">
-              <div class="w-full flex flex-col items-center gap-4">
-                <div class="w-full text-center bg-emerald-50 border border-emerald-200 py-4 px-6 rounded-2xl shadow-inner flex flex-col items-center gap-1">
-                  <div class="text-sm font-bold text-emerald-700 tracking-wider uppercase">目前真實鎖定基準</div>
-                  <div class="text-4xl sm:text-5xl font-black text-emerald-800 tracking-tight my-2" x-text="formatMoney(baseRetirementMV) + ' 元'"></div>
-                  <div class="text-sm font-bold text-emerald-600/80" x-text="'鎖定日：' + baseRetirementDate + ' │ 鎖定提領率：' + swrRate.toFixed(1) + '%'"></div>
-                </div>
-                
-                <button @click="if(confirm('🚨 嚴重警告：\n\n解鎖將會清除目前的「退休基準市值」與「鎖定提領率」。\n\n您的數據將被移至歷史回溯區，確定要解除鎖定嗎？')) { backupBaseMV = baseRetirementMV; backupBaseDate = baseRetirementDate; backupSWR = swrRate; baseRetirementMV = 0; saveData(true); }" class="w-full sm:w-auto px-6 py-3.5 bg-white text-slate-500 font-bold border-2 border-slate-200 rounded-xl hover:bg-slate-50 hover:text-slate-700 shadow-sm transition-all text-base hover:-translate-y-0.5">
-                  <i class="fa-solid fa-unlock mr-1"></i> 永久解鎖並清除真實基準
-                </button>
-              </div>
-            </template>
-
-            <div x-show="backupBaseMV > 0" x-cloak class="w-full flex flex-col sm:flex-row items-center justify-center gap-2 mt-1">
-              <button @click="baseRetirementMV = backupBaseMV; baseRetirementDate = backupBaseDate; swrRate = backupSWR; backupBaseMV = 0; saveData(true)" class="w-full sm:w-auto px-5 py-3 bg-emerald-500 text-white font-black rounded-xl shadow-lg hover:bg-emerald-600 transition-all text-sm hover:-translate-y-0.5 flex items-center justify-center">
-                <i class="fa-solid fa-clock-rotate-left mr-2"></i> 
-                <span x-text="'復原至 ' + backupBaseDate + ' (' + backupSWR + '%)'"></span>
-              </button>
-
-              <button @click="backupBaseMV = 0; backupBaseDate = ''; backupSWR = 0;" class="w-full sm:w-auto px-4 py-3 bg-slate-100 text-slate-500 font-bold border-2 border-slate-200 rounded-xl hover:bg-slate-200 hover:text-slate-700 shadow-sm transition-all text-sm hover:-translate-y-0.5 flex items-center justify-center">
-                <i class="fa-solid fa-xmark mr-1"></i> 確認不復原
-              </button>
-            </div>
-
-            <div class="w-full p-4 border-2 border-dashed border-slate-300 rounded-2xl flex flex-col items-center bg-slate-50 transition-all hover:border-orange-400 hover:bg-orange-50 cursor-pointer mt-1" @click="isTestMode = true; realMV = baseRetirementMV; realDate = baseRetirementDate; realSWR = swrRate; mSWR = swrRate; if(baseRetirementMV > 0) { mValue = baseRetirementMV; mDate = baseRetirementDate.replace(/\//g, '-'); } else { baseRetirementMV = mValue; baseRetirementDate = mDate.replace(/-/g, '/'); }">
-              <div class="text-slate-500 font-black text-sm hover:text-orange-600 flex items-center gap-2">
-                <i class="fa-solid fa-flask text-lg"></i> 點擊進入沙盒測試模式 (模擬演練)
-              </div>
-            </div>
-
-          </div>
-        </template>
-</template>
-
-        <template x-if="isTestMode">
-          <div class="w-full bg-orange-50 border-2 border-orange-300 p-5 rounded-2xl flex flex-col items-center gap-4 shadow-inner">
-            <div class="text-orange-600 font-black text-lg flex items-center gap-2">
-              <i class="fa-solid fa-flask fa-bounce"></i> 沙盒模擬測試中
-            </div>
-            <div class="text-sm font-bold text-orange-800/70 text-center mb-2">
-              此處修改包含提領率，皆僅供即時預覽，離開即自動復原真實數據。
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full">
-              <div>
-                <label class="block text-xs font-black text-orange-700 mb-1.5">虛擬鎖定日期</label>
-                <input type="date" x-model="mDate" @change="baseRetirementDate = mDate.replace(/-/g, '/')" class="w-full px-3 py-2 rounded-xl border border-orange-300 bg-white font-bold text-slate-700 outline-none focus:border-orange-500 transition text-sm">
-              </div>
-              <div>
-                <label class="block text-xs font-black text-orange-700 mb-1.5">虛擬基準市值 (元)</label>
-                <input type="number" x-model.number="mValue" @input="baseRetirementMV = mValue" class="w-full px-3 py-2 rounded-xl border border-orange-300 bg-white font-bold text-slate-700 outline-none focus:border-orange-500 transition text-sm">
-              </div>
-              <div>
-                <label class="block text-xs font-black text-orange-700 mb-1.5">虛擬初始提領率 (%)</label>
-                <input type="number" step="0.1" x-model.number="mSWR" @input="swrRate = mSWR" class="w-full px-3 py-2 rounded-xl border border-orange-300 bg-white font-bold text-slate-700 outline-none focus:border-orange-500 transition text-sm">
-              </div>
-            </div>
-            <button @click="isTestMode = false; baseRetirementMV = realMV; baseRetirementDate = realDate; swrRate = realSWR;" class="w-full py-3.5 bg-orange-500 text-white font-black rounded-xl hover:bg-orange-600 transition-all shadow-md mt-2 hover:-translate-y-0.5">
-              <i class="fa-solid fa-door-open mr-1"></i> 結束測試，返回真實狀態
-            </button>
-          </div>
-        </template>
-      </div>
-
-      <div class="w-full flex items-center justify-center my-8 opacity-70">
-        <div class="h-px bg-gradient-to-r from-transparent via-slate-300 to-transparent w-full"></div>
-        <div class="absolute bg-white px-3 text-slate-300 text-sm"><i class="fa-solid fa-caret-down"></i></div>
-      </div>
-
-      <div class="text-2xl font-black mb-3 flex items-center gap-2" :class="gkStatus.color">
-        <span x-text="gkStatus.title"></span>
-      </div>
-      <div class="text-base font-medium text-slate-700 leading-relaxed mb-6" x-html="gkStatus.desc"></div>
-      
-      <div class="pt-6 border-t border-slate-200/60 text-center">
-        <span class="text-base font-bold text-slate-500 block mb-2">依據護欄機制，本月安全提領額度</span>
-        <div class="text-5xl sm:text-6xl font-black mb-3" :class="gkStatus.color" x-text="formatMoney(gkStatus.recommendedMonthly) + ' 元'"></div>
-        
-        <div x-show="gkStatus.bonus !== 0" class="text-lg font-bold" :class="gkStatus.bonus > 0 ? 'text-emerald-600' : 'text-red-600'">
-          <span x-show="gkStatus.bonus > 0">🎉 牛市紅利！建議本月可額外多領 <span x-text="formatMoney(Math.abs(gkStatus.bonus))"></span> 元</span>
-          <span x-show="gkStatus.bonus < 0">🚨 熊市警戒！建議本月需縮減開支 <span x-text="formatMoney(Math.abs(gkStatus.bonus))"></span> 元</span>
+    <div class="rounded-2xl border border-blue-200 bg-blue-50 p-4 mb-5">
+      <div class="text-sm font-bold text-blue-800">整體退休資產池（全部 ETF 合併）</div>
+      <div class="text-3xl sm:text-4xl font-black text-blue-900 mt-1" x-text="retirementPortfolioSnapshot.marketValue === null ? '行情資料不完整' : formatMoney(retirementPortfolioSnapshot.marketValue) + ' 元'"></div>
+      <div class="text-xs text-blue-700 mt-1" x-text="'合計持有股數：' + formatMoney(retirementPortfolioSnapshot.totalShares) + ' 股；目前追蹤 ' + Object.keys(etfs).length + ' 檔 ETF'"></div>
+      <div x-show="retirementPortfolioSnapshot.missingCodes.length" class="text-xs text-amber-800 font-bold mt-2" x-text="'缺少價格：' + retirementPortfolioSnapshot.missingCodes.join('、')"></div>
+    </div>
+    <template x-if="!(Number(retirementPlan.baseMarketValue) > 0)">
+      <div class="rounded-2xl border border-slate-200 bg-slate-50 p-5 space-y-4">
+        <div class="font-black text-slate-800 text-lg">設定整體退休基準</div>
+        <div x-show="Object.values(etfs || {}).some(item => Number(item?.baseRetirementMV) > 0)" class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">偵測到舊版個別 ETF 退休基準。舊資料仍保留，但因各檔基準日期可能不同，不會直接相加；請重新選定同一個基準日，建立新的整體退休基準。</div>
+        <p class="text-sm text-slate-600 leading-relaxed">選定日期後，系統會逐檔重建當日持股，乘以該檔當日或最近前一交易日的歷史收盤價，再合併成一個退休資產池。缺少必要歷史行情時會停止，不會拿今天價格代替。</p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label class="text-sm font-bold text-slate-600">退休基準日<input type="date" x-model="customLockDate" class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 font-semibold"></label>
+          <label class="text-sm font-bold text-slate-600">初始年提領率（%）<input type="number" min="0.1" max="20" step="0.1" x-model.number="retirementRateDraft" class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 font-semibold"></label>
         </div>
-        
-        <div x-show="gkStatus.bonus === 0 && baseRetirementMV > 0" class="text-base font-bold text-slate-500">
-          ✅ 目前維持原定退休預算
+        <button @click="lockRetirementBase(customLockDate)" class="w-full rounded-xl bg-blue-600 px-5 py-3 font-black text-white shadow hover:bg-blue-700">計算並鎖定全部 ETF 的退休基準</button>
+      </div>
+    </template>
+    <template x-if="Number(retirementPlan.baseMarketValue) > 0">
+      <div class="space-y-5">
+        <div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+          <div class="text-sm font-bold text-emerald-800">目前退休基準（整體 ETF）</div>
+          <div class="text-3xl sm:text-4xl font-black text-emerald-900 mt-1" x-text="formatMoney(retirementPlan.baseMarketValue) + ' 元'"></div>
+          <div class="text-sm text-emerald-800 mt-2" x-text="'基準日：' + retirementPlan.baseDate + '｜初始年提領率：' + Number(retirementPlan.initialRate).toFixed(2) + '%' "></div>
+          <div class="text-xs text-emerald-700 mt-1">歷史行情實際採用日期：<span x-text="Object.entries(retirementPlan.priceDatesByETF || {}).filter(([code,date])=>date).map(([code,date])=>code + ' ' + date).join('、') || '無資料'"></span></div>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div class="rounded-xl bg-slate-50 border p-3"><div class="text-xs text-slate-500">原始年度預算</div><div class="text-lg font-black" x-text="formatMoney(retirementPlan.baseMarketValue * retirementPlan.initialRate / 100) + ' 元'"></div></div>
+          <div class="rounded-xl bg-slate-50 border p-3"><div class="text-xs text-slate-500">原始每月預算</div><div class="text-lg font-black" x-text="formatMoney(retirementPlan.baseMarketValue * retirementPlan.initialRate / 1200) + ' 元'"></div></div>
+          <div class="rounded-xl bg-slate-50 border p-3"><div class="text-xs text-slate-500">目前採用年提領率</div><div class="text-lg font-black" x-text="gkStatus.adoptedAnnualRate === undefined ? Number(retirementPlan.initialRate).toFixed(2) + '%' : gkStatus.adoptedAnnualRate.toFixed(2) + '%' "></div></div>
+          <div class="rounded-xl bg-slate-50 border p-3"><div class="text-xs text-slate-500">目前採用月預算</div><div class="text-lg font-black" x-text="formatMoney(gkStatus.adoptedMonthly || (retirementPlan.baseMarketValue * retirementPlan.initialRate / 1200)) + ' 元'"></div></div>
+        </div>
+        <div class="rounded-2xl border p-4" :class="gkStatus.border || 'border-slate-200'" :style="'background:' + (gkStatus.state === 'bear' ? '#fff7f7' : (gkStatus.state === 'bull' ? '#f0fdf4' : '#f8fafc'))">
+          <div class="text-lg font-black" :class="gkStatus.color" x-text="gkStatus.title"></div>
+          <p class="text-sm text-slate-700 mt-2 leading-relaxed" x-text="gkStatus.desc"></p>
+          <div class="mt-4 grid grid-cols-2 gap-3">
+            <div><div class="text-xs text-slate-500">系統建議未來月預算</div><div class="text-2xl font-black" :class="gkStatus.color" x-text="formatMoney(gkStatus.recommendedMonthly || 0) + ' 元'"></div></div>
+            <div><div class="text-xs text-slate-500">建議採用年提領率</div><div class="text-2xl font-black" :class="gkStatus.color" x-text="(gkStatus.suggestedAnnualRate || Number(retirementPlan.initialRate)).toFixed(2) + '%' "></div></div>
+          </div>
+          <p class="text-xs text-slate-500 mt-3">市場訊號只是未來預算建議，不會自動改變初始提領率，也不會限制實際提領。只有儲存一筆提領交易並採納建議，才會從下個月起生效。</p>
+        </div>
+        <div class="rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
+          <div class="font-black text-indigo-900 mb-3">累積提領額度（跨月、跨年度結轉）</div>
+          <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <div><div class="text-xs text-indigo-700">前期結轉額度</div><div class="text-lg font-black text-indigo-950" x-text="formatMoney(retirementBudgetLedger.currentMonthCarryForward || 0) + ' 元'"></div></div>
+            <div><div class="text-xs text-indigo-700">本月新增預算</div><div class="text-lg font-black text-indigo-950" x-text="formatMoney(retirementBudgetLedger.currentMonthBudget) + ' 元'"></div></div>
+            <div><div class="text-xs text-indigo-700">本月配息及提領</div><div class="text-lg font-black text-indigo-950" x-text="formatMoney(retirementBudgetLedger.currentMonthUsed) + ' 元'"></div></div>
+            <div><div class="text-xs text-indigo-700">目前可用／負數額度</div><div class="text-lg font-black" :class="retirementBudgetLedger.availableBalance < 0 ? 'text-red-700' : 'text-emerald-800'" x-text="formatMoney(retirementBudgetLedger.availableBalance) + ' 元'"></div></div>
+            <div><div class="text-xs text-indigo-700">超額配息待再投入</div><div class="text-lg font-black text-indigo-950" x-text="formatMoney(retirementBudgetLedger.pendingDividendReinvestment) + ' 元'"></div></div>
+          </div>
+          <div class="text-xs text-indigo-800 mt-3" x-text="'累計預算 ' + formatMoney(retirementBudgetLedger.totalBudget) + ' 元；累計配息及提領 ' + formatMoney(retirementBudgetLedger.totalOut) + ' 元。一般賣出與一般買進不會改變退休額度。'"></div>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button @click="customLockDate = retirementPlan.baseDate; retirementRateDraft = retirementPlan.initialRate; showRetirementBaseEditor = !showRetirementBaseEditor" class="rounded-xl border border-blue-200 bg-white px-4 py-2.5 text-sm font-bold text-blue-700">重新設定退休基準</button>
+        </div>
+        <div x-show="showRetirementBaseEditor" x-cloak class="rounded-2xl border border-blue-200 bg-blue-50 p-4 space-y-3">
+          <div class="font-black text-blue-900">修改退休基準設定</div>
+          <p class="text-xs text-blue-800">只有真正調整退休規劃時才修改初始年提領率；原基準會先保存至歷史紀錄。</p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label class="text-sm font-bold text-blue-900">新基準日<input type="date" x-model="customLockDate" class="mt-1 w-full rounded-xl border border-blue-200 bg-white px-3 py-2.5"></label>
+            <label class="text-sm font-bold text-blue-900">新初始年提領率（%）<input type="number" min="0.1" max="20" step="0.1" x-model.number="retirementRateDraft" class="mt-1 w-full rounded-xl border border-blue-200 bg-white px-3 py-2.5"></label>
+          </div>
+          <div class="flex gap-2">
+            <button @click="showRetirementBaseEditor = false; customLockDate = retirementPlan.baseDate; retirementRateDraft = retirementPlan.initialRate" class="flex-1 rounded-xl bg-white border border-blue-200 px-3 py-2.5 text-sm font-bold text-slate-700">取消</button>
+            <button @click="lockRetirementBase(customLockDate)" class="flex-1 rounded-xl bg-blue-600 px-3 py-2.5 text-sm font-black text-white">確認重設基準</button>
+          </div>
+        </div>
+        <div x-show="retirementPlan.history && retirementPlan.history.length" class="rounded-xl border border-slate-200 p-4">
+          <div class="font-black text-slate-800 mb-2">退休基準歷史紀錄</div>
+          <template x-for="(oldPlan,index) in retirementPlan.history" :key="oldPlan.id || index">
+            <div class="flex items-center justify-between gap-3 py-2 border-t border-slate-100">
+              <div class="min-w-0"><div class="font-bold text-slate-700" x-text="oldPlan.baseDate + '｜' + formatMoney(oldPlan.baseMarketValue) + ' 元'"></div><div class="text-xs text-slate-500" x-text="'初始年提領率 ' + Number(oldPlan.initialRate || 0).toFixed(2) + '%'"></div></div>
+              <button @click="restoreRetirementBase(index)" class="shrink-0 rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700">恢復此基準</button>
+            </div>
+          </template>
         </div>
       </div>
+    </template>
+    <div class="mt-5 rounded-2xl border border-dashed border-orange-300 bg-orange-50 p-4" x-data="{ testMode:false, testBase:10000000, testCurrent:10000000, testRate:4, testMonth:'2026-01', get testActual(){ return this.testCurrent > 0 ? this.testBase * this.testRate / this.testCurrent : 0 }, get testState(){ return this.testActual > this.testRate * 1.2 ? 'bear' : (this.testActual < this.testRate * 0.8 ? 'bull' : 'normal') }, get testMultiplier(){ return this.testState === 'bear' ? 0.9 : (this.testState === 'bull' ? 1.1 : 1) }, get testMonthly(){ return this.testBase * this.testRate / 1200 * this.testMultiplier } }">
+      <button @click="testMode=!testMode" class="w-full text-left font-black text-orange-800"><i class="fa-solid fa-flask mr-2"></i>獨立沙盒測試（不會修改正式基準及帳務）</button>
+      <div x-show="testMode" x-cloak class="mt-4 space-y-3">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <label class="text-xs font-bold text-orange-800">模擬基準市值<input type="number" min="1" x-model.number="testBase" class="mt-1 w-full rounded-lg border border-orange-200 bg-white p-2"></label>
+          <label class="text-xs font-bold text-orange-800">模擬目前市值<input type="number" min="1" x-model.number="testCurrent" class="mt-1 w-full rounded-lg border border-orange-200 bg-white p-2"></label>
+          <label class="text-xs font-bold text-orange-800">模擬初始年提領率 %<input type="number" min="0.1" step="0.1" x-model.number="testRate" class="mt-1 w-full rounded-lg border border-orange-200 bg-white p-2"></label>
+        </div>
+        <div class="rounded-xl bg-white p-3 text-sm"><div class="font-black text-orange-900" x-text="testState==='bear'?'熊市警戒':(testState==='bull'?'牛市紅利':'正常區間')"></div><div class="mt-1" x-text="'模擬實質提領率：' + testActual.toFixed(2) + '%；建議月預算：' + Math.round(testMonthly).toLocaleString('zh-TW') + ' 元'"></div></div>
+      </div>
+      <div class="text-xs text-orange-700 mt-2">沙盒使用自己的輸入值與計算結果，完全不讀寫正式退休計畫。</div>
     </div>
   </div>
+</div>
 
   <div x-show="activeTab === 'withdraw'" class="mt-8 border-t border-gray-200 pt-6">
     <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
@@ -6168,7 +6366,7 @@ html {
         </h3>
 
         <p x-show="!isTransactionMultiSelect" class="text-sm font-bold text-blue-600 mb-4 bg-blue-50 p-3 rounded-xl border border-blue-100"><i class="fa-solid fa-circle-info mr-1"></i>明細清單為唯讀摘要。點擊單筆交易可編輯或刪除；修改內容需按「儲存」才會生效。需要統計或批次管理時，請開啟右上方「多選」。</p>
-        <p x-show="isTransactionMultiSelect" x-cloak class="text-sm font-bold text-indigo-700 mb-4 bg-indigo-50 p-3 rounded-xl border border-indigo-100"><i class="fa-solid fa-list-check mr-1"></i>多選模式：點擊交易卡片或勾選框選取明細。可統計所選買進金額與股數、批次修改定投標記，或批次刪除；不會批次修改交易日期、金額或股數。</p>
+        <p x-show="isTransactionMultiSelect" x-cloak class="text-sm font-bold text-indigo-700 mb-4 bg-indigo-50 p-3 rounded-xl border border-indigo-100"><i class="fa-solid fa-list-check mr-1"></i>多選模式：可用七種條件組合選取明細，也可直接點選個別卡片。符合多個條件的同一筆只計算一次；統計加權平均成交單價、股數、成交總額及實際總額。</p>
 
 
         <div :class="isFullscreenHistory ? 'fixed inset-0 z-[110] bg-slate-50 flex flex-col pb-0' : 'relative mt-2'">
@@ -6189,33 +6387,28 @@ html {
 
             <div x-show="isTransactionMultiSelect" x-cloak class="mb-3 shrink-0 rounded-xl border border-blue-200 bg-blue-50 p-3 space-y-3">
               <div class="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <div class="font-black text-blue-900" x-text="'已選取 ' + selectedTransactionCount + ' 筆明細' "></div>
-                  <div class="text-xs text-blue-700 mt-0.5">金額與股數統計只計入已選取的買進交易</div>
-                </div>
-                <div class="flex gap-2">
-                  <button type="button" @click="selectAllTransactions()" class="px-3 py-1.5 rounded-lg bg-white border border-blue-200 text-blue-700 text-xs sm:text-sm font-bold hover:bg-blue-100">全選明細</button>
-                  <button type="button" @click="clearTransactionSelection()" class="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 text-xs sm:text-sm font-bold hover:bg-slate-100">清除選取</button>
-                </div>
+                <div><div class="font-black text-blue-900" x-text="'已選取 ' + selectedTransactionCount + ' 筆明細'"></div><div class="text-xs text-blue-700 mt-0.5">七種條件可同時選擇；全選為獨立條件</div></div>
+                <button type="button" @click="clearTransactionSelection()" class="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 text-xs sm:text-sm font-bold">清除選取</button>
               </div>
-              <div class="grid grid-cols-3 gap-2">
-                <div class="rounded-lg bg-white/90 border border-blue-100 p-2 min-w-0">
-                  <div class="text-[11px] sm:text-xs text-slate-500">買進成交金額</div>
-                  <div class="font-black text-slate-900 text-sm sm:text-base tabular-nums break-words" x-text="formatMoney(selectedBuyGrossAmount) + ' 元'"></div>
-                </div>
-                <div class="rounded-lg bg-white/90 border border-blue-100 p-2 min-w-0">
-                  <div class="text-[11px] sm:text-xs text-slate-500">實際買進支出</div>
-                  <div class="font-black text-blue-800 text-sm sm:text-base tabular-nums break-words" x-text="formatMoney(selectedBuyActualAmount) + ' 元'"></div>
-                </div>
-                <div class="rounded-lg bg-white/90 border border-blue-100 p-2 min-w-0">
-                  <div class="text-[11px] sm:text-xs text-slate-500">買進股數合計</div>
-                  <div class="font-black text-slate-900 text-sm sm:text-base tabular-nums break-words" x-text="formatMoney(selectedBuyShares) + ' 股'"></div>
-                </div>
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <button type="button" @click="toggleTransactionSelectionFilter('all')" :class="isTransactionFilterActive('all')?'bg-blue-700 text-white border-blue-700':'bg-white text-blue-700 border-blue-200'" class="rounded-lg border px-3 py-2 text-xs sm:text-sm font-black">無條件全選</button>
+                <button type="button" @click="toggleTransactionSelectionFilter('recurring')" :class="isTransactionFilterActive('recurring')?'bg-indigo-700 text-white border-indigo-700':'bg-white text-indigo-700 border-indigo-200'" class="rounded-lg border px-3 py-2 text-xs sm:text-sm font-black">定期定額</button>
+                <button type="button" @click="toggleTransactionSelectionFilter('buy')" :class="isTransactionFilterActive('buy')?'bg-red-700 text-white border-red-700':'bg-white text-red-700 border-red-200'" class="rounded-lg border px-3 py-2 text-xs sm:text-sm font-black">買入</button>
+                <button type="button" @click="toggleTransactionSelectionFilter('sell_withdraw')" :class="isTransactionFilterActive('sell_withdraw')?'bg-teal-700 text-white border-teal-700':'bg-white text-teal-700 border-teal-200'" class="rounded-lg border px-3 py-2 text-xs sm:text-sm font-black">賣出／提領</button>
+                <button type="button" @click="toggleTransactionSelectionFilter('dividend')" :class="isTransactionFilterActive('dividend')?'bg-amber-700 text-white border-amber-700':'bg-white text-amber-700 border-amber-200'" class="rounded-lg border px-3 py-2 text-xs sm:text-sm font-black">配息</button>
+                <button type="button" @click="toggleTransactionSelectionFilter('stock_dividend')" :class="isTransactionFilterActive('stock_dividend')?'bg-emerald-700 text-white border-emerald-700':'bg-white text-emerald-700 border-emerald-200'" class="rounded-lg border px-3 py-2 text-xs sm:text-sm font-black">配股</button>
+                <button type="button" @click="toggleTransactionSelectionFilter('sync')" :class="isTransactionFilterActive('sync')?'bg-purple-700 text-white border-purple-700':'bg-white text-purple-700 border-purple-200'" class="rounded-lg border px-3 py-2 text-xs sm:text-sm font-black">調帳</button>
+              </div>
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div class="rounded-lg bg-white border p-2 min-w-0"><div class="text-[11px] text-slate-500">加權平均成交單價</div><div class="font-black text-slate-900 text-sm" x-text="selectedWeightedAveragePrice === null ? '—' : formatMoney(selectedWeightedAveragePrice) + ' 元／股'"></div></div>
+                <div class="rounded-lg bg-white border p-2 min-w-0"><div class="text-[11px] text-slate-500">股數合計</div><div class="font-black text-slate-900 text-sm" x-text="formatMoney(selectedAllShares) + ' 股'"></div></div>
+                <div class="rounded-lg bg-white border p-2 min-w-0"><div class="text-[11px] text-slate-500">成交總額</div><div class="font-black text-slate-900 text-sm" x-text="formatMoney(selectedGrossAmount) + ' 元'"></div></div>
+                <div class="rounded-lg bg-white border p-2 min-w-0"><div class="text-[11px] text-slate-500">實際總額</div><div class="font-black text-blue-800 text-sm" x-text="formatMoney(selectedActualAmount) + ' 元'"></div></div>
               </div>
               <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <button type="button" @click="requestBatchRecurringChange(true)" :disabled="selectedBuyCount === 0" class="rounded-lg bg-indigo-600 px-3 py-2.5 text-sm font-black text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"><i class="fa-solid fa-repeat mr-1"></i>批次標記定投</button>
-                <button type="button" @click="requestBatchRecurringChange(false)" :disabled="selectedBuyCount === 0" class="rounded-lg bg-white border border-indigo-200 px-3 py-2.5 text-sm font-black text-indigo-700 hover:bg-indigo-50 disabled:opacity-40 disabled:cursor-not-allowed"><i class="fa-solid fa-rotate-left mr-1"></i>批次取消定投</button>
-                <button type="button" @click="requestBatchDeleteTransactions()" :disabled="selectedTransactionCount === 0" class="rounded-lg bg-red-600 px-3 py-2.5 text-sm font-black text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed"><i class="fa-solid fa-trash-can mr-1"></i>批次刪除</button>
+                <button type="button" @click="requestBatchRecurringChange(true)" :disabled="selectedBuyCount === 0" class="rounded-lg bg-indigo-600 px-3 py-2.5 text-sm font-black text-white hover:bg-indigo-700 disabled:opacity-40">批次標記定投</button>
+                <button type="button" @click="requestBatchRecurringChange(false)" :disabled="selectedBuyCount === 0" class="rounded-lg bg-white border border-indigo-200 px-3 py-2.5 text-sm font-black text-indigo-700 hover:bg-indigo-50 disabled:opacity-40">批次取消定投</button>
+                <button type="button" @click="requestBatchDeleteTransactions()" :disabled="selectedTransactionCount === 0" class="rounded-lg bg-red-600 px-3 py-2.5 text-sm font-black text-white hover:bg-red-700 disabled:opacity-40">批次刪除</button>
               </div>
             </div>
 
